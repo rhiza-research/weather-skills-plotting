@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "rhiza-plotting",
+  "displayName": "Plotting Skills",
+  "description": "General-purpose weather and climate data plotting: heatmaps, contours, timeseries, wind roses, mediograms, and lead-week verification grids from weather-skills standard dataset Zarrs.",
+  "author": {
+    "name": "Rhiza Research",
+    "url": "https://github.com/rhiza-research"
+  },
+  "homepage": "https://github.com/rhiza-research/weather-skills-plotting",
+  "repository": "https://github.com/rhiza-research/weather-skills-plotting",
+  "license": "MIT",
+  "keywords": [
+    "weather",
+    "climate",
+    "plotting",
+    "matplotlib",
+    "cartopy",
+    "geospatial",
+    "zarr",
+    "xarray"
+  ],
+  "version": "2026.925.0"
+}
