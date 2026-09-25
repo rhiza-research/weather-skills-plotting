@@ -1,0 +1,56 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "weather-skills-plotting"
+version = "0.1.0"
+description = "Plot spec, matplotlib/Cartopy compiler, and figure helpers for weather-skills standard dataset Zarrs."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@plotting-refactor",
+    "cf-xarray>=0.11",
+    "cftime>=1.6",
+    "numpy>=2.5",
+    "xarray>=2026.7",
+    "zarr>=3.2",
+    "pint-xarray>=0.6",
+    # cartopy carries the map axes and the Natural Earth overlays. matplotlib<3.10
+    # because the cartopy gridliner crashes on newer releases.
+    "matplotlib>=3.8,<3.10",
+    "seaborn>=0.13",
+    "cartopy",
+    "shapely>=2.1.2",
+    "nc-time-axis",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1",
+    "ruff>=0.16",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/weather_skills_plotting"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "skills"]
+pythonpath = ["tests"]
+filterwarnings = [
+    # zarr-python warns on every consolidated write; consolidated=True is part
+    # of the standard dataset contract, so the warning is expected noise in tests.
+    "ignore:Consolidated metadata is currently not part in the Zarr format 3 specification",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "B", "UP"]
