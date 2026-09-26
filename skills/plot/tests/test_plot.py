@@ -2086,3 +2086,72 @@ def test_annotation_spec_errors_are_caught_at_parse(ann, match):
 
     with pytest.raises(UsageError, match=match):
         ws_spec.normalize_spec({"annotations": [ann]})
+
+
+def test_geo_overlays_switch_base_map_layers(monkeypatch):
+    """geo.overlays picks which Natural Earth layers load; admin1 can be forced on."""
+    loaded = []
+
+    def fake_clip(resolution, category, name, clip):
+        loaded.append(name)
+        return []
+
+    monkeypatch.setattr(plot_maps, "clip_ne_geoms", fake_clip)
+    kenya = [33.5, 42.0, -5.0, 5.0]
+    wide = [0.0, 60.0, -30.0, 30.0]
+
+    plot_maps.load_geo_overlays(kenya)
+    assert set(loaded) == {
+        "admin_1_states_provinces",
+        "rivers_lake_centerlines",
+        "lakes",
+        "admin_0_boundary_lines_land",
+        "coastline",
+    }
+    loaded.clear()
+    plot_maps.load_geo_overlays(kenya, {"rivers": False, "admin1": False})
+    assert "rivers_lake_centerlines" not in loaded
+    assert "admin_1_states_provinces" not in loaded
+    loaded.clear()
+    plot_maps.load_geo_overlays(wide, {"admin1": True})
+    assert "admin_1_states_provinces" in loaded
+    loaded.clear()
+    assert plot_maps.load_geo_overlays(kenya, False) == []
+    assert loaded == []
+
+
+@pytest.mark.parametrize(
+    ("overlays", "match"),
+    [
+        ({"river": False}, "geo.overlays.river is not a known overlay"),
+        ({"rivers": "no"}, "must be true or false"),
+        ("none", "must be true, false, or an object"),
+    ],
+)
+def test_geo_overlays_bad_values_are_errors(overlays, match):
+    from weather_skills_core import UsageError
+
+    with pytest.raises(UsageError, match=match):
+        ws_spec.normalize_spec({"geo": {"overlays": overlays}})
+
+
+@pytest.mark.parametrize(
+    ("shape", "match"),
+    [
+        ({"type": "rect", "x0": 0, "x1": 1, "y0": 0, "y1": 1, "colour": "r"}, r"\['colour'\]"),
+        ({"type": "circle", "x": 0, "y": 0, "radius": 1, "color": "r"}, r"\(circle\).*\['color'\]"),
+        ({"type": "hline", "y": 0, "xref": "paper"}, "Shapes are drawn in data coordinates"),
+        ({"type": "triangle"}, "type 'triangle' is unknown"),
+    ],
+)
+def test_shape_unknown_keys_are_errors(shape, match):
+    from weather_skills_core import UsageError
+
+    with pytest.raises(UsageError, match=match):
+        ws_spec.normalize_spec({"shapes": [shape]})
+
+
+def test_every_shape_type_is_in_help():
+    from weather_skills_plotting.reference import _SHAPES
+
+    assert set(_SHAPES) == set(ws_figure.SHAPE_TYPES)

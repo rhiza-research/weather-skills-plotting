@@ -186,14 +186,48 @@ def _bundled_country_geoms(clip_geom):
     return [shapely.boundary(g) for g in geoms if g is not None and not g.is_empty]
 
 
-def load_geo_overlays(extent):
+# Base-map layers ``geo.overlays`` can switch on or off.
+OVERLAY_NAMES = ("coastline", "borders", "lakes", "rivers", "admin1")
+
+
+def overlay_choice(value, loc="geo.overlays"):
+    """``{name: bool}`` from ``geo.overlays``; a missing name keeps its default.
+
+    ``true`` / unset draws the defaults, ``false`` draws none, and an object
+    such as ``{"rivers": false}`` switches single layers. ``admin1: true``
+    draws admin-1 even on views wider than it normally appears.
+    """
+    if value is None or value is True:
+        return {}
+    if value is False:
+        return dict.fromkeys(OVERLAY_NAMES, False)
+    if not isinstance(value, dict):
+        raise UsageError(
+            f"{loc} must be true, false, or an object like "
+            f'{{"rivers": false}} with keys {", ".join(OVERLAY_NAMES)}'
+        )
+    for key, flag in value.items():
+        if key not in OVERLAY_NAMES:
+            raise UsageError(
+                f"{loc}.{key} is not a known overlay; allowed: {', '.join(OVERLAY_NAMES)}"
+            )
+        if not isinstance(flag, bool):
+            raise UsageError(f"{loc}.{key} must be true or false")
+    return dict(value)
+
+
+def load_geo_overlays(extent, overlays=None):
     """Scale-appropriate coastline / border / filled-lake / river / admin-1 overlays.
 
     Returns a list of ``(geometries, matplotlib style)`` layers, each clipped to
     the map extent so a country-scale view does not draw the rest of the world.
     Download or clip failures warn and skip that layer — the map still renders.
+    ``overlays`` is ``geo.overlays`` (see ``overlay_choice``).
     """
     if extent is None:
+        return []
+    choice = overlay_choice(overlays)
+    if not any(choice.get(name, True) for name in OVERLAY_NAMES):
         return []
     spec = boundary_layers(extent)
     try:
@@ -219,6 +253,8 @@ def load_geo_overlays(extent):
     try:
         import cartopy.io.shapereader  # noqa: F401
     except ImportError:
+        if not choice.get("borders", True):
+            return []
         try:
             geoms = _bundled_country_geoms(clip)
         except Exception as exc:  # noqa: BLE001
@@ -228,12 +264,16 @@ def load_geo_overlays(extent):
             geoms = unwrap_geoms(geoms, lon_min)
         return [(geoms, BORDERS_STYLE)] if geoms else []
 
-    if spec["admin1"]:
+    if choice.get("admin1", spec["admin1"]):
         add("cultural", "admin_1_states_provinces", ADMIN1_STYLE, resolution="10m")
-    add("physical", "rivers_lake_centerlines", RIVERS_STYLE)
-    add("physical", "lakes", LAKES_STYLE)
-    add("cultural", "admin_0_boundary_lines_land", BORDERS_STYLE)
-    add("physical", "coastline", COAST_STYLE)
+    if choice.get("rivers", True):
+        add("physical", "rivers_lake_centerlines", RIVERS_STYLE)
+    if choice.get("lakes", True):
+        add("physical", "lakes", LAKES_STYLE)
+    if choice.get("borders", True):
+        add("cultural", "admin_0_boundary_lines_land", BORDERS_STYLE)
+    if choice.get("coastline", True):
+        add("physical", "coastline", COAST_STYLE)
     return layers
 
 
@@ -2198,7 +2238,7 @@ def _plot_layers(
             None,
         ),
     }
-    overlays = load_geo_overlays(extent_vals)
+    overlays = load_geo_overlays(extent_vals, ((mpl_spec or {}).get("geo") or {}).get("overlays"))
     cities_map = parse_cities(cities)
     boxes = draw_boxes or []
     transform = ccrs.PlateCarree()
@@ -2379,7 +2419,12 @@ def _contour_levels(vmin, vmax, n=10, norm=None):
 
 # A single-input map kind is a one-layer figure: `--kind heatmap` and
 # `--layer heatmap:x.zarr` take the same path so they cannot drift apart.
-KIND_TO_LAYER = {"heatmap": "heatmap", "contour": "heatmap", "quiver": "quiver", "scatter": "scatter"}
+KIND_TO_LAYER = {
+    "heatmap": "heatmap",
+    "contour": "heatmap",
+    "quiver": "quiver",
+    "scatter": "scatter",
+}
 MAP_STYLES = frozenset(KIND_TO_LAYER) | {"layer"}
 
 
@@ -2836,7 +2881,11 @@ def compile_grid(
     trace = trace_at(spec)
     nrows = len(cells)
     ncols = max((len(row) for row in cells), default=1)
-    geo_layers = load_geo_overlays(extent) if overlays else []
+    geo_layers = (
+        load_geo_overlays(extent, ((spec or {}).get("geo") or {}).get("overlays"))
+        if overlays
+        else []
+    )
     facet = ((spec or {}).get("layout") or {}).get("facet") or {}
     fig, axes, _spacing = _panel_grid(
         nrows,

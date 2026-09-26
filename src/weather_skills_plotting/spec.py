@@ -377,6 +377,10 @@ def normalize_spec(data: dict) -> dict:
             continue
         _check_keys(block, allowed, section)
     _validate_mask_geojson((data.get("geo") or {}).get("mask_geojson"))
+    if (data.get("geo") or {}).get("overlays") is not None:
+        from weather_skills_plotting.maps import overlay_choice
+
+        overlay_choice(data["geo"]["overlays"])
     facet = (data.get("layout") or {}).get("facet")
     if facet is not None:
         _lift_facet_titles(data, facet)
@@ -580,7 +584,12 @@ def _validate_artist_blocks(item: dict, loc: str) -> None:
 
 
 def _validate_axes_annotations(data: dict) -> None:
-    from weather_skills_plotting.figure import AXES_TEMPLATE, check_annotation_keys, pick
+    from weather_skills_plotting.figure import (
+        AXES_TEMPLATE,
+        check_annotation_keys,
+        check_shape_keys,
+        pick,
+    )
 
     axes = data.get("axes")
     allowed = frozenset(AXES_TEMPLATE)
@@ -605,6 +614,8 @@ def _validate_axes_annotations(data: dict) -> None:
                 raise UsageError(f"plot spec {section}[{i}] must be an object")
             if section == "annotations":
                 check_annotation_keys(item, f"plot spec annotations[{i}]")
+            else:
+                check_shape_keys(item, f"plot spec shapes[{i}]")
 
 
 def trace_at(spec: dict | None, index: int = 0) -> dict:

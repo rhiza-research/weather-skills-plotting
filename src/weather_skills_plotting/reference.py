@@ -142,7 +142,7 @@ _DESCRIPTIONS = {
     "geo.draw_boxes": "list of [N, W, S, E] boxes to outline",
     "geo.lat": "point latitude (mediogram / point extraction)",
     "geo.lon": "point longitude (mediogram / point extraction)",
-    "geo.overlays": "accepted but currently has no effect",
+    "geo.overlays": "base-map layers: false = none, or {coastline, borders, lakes, rivers, admin1: true/false}; admin1 defaults on only for country-scale views",
     # annotations[]
     "annotation.text": "the label text (required)",
     "annotation.x": "x position",
@@ -208,6 +208,7 @@ RECIPES = [
         '\'{"geo": {"mask_geojson": "REGION.geojson"}, '
         '"layers": [{"id": "b", "line": {"color": "black", "linewidth": 2.5}}]}\'',
     ),
+    ("Hide rivers on the base map", '{"geo": {"overlays": {"rivers": false}}}'),
     (
         "Box around an area",
         '{"shapes": [{"type": "rect", "x0": 36, "x1": 38, "y0": -2, "y1": 0, '
@@ -326,7 +327,8 @@ def spec_reference(*, kinds: bool = True) -> str:
     out += _named(
         "shapes[] (type: ...)",
         _SHAPES,
-        intro="Data coordinates. Same panel rule as annotations. Unset type is rect.",
+        intro="Data coordinates (lon/lat on a map). Same panel rule as annotations. Unset type "
+        "is rect. Keys not listed for a type are an error.",
     )
     out += ["", "ARTIST BLOCKS (on traces[] or layers[])"]
     blocks = {
