@@ -11,7 +11,7 @@ license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@plotting-refactor",
+    "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
     "cf-xarray>=0.11",
     "cftime>=1.6",
     "numpy>=2.5",
