@@ -81,6 +81,9 @@ MIDRES_MAX_SPAN_DEG = 90.0
 # (#50a5f5 / #1e6eeb) look like rainfall; this grey-blue does not.
 LAKE_FACECOLOR = "#708090"
 ADMIN1_STYLE = {"facecolor": "none", "edgecolor": "0.45", "linewidth": 0.4, "zorder": 3}
+# Same slate as lakes, thinner than admin-1, and drawn under the lake fill so
+# centerlines through Lake Victoria etc. are hidden.
+RIVERS_STYLE = {"facecolor": "none", "edgecolor": LAKE_FACECOLOR, "linewidth": 0.35, "zorder": 3.4}
 LAKES_STYLE = {
     "facecolor": LAKE_FACECOLOR,
     "edgecolor": LAKE_FACECOLOR,
@@ -183,7 +186,7 @@ def _bundled_country_geoms(clip_geom):
 
 
 def load_geo_overlays(extent):
-    """Scale-appropriate coastline / border / filled-lake / admin-1 overlays.
+    """Scale-appropriate coastline / border / filled-lake / river / admin-1 overlays.
 
     Returns a list of ``(geometries, matplotlib style)`` layers, each clipped to
     the map extent so a country-scale view does not draw the rest of the world.
@@ -226,6 +229,7 @@ def load_geo_overlays(extent):
 
     if spec["admin1"]:
         add("cultural", "admin_1_states_provinces", ADMIN1_STYLE, resolution="10m")
+    add("physical", "rivers_lake_centerlines", RIVERS_STYLE)
     add("physical", "lakes", LAKES_STYLE)
     add("cultural", "admin_0_boundary_lines_land", BORDERS_STYLE)
     add("physical", "coastline", COAST_STYLE)
@@ -1575,6 +1579,7 @@ def _prep_outline_layer(spec):
         "kind": "outline",
         "spec": spec,
         "polygon": polygon_from_geojson(spec.path, flag="--layer outline"),
+        "style": outline_style(spec.options.get("line")),
         "panel_dim": None,
         "zorder": _KIND_ZORDER["outline"],
     }
@@ -1756,15 +1761,36 @@ def _draw_quiver_on_ax(ax, prepared, transform, scale, step, mpl_spec=None):
     return mesh, quiv
 
 
+# ``layers[].line`` keys an outline honors, mapped to the polygon-patch kwarg.
+_OUTLINE_LINE_KWARGS = {
+    "color": "edgecolor",
+    "c": "edgecolor",
+    "linewidth": "linewidth",
+    "lw": "linewidth",
+    "linestyle": "linestyle",
+    "ls": "linestyle",
+    "alpha": "alpha",
+    "zorder": "zorder",
+}
+
+
+def outline_style(line: dict | None, *, loc: str = "layers[].line") -> dict:
+    """Patch kwargs for an outline layer: black 1.2 pt unless ``line`` overrides."""
+    style = {"edgecolor": "black", "linewidth": 1.2}
+    unsupported = sorted(k for k in (line or {}) if k not in _OUTLINE_LINE_KWARGS)
+    if unsupported:
+        raise UsageError(
+            f"{loc} key(s) {unsupported} do not apply to an outline; "
+            f"allowed: {', '.join(sorted(_OUTLINE_LINE_KWARGS))}"
+        )
+    for key, value in (line or {}).items():
+        style[_OUTLINE_LINE_KWARGS[key]] = value
+    return style
+
+
 def _draw_outline_on_ax(ax, prepared, crs):
-    ax.add_geometries(
-        [prepared["polygon"]],
-        crs,
-        facecolor="none",
-        edgecolor="black",
-        linewidth=1.2,
-        zorder=prepared["zorder"],
-    )
+    style = {"zorder": prepared["zorder"], **prepared["style"]}
+    ax.add_geometries([prepared["polygon"]], crs, facecolor="none", **style)
 
 
 def _limit_token(value):

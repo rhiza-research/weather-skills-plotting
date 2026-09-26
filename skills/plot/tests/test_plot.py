@@ -800,6 +800,12 @@ def test_lakes_overlay_is_filled_grey():
     assert plot_maps.LAKE_FACECOLOR == "#708090"
 
 
+def test_rivers_overlay_is_slate_lines_under_lakes():
+    assert plot_maps.RIVERS_STYLE["facecolor"] == "none"
+    assert plot_maps.RIVERS_STYLE["edgecolor"] == plot_maps.LAKE_FACECOLOR
+    assert plot_maps.RIVERS_STYLE["zorder"] < plot_maps.LAKES_STYLE["zorder"]
+
+
 def test_load_geo_overlays_skips_on_download_failure(monkeypatch, capsys):
     import cartopy.io.shapereader as shpreader
 
@@ -1415,6 +1421,26 @@ def test_layer_heatmap_and_outline(tmp_path, plot_fn):
     run_skill(plot_fn, "--layer", f"heatmap:{src}", "--layer", f"outline:{geo}", "-o", str(out))
     assert Path(out).exists()
     assert out.stat().st_size > 0
+
+
+def test_layer_outline_line_style(tmp_path, plot_fn):
+    src = write_zarr(make_gridded(), tmp_path / "in.zarr")
+    geo = _write_box_geojson(tmp_path / "box.geojson")
+    default = tmp_path / "default.png"
+    styled = tmp_path / "styled.png"
+    run_skill(plot_fn, "--layer", f"heatmap:{src}", "--layer", f"outline:{geo}", "-o", str(default))
+    run_skill(
+        plot_fn,
+        "--layer",
+        f"heatmap:{src}",
+        "--layer",
+        f"outline:{geo}",
+        "-o",
+        str(styled),
+        "--spec",
+        '{"layers":[{"id":"b","line":{"color":"red","linewidth":4}}]}',
+    )
+    assert default.read_bytes() != styled.read_bytes()
 
 
 def test_layer_heatmap_scatter_outline(tmp_path, plot_fn):

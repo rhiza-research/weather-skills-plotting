@@ -188,7 +188,13 @@ LAYER_KEYS = (
 
 # Which nested artist block each map kind is drawn with, for lifting a flat
 # ``alpha`` (or, in future, another shared style knob) into it.
-_KIND_STYLE_BLOCK = {"heatmap": "mesh", "contour": "contour", "quiver": "quiver", "scatter": "scatter"}
+_KIND_STYLE_BLOCK = {
+    "heatmap": "mesh",
+    "contour": "contour",
+    "quiver": "quiver",
+    "scatter": "scatter",
+    "outline": "line",
+}
 
 
 def apply_layer_alpha(options: dict, kind: str | None) -> dict:
@@ -217,6 +223,10 @@ _SECTIONS = {
 }
 
 
+# Keys an agent reaches for when it has a place name instead of coordinates.
+_PLACE_NAME_KEYS = frozenset({"region", "country", "place", "name", "county", "admin"})
+
+
 def _check_keys(obj, allowed, loc):
     """Raise on any key of ``obj`` outside ``allowed``, listing the valid ones."""
     if not isinstance(obj, dict):
@@ -225,9 +235,28 @@ def _check_keys(obj, allowed, loc):
         if key in allowed:
             continue
         where = f"{loc}.{key}" if loc else key
+        hint = ""
+        if loc == "geo" and key in _PLACE_NAME_KEYS:
+            hint = (
+                "; geo takes coordinates only — run resolve-region for a named place"
+                " and pass its bbox as geo.bbox or its polygon as geo.mask_geojson"
+            )
         raise UsageError(
             f"plot spec {where} is not a known key; allowed here: {', '.join(sorted(allowed))}"
+            f"{hint}"
         )
+
+
+def _validate_mask_geojson(value) -> None:
+    """``geo.mask_geojson`` is a file path; styling an edge is an outline layer's job."""
+    if value is None or isinstance(value, str):
+        return
+    raise UsageError(
+        "plot spec geo.mask_geojson must be a GeoJSON file path string, "
+        f"not {type(value).__name__}; it only blanks cells outside the polygon. "
+        "To draw the boundary, add --layer outline:PATH and style it with "
+        'layers[].line (e.g. {"color": "black", "linewidth": 3})'
+    )
 
 
 def _validate_colorbar_dict(colorbar: dict, loc: str) -> None:
@@ -338,6 +367,7 @@ def normalize_spec(data: dict) -> dict:
         if block is None:
             continue
         _check_keys(block, allowed, section)
+    _validate_mask_geojson((data.get("geo") or {}).get("mask_geojson"))
     facet = (data.get("layout") or {}).get("facet")
     if facet is not None:
         _lift_facet_titles(data, facet)

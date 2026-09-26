@@ -86,7 +86,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot_verify.py \
 - `inputs[]` — `variable` per input (`obs`, `forecast1`, `forecast2`, …); an input that omits it uses `inputs[0].variable` (the obs input), then auto-detects. Obs and a forecast may name the field differently (e.g. `precip` vs `precipitation_surface`) — set each one's own `variable`. `label` on obs and each forecast.
 - `title`, `theme.fontsize` (default 16), `theme.colormap`, `vmin`, `vmax`.
 - `traces[0].leads` — column titles. Default `1-week lead` … `N-week lead`. Titles that name a week are sorted so week-1 sits next to the observation.
-- `geo.bbox` as `[N, W, S, E]`, `geo.mask_geojson`.
+- `geo.bbox` as `[N, W, S, E]`, `geo.mask_geojson`. There is no `geo.region` / `geo.country` — for a named place, run `resolve-region` and pass its bbox or polygon.
 - `layout.figsize` as `[W, H]`, `layout.facet.wspace` / `hspace`.
 
 ### Output

@@ -83,6 +83,11 @@ def test_normalize_spec_rejects_unknown_keys_everywhere():
         ),
         ({"version": 1}, "version 1 is not supported"),
         ({"bogus": 1}, "not a known key"),
+        ({"geo": {"region": "Kenya"}}, "geo.region is not a known key.*run resolve-region"),
+        (
+            {"geo": {"mask_geojson": {"path": "basin.geojson", "color": "black"}}},
+            "geo.mask_geojson must be a GeoJSON file path string.*--layer outline:PATH",
+        ),
     ]:
         with pytest.raises(UsageError, match=expected):
             normalize_spec(bad)
@@ -2163,3 +2168,25 @@ def test_heatmap_grid_and_dumped_spec_use_shared_axes_spec(tmp_path):
     export(fig, out, spec=spec, dump_spec_path=dumped_path)
     dumped = json.loads(dumped_path.read_text())
     assert dumped["axes"] == {"spines": {"top": False}}
+
+
+def test_outline_style_defaults_and_overrides():
+    from weather_skills_core import UsageError
+
+    from weather_skills_plotting.maps import outline_style
+
+    assert outline_style(None) == {"edgecolor": "black", "linewidth": 1.2}
+    assert outline_style({"color": "red", "lw": 3, "ls": "--"}) == {
+        "edgecolor": "red",
+        "linewidth": 3,
+        "linestyle": "--",
+    }
+    with pytest.raises(UsageError, match="do not apply to an outline"):
+        outline_style({"marker": "o"})
+
+
+def test_layer_alpha_reaches_outline_line_block():
+    from weather_skills_plotting.spec import fold_layer_options
+
+    opts = fold_layer_options({"kind": "outline", "path": "b.geojson", "alpha": 0.5})
+    assert opts["line"] == {"alpha": 0.5}
