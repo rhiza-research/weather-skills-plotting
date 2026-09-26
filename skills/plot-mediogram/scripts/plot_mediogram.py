@@ -45,7 +45,7 @@ from weather_skills_plotting.spec import (
 )
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.2"
+_SKILL_VERSION = "0.0.3"
 
 _resolve_axis_label = resolve_axis_label
 

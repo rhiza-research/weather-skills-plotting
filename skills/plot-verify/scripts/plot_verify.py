@@ -65,7 +65,7 @@ from weather_skills_plotting.theme import (
 )
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.3"
+_SKILL_VERSION = "0.0.4"
 
 _aggregation_days = aggregation_days
 _extent_from_da = extent_from_da

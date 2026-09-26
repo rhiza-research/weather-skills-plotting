@@ -65,7 +65,7 @@ from weather_skills_plotting.theme import (
 )
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.2"
+_SKILL_VERSION = "0.0.3"
 
 _is_datetime_axis = is_datetime_axis
 _resolve_axis_label = resolve_axis_label
