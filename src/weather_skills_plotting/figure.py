@@ -741,6 +741,35 @@ SCATTER_KEYS = frozenset(
     }
 )
 
+# matplotlib's Collection base class aliases ``edgecolor`` / ``linewidth`` to
+# their plural forms on its own — but only when a caller passes just one
+# spelling. Our default kwargs already set the plural form, so an alias left
+# unrenamed here would collide with that default (matplotlib then raises
+# "got both 'edgecolor' and 'edgecolors'"). ``s`` (marker area, in points^2)
+# has no such alias at all, matplotlib-side, so ``size`` needs the same
+# treatment. Rename all three ourselves so exactly one spelling ever reaches
+# matplotlib.
+SCATTER_ALIASES = {"size": "s", "edgecolor": "edgecolors", "linewidth": "linewidths"}
+
+
+def normalize_aliases(block: dict, aliases: dict, *, loc: str) -> dict:
+    """Rename intuitive alias keys (``size``) to what matplotlib expects (``s``).
+
+    Raises if both a key and its alias are set, rather than silently
+    preferring one.
+    """
+    if not aliases or not isinstance(block, dict):
+        return block
+    out = {}
+    sources = {}
+    for key, value in block.items():
+        canonical = aliases.get(key, key)
+        if canonical in out:
+            raise UsageError(f"{loc} sets both {sources[canonical]!r} and {key!r}; use only one")
+        out[canonical] = value
+        sources[canonical] = key
+    return out
+
 BAR_KEYS = frozenset(
     {
         "align",
@@ -1650,6 +1679,7 @@ def scatter_kwargs(style: dict | None, *, loc: str = "scatter") -> dict:
     if not style:
         return {}
     raw = style.get("scatter") if isinstance(style.get("scatter"), dict) else style
+    raw = normalize_aliases(raw, SCATTER_ALIASES, loc=loc)
     return pick({k: v for k, v in raw.items() if k in SCATTER_KEYS}, SCATTER_KEYS, loc=loc)
 
 

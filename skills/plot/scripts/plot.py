@@ -14,7 +14,7 @@
 # [tool.uv.sources]
 # weather-skills-plotting = { path = "../../..", editable = true }
 # ///
-"""Render a heatmap, timeseries, xy scatter, wind-rose, or quiver PNG from a weather-skills standard dataset Zarr."""
+"""Render a heatmap, timeseries, xy scatter, wind-rose, quiver, or point-scatter map PNG from a weather-skills standard dataset Zarr."""
 
 import argparse
 import sys
@@ -50,7 +50,7 @@ from weather_skills_plotting.theme import load_user_theme
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
 _SKILL_VERSION = "0.0.2"
 
-_MAP_KINDS = frozenset({"heatmap", "contour", "quiver"})
+_MAP_KINDS = frozenset({"heatmap", "contour", "quiver", "scatter"})
 _ZARR_LAYER_KINDS = frozenset({"heatmap", "scatter", "quiver"})
 
 _MPL_LEGEND_LOCS = frozenset(
@@ -398,7 +398,7 @@ def _internal_from_files(*, kind, datasets, user_theme, layers=None):
     required=False,
     help=(
         "Input Zarr. Repeat for one map panel per file "
-        "(heatmap, contour, or quiver). Mutually exclusive with --layer and with --x/--y."
+        "(heatmap, contour, quiver, or scatter). Mutually exclusive with --layer and with --x/--y."
     ),
 )
 @weather_skill.argument(
@@ -423,8 +423,10 @@ def _internal_from_files(*, kind, datasets, user_theme, layers=None):
     default=None,
     type=parse_layer,
     help=(
-        "Map layer KIND:PATH. Repeat for overlays. "
+        "Map layer KIND:PATH. Repeat to overlay several layers on one map. "
         "Kinds: heatmap, scatter, quiver, outline, mask. "
+        "A single scatter (or heatmap/contour/quiver) map needs no --layer at all: "
+        "pass -i and traces[0].kind in --spec instead. "
         "Set variable, colormap, vmin, and other layer keys on layers[] in --spec. "
         "Mutually exclusive with -i/--input."
     ),
@@ -459,7 +461,7 @@ def plot(
     dump_spec=None,
     **kwargs,
 ):
-    """Render a heatmap, contour, timeseries, xy scatter, wind-rose, quiver, or layered map PNG from weather-skills Zarrs."""
+    """Render a heatmap, contour, timeseries, xy scatter, wind-rose, quiver, scatter, or layered map PNG from weather-skills Zarrs."""
     user = _spec_data(spec)
     layers = list(layer or [])
     if not layers:

@@ -53,6 +53,7 @@ from weather_skills_plotting.figure import (
 )
 from weather_skills_plotting.spec import (
     apply_index,
+    apply_layer_alpha,
     fold_layer_options,
     panel_shape,
     parse_index,
@@ -1485,6 +1486,7 @@ def _prep_scatter_layer(spec, bbox_nwse, region_polygon, *, registry=None):
         "variable": variable,
         "units": variable_units(da),
         "zorder": _KIND_ZORDER["scatter"],
+        "scatter": spec.options.get("scatter"),
     }
 
 
@@ -1687,16 +1689,19 @@ def _draw_scatter_on_ax(ax, prepared, transform):
     return ax.scatter(
         da[lon_name].values,
         da[lat_name].values,
-        c=da.values,
-        cmap=prepared["cmap"],
-        norm=prepared["norm"],
-        vmin=prepared["vmin"],
-        vmax=prepared["vmax"],
-        s=30,
-        transform=transform,
-        zorder=prepared["zorder"],
-        edgecolors="k",
-        linewidths=0.3,
+        **{
+            "c": da.values,
+            "cmap": prepared["cmap"],
+            "norm": prepared["norm"],
+            "vmin": prepared["vmin"],
+            "vmax": prepared["vmax"],
+            "s": 30,
+            "transform": transform,
+            "zorder": prepared["zorder"],
+            "edgecolors": "k",
+            "linewidths": 0.3,
+            **scatter_kwargs({"scatter": prepared.get("scatter")}),
+        },
     )
 
 
@@ -2347,7 +2352,7 @@ def _contour_levels(vmin, vmax, n=10, norm=None):
 
 # A single-input map kind is a one-layer figure: `--kind heatmap` and
 # `--layer heatmap:x.zarr` take the same path so they cannot drift apart.
-KIND_TO_LAYER = {"heatmap": "heatmap", "contour": "heatmap", "quiver": "quiver"}
+KIND_TO_LAYER = {"heatmap": "heatmap", "contour": "heatmap", "quiver": "quiver", "scatter": "scatter"}
 MAP_STYLES = frozenset(KIND_TO_LAYER) | {"layer"}
 
 
@@ -2394,12 +2399,12 @@ def _inherit_layer_options(
 
 
 def _layer_for_trace(trace, spec, inputs, by_id, dataset_for, panel=None):
-    """One ``LayerSpec`` for a heatmap, contour, or quiver trace.
+    """One ``LayerSpec`` for a heatmap, contour, quiver, or scatter trace.
 
-    ``panel`` is the fixed grid cell this trace occupies when several
-    heatmap/contour/quiver traces share one figure (side by side, each on
-    its own lat/lon). Left ``None`` for a lone trace, whose own leftover
-    time/step axis instead auto-tiles into panels (see ``_panel_groups``).
+    ``panel`` is the fixed grid cell this trace occupies when several such
+    traces share one figure (side by side, each on its own lat/lon). Left
+    ``None`` for a lone trace, whose own leftover time/step axis instead
+    auto-tiles into panels (see ``_panel_groups``).
     """
     style = (trace or {}).get("kind") or "heatmap"
     if style not in KIND_TO_LAYER:
@@ -2422,6 +2427,11 @@ def _layer_for_trace(trace, spec, inputs, by_id, dataset_for, panel=None):
             options["contour"] = trace["contour"]
     if trace.get("mesh") is not None:
         options["mesh"] = trace["mesh"]
+    if trace.get("scatter") is not None:
+        options["scatter"] = trace["scatter"]
+    if trace.get("alpha") is not None:
+        options["alpha"] = trace["alpha"]
+    options = apply_layer_alpha(options, style)
     layer = LayerSpec(
         KIND_TO_LAYER[style],
         spec_input.get("path") or "",
@@ -2520,8 +2530,8 @@ def layers_from_spec(spec: dict, datasets: dict) -> list:
     """Build the ``LayerSpec`` list a map spec describes.
 
     An explicit ``layers`` list is stacked on one axes. Otherwise each
-    heatmap, contour, or quiver trace is its own layer; several of those
-    are drawn as separate panels.
+    heatmap, contour, quiver, or scatter trace is its own layer; several of
+    those are drawn as separate panels.
     """
     inputs = [i for i in (spec.get("inputs") or []) if isinstance(i, dict)]
     by_id = {str(i.get("id")): i for i in inputs}

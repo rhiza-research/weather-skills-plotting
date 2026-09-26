@@ -1315,6 +1315,99 @@ def test_layer_heatmap_and_scatter_overlay(tmp_path, plot_fn):
     assert names == {"grid.zarr", "pts.zarr"}
 
 
+def test_kind_scatter_single_input_needs_no_layer(tmp_path, plot_fn):
+    pts = write_zarr(make_point_obs(n_time=2), tmp_path / "pts.zarr")
+    out = tmp_path / "scatter_only.png"
+    run_skill(
+        plot_fn,
+        "-i",
+        str(pts),
+        "-o",
+        str(out),
+        "--spec",
+        '{"traces":[{"kind":"scatter"}]}',
+    )
+    assert Path(out).exists()
+    assert out.stat().st_size > 0
+
+
+def test_heatmap_trace_alpha_shorthand(tmp_path, plot_fn):
+    src = write_zarr(make_gridded(fill=5.0), tmp_path / "a.zarr")
+    out = tmp_path / "alpha.png"
+    run_skill(
+        plot_fn,
+        "-i",
+        str(src),
+        "-o",
+        str(out),
+        "--spec",
+        '{"traces":[{"kind":"heatmap","alpha":0.4}]}',
+    )
+    assert Path(out).exists()
+    assert out.stat().st_size > 0
+
+
+def test_layer_scatter_style_accepts_intuitive_aliases(tmp_path, plot_fn):
+    grid = write_zarr(make_gridded(), tmp_path / "grid.zarr")
+    pts = write_zarr(make_point_obs(n_time=2), tmp_path / "pts.zarr")
+    out = tmp_path / "overlay_alias.png"
+    run_skill(
+        plot_fn,
+        "--layer",
+        f"heatmap:{grid}",
+        "--layer",
+        f"scatter:{pts}",
+        "-o",
+        str(out),
+        "--spec",
+        json.dumps(
+            {
+                "layers": [
+                    {"id": "a"},
+                    {"id": "b", "scatter": {"edgecolor": "black", "linewidth": 1.8, "size": 70}},
+                ]
+            }
+        ),
+    )
+    assert Path(out).exists()
+    assert out.stat().st_size > 0
+
+
+def test_layer_scatter_rejects_conflicting_size_and_s(tmp_path, plot_fn, capsys):
+    pts = write_zarr(make_point_obs(n_time=2), tmp_path / "pts.zarr")
+    out = tmp_path / "bad.png"
+    with pytest.raises(SystemExit):
+        run_skill(
+            plot_fn,
+            "--layer",
+            f"scatter:{pts}",
+            "-o",
+            str(out),
+            "--spec",
+            '{"layers":[{"id":"a","scatter":{"size":70,"s":30}}]}',
+        )
+    assert "both 'size' and 's'" in capsys.readouterr().err
+
+
+def test_layer_alpha_shorthand_lifts_into_scatter_and_mesh(tmp_path, plot_fn):
+    grid = write_zarr(make_gridded(), tmp_path / "grid.zarr")
+    pts = write_zarr(make_point_obs(n_time=2), tmp_path / "pts.zarr")
+    out = tmp_path / "overlay_alpha.png"
+    run_skill(
+        plot_fn,
+        "--layer",
+        f"heatmap:{grid}",
+        "--layer",
+        f"scatter:{pts}",
+        "-o",
+        str(out),
+        "--spec",
+        '{"layers":[{"id":"a","alpha":0.3},{"id":"b","alpha":0.6}]}',
+    )
+    assert Path(out).exists()
+    assert out.stat().st_size > 0
+
+
 def test_layer_heatmap_and_outline(tmp_path, plot_fn):
     src = write_zarr(make_gridded(), tmp_path / "in.zarr")
     geo = _write_box_geojson(tmp_path / "box.geojson")

@@ -22,6 +22,7 @@ TRACE_KINDS = frozenset(
         "heatmap",
         "contour",
         "quiver",
+        "scatter",
         "layer",
         "timeseries",
         "xy",
@@ -30,7 +31,7 @@ TRACE_KINDS = frozenset(
         "mediogram",
     }
 )
-MAP_KINDS = frozenset({"heatmap", "contour", "quiver", "layer"})
+MAP_KINDS = frozenset({"heatmap", "contour", "quiver", "scatter", "layer"})
 
 _INDEX_INT_RE = re.compile(r"[+-]?[0-9]+")
 _NON_ZARR_SUFFIXES = {".geojson", ".json", ".shp", ".gpkg", ".kml"}
@@ -142,6 +143,7 @@ TRACE_KEYS = (
         {
             "kind",
             "input",
+            "alpha",
             "mark",
             "time_dim",
             "x",
@@ -174,9 +176,38 @@ LAYER_SCALE_KEYS = frozenset(
         "v_variable",
     }
 )
+# A layer's own opacity, without having to know which nested artist block
+# (mesh, contour, quiver, scatter) its kind actually draws with.
+LAYER_STYLE_KEYS = frozenset({"alpha"})
 LAYER_KEYS = (
-    frozenset({"id", "kind", "path", "options", "input", "raw"}) | LAYER_SCALE_KEYS | ARTIST_BLOCKS
+    frozenset({"id", "kind", "path", "options", "input", "raw"})
+    | LAYER_SCALE_KEYS
+    | LAYER_STYLE_KEYS
+    | ARTIST_BLOCKS
 )
+
+# Which nested artist block each map kind is drawn with, for lifting a flat
+# ``alpha`` (or, in future, another shared style knob) into it.
+_KIND_STYLE_BLOCK = {"heatmap": "mesh", "contour": "contour", "quiver": "quiver", "scatter": "scatter"}
+
+
+def apply_layer_alpha(options: dict, kind: str | None) -> dict:
+    """Let a flat ``alpha`` reach the nested artist block ``kind`` draws with.
+
+    ``layers[].alpha`` / ``traces[].alpha`` is the intuitive, kind-agnostic
+    spelling; the renderer only reads opacity off ``mesh``/``contour``/
+    ``quiver``/``scatter``. A block that already sets its own ``alpha``
+    wins over the flat one.
+    """
+    alpha = options.get("alpha")
+    block_name = _KIND_STYLE_BLOCK.get(str(kind or "").lower())
+    if alpha is None or block_name is None:
+        return options
+    block = dict(options.get(block_name) or {})
+    block.setdefault("alpha", alpha)
+    out = dict(options)
+    out[block_name] = block
+    return out
 BAR_MODES = frozenset({"grouped", "stacked", "overlay"})
 
 _SECTIONS = {
@@ -475,8 +506,10 @@ def _validate_artist_blocks(item: dict, loc: str) -> None:
         LINE_KEYS,
         MESH_KEYS,
         QUIVER_KEYS,
+        SCATTER_ALIASES,
         SCATTER_KEYS,
         WINDROSE_KEYS,
+        normalize_aliases,
         pick,
     )
 
@@ -501,6 +534,9 @@ def _validate_artist_blocks(item: dict, loc: str) -> None:
                 raise UsageError(f"{loc}.{name} must be an object")
             _check_keys(block, allowed, f"{loc}.{name}")
             continue
+        if name == "scatter":
+            block = normalize_aliases(block, SCATTER_ALIASES, loc=f"{loc}.{name}")
+            item[name] = block
         pick(block, allowed, loc=f"{loc}.{name}")
 
 
@@ -884,10 +920,10 @@ def fold_layer_options(item: dict) -> dict:
     leftover ``options`` bag from an older dump.
     """
     out = dict(item.get("options") or {})
-    for key in LAYER_SCALE_KEYS | ARTIST_BLOCKS:
+    for key in LAYER_SCALE_KEYS | LAYER_STYLE_KEYS | ARTIST_BLOCKS:
         if item.get(key) is not None:
             out[key] = item[key]
-    return out
+    return apply_layer_alpha(out, item.get("kind"))
 
 
 def layer_item_from_parts(
@@ -907,7 +943,7 @@ def layer_item_from_parts(
         entry["raw"] = raw
     leftover = {}
     for key, value in opts.items():
-        if key in LAYER_SCALE_KEYS or key in ARTIST_BLOCKS:
+        if key in LAYER_SCALE_KEYS or key in LAYER_STYLE_KEYS or key in ARTIST_BLOCKS:
             entry[key] = value
         else:
             leftover[key] = value

@@ -6,7 +6,7 @@ import json
 
 import numpy as np
 import pytest
-from conftest import make_forecast, make_gridded
+from conftest import make_forecast, make_gridded, make_station
 
 from weather_skills_plotting.spec import (
     PlotSpec,
@@ -1986,6 +1986,96 @@ def test_compile_contour_levels_from_spec():
     fig = compile(spec, {"a": ds}).fig
     filled = next(c for ax in fig.axes for c in ax.collections if isinstance(c, QuadContourSet))
     assert len(filled.levels) >= 2
+
+
+def test_compile_scatter_kind_needs_no_layer():
+    """``traces[0].kind: scatter`` is the same map ``--layer scatter:PATH`` draws."""
+    pytest.importorskip("matplotlib")
+    from matplotlib.collections import PathCollection
+
+    from weather_skills_plotting import compile
+
+    ds = make_station()
+    spec = spec_from_flags(kind="scatter")
+    fig = compile(spec, {"a": ds}).fig
+    assert any(isinstance(c, PathCollection) for ax in fig.axes for c in ax.collections)
+
+
+def test_compile_scatter_layer_style_accepts_intuitive_aliases():
+    """``edgecolor``/``linewidth`` already work via matplotlib's Collection
+    aliasing; ``size`` has no such alias and must be renamed to ``s``."""
+    pytest.importorskip("matplotlib")
+    from matplotlib.collections import PathCollection
+
+    from weather_skills_plotting import compile
+
+    ds = make_station()
+    spec = {
+        "layers": [
+            {
+                "kind": "scatter",
+                "input": "a",
+                "path": "stations.zarr",
+                "scatter": {"edgecolor": "blue", "linewidth": 2.0, "size": 90},
+            }
+        ]
+    }
+    fig = compile(spec, {"a": ds}).fig
+    pc = next(c for ax in fig.axes for c in ax.collections if isinstance(c, PathCollection))
+    assert pc.get_linewidths()[0] == 2.0
+    assert pc.get_sizes()[0] == 90
+
+
+def test_compile_scatter_layer_rejects_conflicting_size_and_s():
+    from weather_skills_core import UsageError
+
+    from weather_skills_plotting import compile
+
+    ds = make_station()
+    spec = {
+        "layers": [
+            {"kind": "scatter", "input": "a", "path": "stations.zarr", "scatter": {"size": 70, "s": 30}}
+        ]
+    }
+    with pytest.raises(UsageError, match="both 'size' and 's'"):
+        compile(spec, {"a": ds})
+
+
+def test_compile_layer_alpha_shorthand_lifts_into_mesh_and_scatter():
+    """A flat ``layers[].alpha`` reaches whichever artist that kind draws
+    with, without the caller needing to know it's called ``mesh``."""
+    pytest.importorskip("matplotlib")
+    from matplotlib.collections import PathCollection, QuadMesh
+
+    from weather_skills_plotting import compile
+
+    grid = make_gridded(n_time=1)
+    stations = make_station()
+    spec = {
+        "layers": [
+            {"kind": "heatmap", "input": "a", "path": "grid.zarr", "alpha": 0.3},
+            {"kind": "scatter", "input": "b", "path": "stations.zarr", "alpha": 0.6},
+        ]
+    }
+    fig = compile(spec, {"a": grid, "b": stations}).fig
+    mesh = next(c for ax in fig.axes for c in ax.collections if isinstance(c, QuadMesh))
+    pc = next(c for ax in fig.axes for c in ax.collections if isinstance(c, PathCollection))
+    assert mesh.get_alpha() == 0.3
+    assert pc.get_alpha() == 0.6
+
+
+def test_compile_trace_alpha_shorthand_for_single_input_heatmap():
+    pytest.importorskip("matplotlib")
+    from matplotlib.collections import QuadMesh
+
+    from weather_skills_plotting import compile
+
+    ds = make_gridded(n_time=1)
+    spec = spec_from_flags(variable="precip", kind="heatmap")
+    spec["traces"][0]["alpha"] = 0.4
+    fig = compile(spec, {"a": ds}).fig
+    mesh = next(c for ax in fig.axes for c in ax.collections if isinstance(c, QuadMesh))
+    assert mesh.get_alpha() == 0.4
 
 
 def test_compile_line_twin_and_mediogram_colors():
