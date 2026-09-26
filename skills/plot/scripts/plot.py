@@ -28,6 +28,7 @@ from weather_skills_plotting.figure import (  # noqa: F401 — tests call these 
     parse_panel_spacing,
 )
 from weather_skills_plotting.maps import parse_draw_boxes, parse_layer
+from weather_skills_plotting.reference import install_spec_help
 from weather_skills_plotting.spec import (
     DUMP_SPEC_ARGUMENT_HELP,
     SPEC_ARGUMENT_HELP,
@@ -576,6 +577,8 @@ def plot(
     compiled = compile(merged, datasets, theme_registry=user_theme)
     return export(compiled, output, datasets=datasets, spec=merged)
 
+
+install_spec_help(plot)
 
 if __name__ == "__main__":
     plot()

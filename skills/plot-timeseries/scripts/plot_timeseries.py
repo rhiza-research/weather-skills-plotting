@@ -43,6 +43,7 @@ from weather_skills_plotting.figure import (
     resolve_axis_label,
     resolve_time_axis_label,
 )
+from weather_skills_plotting.reference import install_spec_help
 from weather_skills_plotting.spec import (
     DUMP_SPEC_ARGUMENT_HELP,
     SPEC_ARGUMENT_HELP,
@@ -633,6 +634,8 @@ def plot_timeseries(
         spec=spec_data,
     )
 
+
+install_spec_help(plot_timeseries, kinds=False)
 
 if __name__ == "__main__":
     plot_timeseries()

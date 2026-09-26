@@ -20,6 +20,7 @@ from weather_skills_plotting import charts as plot_charts
 from weather_skills_plotting import figure as ws_figure
 from weather_skills_plotting import maps as plot_maps
 from weather_skills_plotting import spec as ws_spec
+from weather_skills_plotting.reference import RECIPES
 
 plot_mod = load_skill("plot", "plot")
 
@@ -1995,3 +1996,93 @@ def test_layer_patch_by_id_dump_spec(tmp_path, plot_fn):
     assert spec["layers"][0]["vmin"] == -1.5
     assert spec["layers"][1]["id"] == "b"
     assert spec["layers"][1].get("colormap") is None
+
+
+@pytest.mark.parametrize(
+    ("skill", "module", "fn"),
+    [
+        ("plot", "plot", "plot"),
+        ("plot-timeseries", "plot_timeseries", "plot_timeseries"),
+        ("plot-mediogram", "plot_mediogram", "plot_mediogram"),
+        ("plot-verify", "plot_verify", "plot_verify"),
+    ],
+)
+def test_help_carries_the_spec_reference(skill, module, fn):
+    """--help, not --dump-spec, is where every spec feature is listed."""
+    text = getattr(load_skill(skill, module), fn).parser.format_help()
+    assert "PLOT SPEC REFERENCE" in text
+    for needle in ("annotations[]", "yref", "axes fraction", "layout.facet", "wspace", "RECIPES"):
+        assert needle in text
+    assert ("KINDS (traces[0].kind)" in text) == (skill == "plot")
+    assert "skill version:" in text
+
+
+@pytest.mark.parametrize("recipe", RECIPES, ids=[label for label, _ in RECIPES])
+def test_help_recipes_render(tmp_path, plot_fn, recipe):
+    """Every recipe printed by --help draws without error."""
+    label, value = recipe
+    src = write_zarr(make_gridded(n_time=3), tmp_path / "in.zarr")
+    out = tmp_path / "out.png"
+    if value.startswith("--layer"):
+        geo = _write_box_geojson(tmp_path / "region.geojson")
+        spec_json = value.split("--spec ", 1)[1].strip("'").replace("REGION.geojson", str(geo))
+        args = ["--layer", f"heatmap:{src}", "--layer", f"outline:{geo}", "--spec", spec_json]
+    else:
+        args = ["-i", str(src), "--spec", value]
+    run_skill(plot_fn, *args, "-o", str(out))
+    assert out.stat().st_size > 0, label
+
+
+def test_annotation_axes_fraction_lands_on_the_panel():
+    import matplotlib.pyplot as plt
+
+    for ann in (
+        {"text": "a", "x": 0.5, "y": 0.03, "xref": "axes fraction", "yref": "axes fraction"},
+        {"text": "b", "x": 0.5, "y": 0.03, "xycoords": "axes fraction"},
+        {"text": "c", "x": 0.5, "y": 0.03, "xref": "paper"},
+    ):
+        fig, ax = plt.subplots()
+        ax.set_xlim(30, 45)
+        ws_figure.apply_annotation(ax, ann)
+        assert ax.texts[-1].get_transform() is ax.transAxes, ann
+        plt.close(fig)
+
+
+def test_annotation_arrow_uses_axes_fraction_xycoords():
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots()
+    ws_figure.apply_annotation(
+        ax,
+        {
+            "text": "t",
+            "x": 0.2,
+            "y": 0.2,
+            "xref": "axes fraction",
+            "xytext": [0.8, 0.8],
+            "arrowprops": {"arrowstyle": "->"},
+        },
+    )
+    assert ax.texts[-1].xycoords == "axes fraction"
+    plt.close(fig)
+
+
+@pytest.mark.parametrize(
+    ("ann", "match"),
+    [
+        (
+            {"text": "t", "x": 0, "y": 0, "xref": "paper", "yref": "data"},
+            "mixes coordinate systems",
+        ),
+        ({"text": "t", "x": 0, "y": 0, "xref": "inches"}, "not a known coordinate system"),
+        (
+            {"text": "t", "x": 0, "y": 0, "colour": "red"},
+            r"unknown key\(s\) \['colour'\]; allowed:",
+        ),
+    ],
+)
+def test_annotation_spec_errors_are_caught_at_parse(ann, match):
+    from weather_skills_core import UsageError
+
+    with pytest.raises(UsageError, match=match):
+        ws_spec.normalize_spec({"annotations": [ann]})

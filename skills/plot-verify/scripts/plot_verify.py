@@ -43,6 +43,7 @@ from weather_skills_plotting.figure import (
     parse_figsize,  # noqa: F401 — tests call this via the skill module
 )
 from weather_skills_plotting.maps import extent_from_da, slice_bbox_mask
+from weather_skills_plotting.reference import install_spec_help
 from weather_skills_plotting.spec import (
     DUMP_SPEC_ARGUMENT_HELP,
     SPEC_ARGUMENT_HELP,
@@ -636,6 +637,8 @@ def plot_verify(
         spec=spec_data,
     )
 
+
+install_spec_help(plot_verify, kinds=False)
 
 if __name__ == "__main__":
     plot_verify()

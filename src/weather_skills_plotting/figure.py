@@ -993,8 +993,64 @@ BOX_KEYS = frozenset(
 )
 
 _ANNOTATION_META = frozenset(
-    {"text", "s", "x", "y", "xy", "xref", "axes", "panel", "transform", "showarrow"}
+    {"text", "s", "x", "y", "xy", "xref", "yref", "axes", "panel", "transform", "showarrow"}
 )
+ANNOTATION_KEYS = ANNOTATE_KEYS | _ANNOTATION_META
+
+# Spellings accepted for where an annotation's x/y are measured. Matplotlib
+# (``axes fraction``) and Plotly (``paper`` / ``x domain``) names both work.
+_ANNOTATION_COORDS = {
+    "data": "data",
+    "x": "data",
+    "y": "data",
+    "axes": "axes",
+    "axes fraction": "axes",
+    "paper": "axes",
+    "domain": "axes",
+    "x domain": "axes",
+    "y domain": "axes",
+    "figure": "figure",
+    "figure fraction": "figure",
+}
+
+
+def annotation_coords(ann: dict, loc: str = "annotations") -> str:
+    """``data``, ``axes`` (0–1 across the panel), or ``figure`` (0–1 across the figure).
+
+    Read from ``xref`` / ``yref`` / ``xycoords`` / ``transform``; they must agree.
+    Unset means data coordinates (lon/lat on a map).
+    """
+    found = {}
+    for key in ("xref", "yref", "xycoords", "transform"):
+        raw = ann.get(key)
+        if raw is None or raw == "":
+            continue
+        name = str(raw).strip().lower()
+        if name not in _ANNOTATION_COORDS:
+            raise UsageError(
+                f"{loc}.{key} {raw!r} is not a known coordinate system; use one of "
+                f"{', '.join(sorted(_ANNOTATION_COORDS))} "
+                "(axes fraction = 0–1 across the panel, figure fraction = 0–1 across the figure)"
+            )
+        found[key] = _ANNOTATION_COORDS[name]
+    systems = set(found.values())
+    if len(systems) > 1:
+        detail = ", ".join(f"{k}={ann[k]!r}" for k in found)
+        raise UsageError(
+            f"{loc} mixes coordinate systems ({detail}); x and y must use the same one"
+        )
+    return systems.pop() if systems else "data"
+
+
+def check_annotation_keys(ann: dict, loc: str = "annotations") -> None:
+    extra = sorted(k for k in ann if k not in ANNOTATION_KEYS)
+    if extra:
+        raise UsageError(
+            f"{loc} has unknown key(s) {extra}; allowed: {', '.join(sorted(ANNOTATION_KEYS))}. "
+            "Run with --help for the annotation reference"
+        )
+    annotation_coords(ann, loc)
+
 
 # Object-form axes.xlabel / axes.ylabel: text plus position knobs.
 AXIS_LABEL_META = frozenset({"text", "loc", "pad", "coords"})
@@ -1367,9 +1423,10 @@ def apply_annotation(ax, ann: dict, loc: str = "annotations") -> None:
             float(ann["x"]) if ann.get("x") is not None else 0.0,
             float(ann["y"]) if ann.get("y") is not None else 0.0,
         )
-    xref = str(ann.get("xref") or ann.get("xycoords") or "")
+    check_annotation_keys(ann, loc)
+    coords = annotation_coords(ann, loc)
     kw = {}
-    for key in ANNOTATE_KEYS:
+    for key in ANNOTATE_KEYS - {"xycoords", "transform"}:
         if key in ann:
             kw[key] = ann[key]
     if "arrowprops" in kw:
@@ -1380,23 +1437,12 @@ def apply_annotation(ax, ann: dict, loc: str = "annotations") -> None:
         kw["xytext"] = tuple(kw["xytext"]) if isinstance(kw["xytext"], list) else kw["xytext"]
     if "bbox" in kw and isinstance(kw["bbox"], dict):
         kw["bbox"] = dict(kw["bbox"])
-    transform_name = str(ann.get("transform") or "")
-    if "domain" in xref or xref in ("paper", "figure") or transform_name in ("axes", "figure"):
-        kw["transform"] = (
-            ax.transAxes
-            if transform_name != "figure" and xref != "figure"
-            else ax.figure.transFigure
-        )
-        kw.pop("xycoords", None)
-    extra = {k: v for k, v in ann.items() if k not in ANNOTATE_KEYS | _ANNOTATION_META}
-    if extra:
-        raise UsageError(f"{loc} has unknown key(s) {sorted(extra)}")
     if "arrowprops" in kw or "xytext" in kw:
-        annotate_kw = dict(kw)
-        if "xycoords" in annotate_kw:
-            annotate_kw.pop("transform", None)
-        ax.annotate(str(text), xy=xy, **annotate_kw)
+        xycoords = {"data": "data", "axes": "axes fraction", "figure": "figure fraction"}[coords]
+        ax.annotate(str(text), xy=xy, xycoords=xycoords, **kw)
     else:
+        if coords != "data":
+            kw["transform"] = ax.transAxes if coords == "axes" else ax.figure.transFigure
         text_kw = {k: v for k, v in kw.items() if k in TEXT_KEYS}
         ax.text(xy[0], xy[1], str(text), **text_kw)
 

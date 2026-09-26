@@ -580,7 +580,7 @@ def _validate_artist_blocks(item: dict, loc: str) -> None:
 
 
 def _validate_axes_annotations(data: dict) -> None:
-    from weather_skills_plotting.figure import AXES_TEMPLATE, pick
+    from weather_skills_plotting.figure import AXES_TEMPLATE, check_annotation_keys, pick
 
     axes = data.get("axes")
     allowed = frozenset(AXES_TEMPLATE)
@@ -603,6 +603,8 @@ def _validate_axes_annotations(data: dict) -> None:
         for i, item in enumerate(items):
             if not isinstance(item, dict):
                 raise UsageError(f"plot spec {section}[{i}] must be an object")
+            if section == "annotations":
+                check_annotation_keys(item, f"plot spec annotations[{i}]")
 
 
 def trace_at(spec: dict | None, index: int = 0) -> dict:
@@ -1378,15 +1380,16 @@ SPEC_ARGUMENT_HELP = (
 )
 
 SPEC_HELP_HINT = (
-    "To see the spec keys for your inputs, run the same command with --dump-spec - "
-    "in place of --spec (keep your -i inputs), then edit that JSON and pass it back as --spec"
+    "Run with --help for every spec key, with examples. To edit the spec you already "
+    "have, run the same command with --dump-spec - in place of --spec, then pass the "
+    "edited JSON back as --spec"
 )
 
 DUMP_SPEC_ARGUMENT_HELP = (
     "Dump the assembled plot spec as JSON and skip drawing a PNG. "
     "Bare --dump-spec (or '-') prints to stdout; a path writes a file. "
-    "--output is not required. Token-expensive; omit unless you need to "
-    "inspect a key before editing --spec."
+    "--output is not required. Use it to get the current spec to modify; "
+    "for what keys exist, see --help."
 )
 
 
