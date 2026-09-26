@@ -52,6 +52,7 @@ from weather_skills_plotting.figure import (
     wrap_axes_title,
 )
 from weather_skills_plotting.spec import (
+    SPEC_HELP_HINT,
     apply_index,
     apply_layer_alpha,
     fold_layer_options,
@@ -2081,7 +2082,7 @@ def _plot_layers(
             raise UsageError(
                 f"each {where} has to be one map; "
                 f"{p['spec'].kind}:{p['spec'].path} still has {field.sizes[dim]} "
-                f"values along {dim!r}"
+                f"values along {dim!r}. {SPEC_HELP_HINT}"
             )
         steps = list(range(len(groups)))
         sdim = None

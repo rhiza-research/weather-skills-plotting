@@ -225,6 +225,10 @@ _SECTIONS = {
 
 # Keys an agent reaches for when it has a place name instead of coordinates.
 _PLACE_NAME_KEYS = frozenset({"region", "country", "place", "name", "county", "admin"})
+# Line-style keys an agent puts flat on a layer instead of under ``line``.
+_FLAT_LINE_KEYS = frozenset(
+    {"color", "c", "edgecolor", "linewidth", "lw", "linestyle", "ls", "linecolor"}
+)
 
 
 def _check_keys(obj, allowed, loc):
@@ -240,6 +244,11 @@ def _check_keys(obj, allowed, loc):
             hint = (
                 "; geo takes coordinates only — run resolve-region for a named place"
                 " and pass its bbox as geo.bbox or its polygon as geo.mask_geojson"
+            )
+        elif loc.endswith("]") and "layers[" in loc and key in _FLAT_LINE_KEYS:
+            hint = (
+                f"; line styling goes in a nested block — {loc}.line, e.g. "
+                '{"id": "b", "line": {"color": "black", "linewidth": 2.5}}'
             )
         raise UsageError(
             f"plot spec {where} is not a known key; allowed here: {', '.join(sorted(allowed))}"
@@ -1368,6 +1377,11 @@ SPEC_ARGUMENT_HELP = (
     "Paths listed in the spec are opened when no dataset flag is passed."
 )
 
+SPEC_HELP_HINT = (
+    "To see the spec keys for your inputs, run the same command with --dump-spec - "
+    "in place of --spec (keep your -i inputs), then edit that JSON and pass it back as --spec"
+)
+
 DUMP_SPEC_ARGUMENT_HELP = (
     "Dump the assembled plot spec as JSON and skip drawing a PNG. "
     "Bare --dump-spec (or '-') prints to stdout; a path writes a file. "
@@ -1383,7 +1397,7 @@ def parse_plot_spec(value):
     try:
         return load_spec(value)
     except UsageError as exc:
-        raise argparse.ArgumentTypeError(str(exc)) from None
+        raise argparse.ArgumentTypeError(f"{exc}. {SPEC_HELP_HINT}") from None
 
 
 def parse_plot_patch(value):

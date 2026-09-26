@@ -85,6 +85,10 @@ def test_normalize_spec_rejects_unknown_keys_everywhere():
         ({"bogus": 1}, "not a known key"),
         ({"geo": {"region": "Kenya"}}, "geo.region is not a known key.*run resolve-region"),
         (
+            {"layers": [{"id": "b", "kind": "outline", "path": "b.geojson", "color": "black"}]},
+            r"layers\[0\].color is not a known key.*layers\[0\].line",
+        ),
+        (
             {"geo": {"mask_geojson": {"path": "basin.geojson", "color": "black"}}},
             "geo.mask_geojson must be a GeoJSON file path string.*--layer outline:PATH",
         ),
@@ -2190,3 +2194,12 @@ def test_layer_alpha_reaches_outline_line_block():
 
     opts = fold_layer_options({"kind": "outline", "path": "b.geojson", "alpha": 0.5})
     assert opts["line"] == {"alpha": 0.5}
+
+
+def test_spec_argument_errors_point_at_dump_spec():
+    import argparse
+
+    from weather_skills_plotting.spec import parse_plot_spec
+
+    with pytest.raises(argparse.ArgumentTypeError, match=r"traces\[0\].colormap.*--dump-spec -"):
+        parse_plot_spec('{"traces": [{"input": "a", "colormap": "BrBG"}]}')
