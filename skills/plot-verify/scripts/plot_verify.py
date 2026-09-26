@@ -2,7 +2,7 @@
 # requires-python = ">=3.12,<3.13"
 # dependencies = [
 #   "weather-skills-plotting",
-#   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@plotting-refactor",
+#   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
 #   "cf-xarray",
 #   "cftime",
 #   "numpy",
@@ -65,7 +65,7 @@ from weather_skills_plotting.theme import (
 )
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.3"
+_SKILL_VERSION = "0.0.4"
 
 _aggregation_days = aggregation_days
 _extent_from_da = extent_from_da

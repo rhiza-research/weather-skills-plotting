@@ -2,7 +2,7 @@
 # requires-python = ">=3.12,<3.13"
 # dependencies = [
 #   "weather-skills-plotting",
-#   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@plotting-refactor",
+#   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
 #   "cf-xarray",
 #   "cftime",
 #   "numpy",
@@ -45,7 +45,7 @@ from weather_skills_plotting.spec import (
 )
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.2"
+_SKILL_VERSION = "0.0.3"
 
 _resolve_axis_label = resolve_axis_label
 
