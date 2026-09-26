@@ -48,7 +48,7 @@ flowchart LR
   figure. A heatmap kind and `--layer heatmap:<path>` render the same
   picture. Several heatmap traces are separate panels, one per dataset,
   each on that Zarr's lat/lon. `--layer` still stacks every input on one
-  axes. Overlays (coastlines, borders, filled lakes, admin-1) pick a
+  axes. Overlays (coastlines, borders, filled lakes, rivers, admin-1) pick a
   Natural Earth resolution from the map span and skip a layer with a
   warning if it cannot be fetched.
 - **Recipes stay Python** (verify grid, mediogram boxes). There is no
