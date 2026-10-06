@@ -416,3 +416,15 @@ def test_align_dayofyear_folds_29_february():
     }
     x = list(_data(compile(spec, {"a": ds}))[0]["x"])
     assert [v[:10] for v in x] == ["2001-02-28", "2001-02-28", "2001-03-01"]
+
+
+def test_cf_flag_field_gets_named_classes():
+    ds = make_gridded(n_time=1, name="event_hit", units=None)
+    ds["event_hit"].values[:] = np.resize([-1.0, 0.0, 1.0], ds["event_hit"].shape)
+    ds["event_hit"].attrs.update(flag_values=[-1, 0, 1], flag_meanings="disagree below hit")
+    fig = compile({"data": [_trace("a")]}, {"a": ds})
+    bar = _layout(fig)["coloraxis"]["colorbar"]
+    assert bar["ticktext"] == ["disagree", "below", "hit"]
+    assert bar["tickvals"] == [0, 1, 2]
+    z = np.asarray(_data(fig, "heatmap")[0]["z"], float)
+    assert sorted(set(z.ravel().tolist())) == [0.0, 1.0, 2.0]

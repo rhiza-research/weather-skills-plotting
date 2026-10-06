@@ -92,7 +92,8 @@ as before. Nothing is averaged silently: a dim left over after
   map share automatically. Trace-level `colorscale`, `zmin`/`zmax`
   (`marker.cmin`/`cmax`) and `colorbar` are lifted onto the axis.
 - **Class palettes.** Precipitation, SPI and percent-of-normal fields get the
-  CHC class palettes. Plotly color scales are linear, so values become class
+  CHC class palettes; CF flag fields get one class per flag, labelled with
+  `flag_meanings`. Plotly color scales are linear, so values become class
   indices with a stepped colorscale and ticks at the class edges, while the
   raw values stay in `customdata` for hover. User limits turn a class palette
   into a continuous scale.

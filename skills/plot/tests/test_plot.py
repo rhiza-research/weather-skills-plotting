@@ -194,3 +194,13 @@ def test_mask_removing_every_station(tmp_path, plot_fn, capsys):
             str(tmp_path / "x.png"),
         )
     assert "no stations remain" in capsys.readouterr().err
+
+
+def test_provenance_records_spec_and_layers(tmp_path, plot_fn):
+    grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
+    out = tmp_path / "p.png"
+    spec = {"layout": {"title": {"text": "T"}}}
+    run_skill(plot_fn, "--layer", f"heatmap:{grid}", "-o", str(out), "--spec", json.dumps(spec))
+    args = load_figure_history(out)[-1]["args"]
+    assert args["spec"] == spec
+    assert args["layer"] == [f"heatmap:{grid}"]

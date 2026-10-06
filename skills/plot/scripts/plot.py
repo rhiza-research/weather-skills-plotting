@@ -44,6 +44,10 @@ class LayerArg:
     def zarr_paths(self):
         return [Path(self.path)] if self.kind in _ZARR_LAYERS else []
 
+    def __str__(self):
+        # Provenance records str(); keep the flag's own KIND:PATH form.
+        return f"{self.kind}:{self.path}"
+
 
 def parse_layer(value):
     kind, sep, path = str(value).partition(":")

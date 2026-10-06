@@ -74,7 +74,7 @@ Do not `coarsen` or `downscale` just to draw a figure. Only `difference` and `ve
 
 ## Colors
 
-Precipitation totals get the nested absolute-mm class palette automatically: the same color always means the same millimetres, and the window follows `aggregation_period`. Anomalies get the diverging classes. Other fields get a sequential scale, or `RdBu_r` centred on zero when the data spans zero.
+Precipitation totals get the nested absolute-mm class palette automatically: the same color always means the same millimetres, and the window follows `aggregation_period`. Anomalies get the diverging classes. Fields with CF `flag_values` (e.g. `verify` hits) get one class per flag, labelled with `flag_meanings` (disagree / below / hit). Other fields get a sequential scale, or `RdBu_r` centred on zero when the data spans zero.
 
 - **A Plotly colorscale and limits:** set `colorscale`, `zmin` / `zmax` (or `marker.cmin` / `cmax` for stations) and `colorbar` on the trace. They apply to the trace's color axis. Setting limits on a class palette turns it into a continuous scale.
 - **A class palette:** `meta.palette`.

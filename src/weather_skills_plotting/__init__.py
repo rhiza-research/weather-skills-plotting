@@ -51,6 +51,10 @@ class SpecArg:
         self.ds = None
         self.datasets = None
 
+    def to_dict(self) -> dict:
+        """What provenance records for ``--spec``: the spec itself, not an object repr."""
+        return self.data
+
     def input_paths(self) -> dict:
         return dict(((self.data.get("layout") or {}).get("meta") or {}).get("inputs") or {})
 

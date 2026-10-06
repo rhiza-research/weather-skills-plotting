@@ -512,7 +512,7 @@ DEEP = ["#4c72b0", "#dd8452", "#55a868", "#c44e52", "#8172b3",
 COLORBLIND = ["#0173b2", "#de8f05", "#029e73", "#d55e00", "#cc78bc",
               "#ca9161", "#fbafe4", "#949494", "#ece133", "#56b4e9"]  # fmt: skip
 
-PALETTE_KEYS = frozenset({"colors", "bounds", "under", "over"})
+PALETTE_KEYS = frozenset({"colors", "bounds", "under", "over", "labels"})
 THEME_FILE_KEYS = frozenset({"template", "palettes"})
 _THEME_ENV = "WEATHER_SKILLS_PLOT_THEME"
 _USER_THEME_CANDIDATES = (
@@ -617,14 +617,50 @@ def parse_palette(value, *, loc="meta.palette", registry: dict | None = None) ->
     for key in ("under", "over"):
         if value.get(key) is not None:
             out[key] = str(value[key])
+    labels = value.get("labels")
+    if labels is not None:
+        n_classes = len(out.get("bounds") or []) - 1
+        if not isinstance(labels, list) or len(labels) != n_classes:
+            raise UsageError(f"{loc}.labels needs one label per class ({n_classes}) and bounds")
+        out["labels"] = [str(label) for label in labels]
     if value.get("name"):
         out["name"] = str(value["name"])
     return out
 
 
+# A three-flag field (verify's disagree / below / hit) reads red / grey / green.
+FLAG3_COLORS = ["#d73027", "#f0f0f0", "#1a9850"]
+
+
+def flag_palette(da) -> dict | None:
+    """One class per CF ``flag_values`` entry, labelled with ``flag_meanings``."""
+    raw = da.attrs.get("flag_values")
+    if raw is None:
+        return None
+    values = np.asarray(raw, dtype=float).ravel()
+    if values.size < 2:
+        return None
+    order = np.argsort(values)
+    values = values[order]
+    meanings = str(da.attrs.get("flag_meanings") or "").split()
+    if len(meanings) == values.size:
+        labels = [meanings[i].replace("_", " ") for i in order]
+    else:
+        labels = [f"{v:g}" for v in values]
+    colors = FLAG3_COLORS if values.size == 3 else [DEEP[i % len(DEEP)] for i in range(values.size)]
+    mids = ((values[:-1] + values[1:]) / 2).tolist()
+    bounds = [values[0] - 0.5, *mids, values[-1] + 0.5]
+    return {"name": "flags", "colors": colors, "bounds": bounds, "labels": labels}
+
+
 def default_palette(da) -> dict | None:
-    """The class palette a precip / SPI / percent-of-normal field gets by default."""
-    if da is None or not (is_precip(da) or is_spi(da) or is_precip_poa(da)):
+    """The class palette a flag, precip, SPI or percent-of-normal field gets by default."""
+    if da is None:
+        return None
+    flags = flag_palette(da)
+    if flags is not None:
+        return flags
+    if not (is_precip(da) or is_spi(da) or is_precip_poa(da)):
         return None
     name, colors, bounds = named_precip_scale(da)
     return {"name": name, "colors": colors, "bounds": bounds}
@@ -677,4 +713,8 @@ def discretize(values, palette: dict):
         "tickvals": [offset + j - 0.5 for j in range(m)],
         "ticktext": [f"{b:g}" for b in bounds],
     }
+    if palette.get("labels"):
+        # Named classes (CF flags): label each class at its centre, not the edges.
+        scale["tickvals"] = [offset + i for i in range(len(classes))]
+        scale["ticktext"] = list(palette["labels"])
     return slots, scale
