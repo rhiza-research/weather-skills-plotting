@@ -33,7 +33,6 @@ from weather_skills_plotting.layout import (
     axis_suffix,
     colorbar_bottom,
     colorbar_right_of,
-    colorbar_side,
     grid_shape,
     map_axes,
     map_grid,
@@ -379,16 +378,14 @@ def _assemble_map(items, user_layout, lmeta, ctx, font):
     }
     right_bars = [0] * n
     bottom = []
-    side = None
     placement = {}
     for name in axis_members:
         if (user_layout.get(name) or {}).get("showscale") is False:
             continue
         ps = covers[name]
-        if n == 1 and side is None:
-            side = name
-            placement[name] = ("side", 0)
-        elif len(ps) == n and n > 1:
+        # One panel: every colorbar stacks outward on its right. Several panels:
+        # a scale shared by all of them goes underneath, the rest beside their panel.
+        if len(ps) == n and n > 1:
             placement[name] = ("bottom", len(bottom))
             bottom.append(name)
         else:
@@ -417,7 +414,6 @@ def _assemble_map(items, user_layout, lmeta, ctx, font):
         has_panel_titles=any(panel_titles) or bool(user_titles),
         right_bars=right_bars,
         bottom_bars=len(bottom),
-        side_bar=side is not None,
         width=user_layout.get("width"),
         height=user_layout.get("height"),
         xgap=xgap,
@@ -461,8 +457,6 @@ def _assemble_map(items, user_layout, lmeta, ctx, font):
         where = placement.get(name)
         if where is None:
             axis["showscale"] = False
-        elif where[0] == "side":
-            fill_defaults(axis["colorbar"], colorbar_side(grid))
         elif where[0] == "bottom":
             fill_defaults(axis["colorbar"], colorbar_bottom(grid, where[1]))
         else:

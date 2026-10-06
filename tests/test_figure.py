@@ -366,3 +366,14 @@ def test_bind_type_mismatch():
 def test_unknown_input():
     with pytest.raises(UsageError, match="input 'zz' is not an input"):
         compile({"data": [_trace("a", input="zz")]}, {"a": make_gridded()})
+
+
+def test_two_scales_on_one_panel_do_not_overlap():
+    grid = make_gridded(n_time=1, lats=(-1.0, 0.0, 1.0), lons=(36.0, 37.0, 38.0))
+    stations = make_station(n_station=3, n_time=1)
+    stations["precip"].attrs["units"] = "mm"  # different label → its own colorbar
+    spec = {"data": [_trace("a"), _trace("b", type="scatter", meta={"bind": "points"})]}
+    layout = _layout(compile(spec, {"a": grid, "b": stations}))
+    x1, x2 = layout["coloraxis"]["colorbar"]["x"], layout["coloraxis2"]["colorbar"]["x"]
+    assert x2 > x1 + 0.05
+    assert layout["margin"]["r"] > 150  # room reserved for both bars

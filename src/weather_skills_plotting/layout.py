@@ -111,7 +111,6 @@ def map_grid(
     has_panel_titles: bool,
     right_bars: list,
     bottom_bars: int,
-    side_bar: bool,
     width=None,
     height=None,
     xgap=None,
@@ -120,8 +119,7 @@ def map_grid(
     """Canvas size, margins, per-panel domains, and colorbar anchors.
 
     ``right_bars[p]`` counts colorbars drawn to the right of panel ``p``;
-    ``bottom_bars`` counts shared horizontal bars under the grid and
-    ``side_bar`` a single shared vertical bar right of the grid. ``xgap`` /
+    ``bottom_bars`` counts shared horizontal bars under the grid. ``xgap`` /
     ``ygap`` are extra space between panels as a fraction of a panel, like
     Plotly's ``layout.grid``.
     """
@@ -138,7 +136,7 @@ def map_grid(
     gap_y = 10 + (ygap or 0) * est_h + title_h
     margin = {
         "l": 14,
-        "r": 14 + per_col_bars[-1] * bar_w + (bar_w + 20 if side_bar else 0),
+        "r": 14 + per_col_bars[-1] * bar_w,
         "t": 14 + title_h + (font * 2.6 if has_title else 0),
         "b": 14 + bottom_bars * (font * 3.2 + 30),
         "pad": 0,
@@ -206,21 +204,6 @@ def colorbar_right_of(grid: dict, p: int, slot: int) -> dict:
         "len": (y1 - y0) * 0.92,
         "lenmode": "fraction",
         "thickness": 14,
-        "title": {"side": "right"},
-    }
-
-
-def colorbar_side(grid: dict) -> dict:
-    """One vertical colorbar right of the whole grid."""
-    plot_w, _ = grid["px"]
-    return {
-        "orientation": "v",
-        "x": 1 + 12 / plot_w,
-        "xanchor": "left",
-        "y": 0.5,
-        "yanchor": "middle",
-        "len": 0.9,
-        "thickness": 16,
         "title": {"side": "right"},
     }
 
