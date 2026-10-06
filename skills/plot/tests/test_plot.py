@@ -537,7 +537,6 @@ def test_timeseries_along_draws_one_line_per_member(tmp_path, plot_fn):
 
 def test_precip_default_colormap_is_nested_window():
     from matplotlib.colors import BoundaryNorm, ListedColormap
-
     from weather_skills_plotting.theme import precip_nested_palette
 
     da = make_forecast()["tp"]
@@ -565,7 +564,6 @@ def test_precip_default_colormap_is_nested_window():
 
 def test_precip_short_period_colormap_uses_daily_window():
     from matplotlib.colors import BoundaryNorm, ListedColormap
-
     from weather_skills_plotting.theme import precip_nested_palette
 
     da = make_gridded(fill=3.0)["precip"]
@@ -584,7 +582,6 @@ def test_precip_short_period_colormap_uses_daily_window():
 
 def test_precip_anomaly_colormap_is_nested_week_window():
     from matplotlib.colors import BoundaryNorm, ListedColormap
-
     from weather_skills_plotting.theme import precip_nested_anomaly_palette
 
     da = make_gridded(fill=-25.0)["precip"]

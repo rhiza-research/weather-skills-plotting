@@ -395,7 +395,6 @@ def test_along_dim_resolves_member_alias():
 
 def test_draw_lines_along_is_one_call_one_legend_entry():
     import numpy as np
-
     from weather_skills_plotting.charts import compile_lines
 
     y = np.column_stack([np.arange(4.0), np.arange(4.0) + 1.0, np.arange(4.0) + 2.0])
@@ -410,7 +409,6 @@ def test_draw_lines_along_is_one_call_one_legend_entry():
 def test_draw_lines_along_cycle_uses_distinct_colors():
     import numpy as np
     from matplotlib.colors import to_hex
-
     from weather_skills_plotting.charts import compile_lines
 
     y = np.column_stack([np.arange(4.0), np.arange(4.0) + 1.0, np.arange(4.0) + 2.0])
@@ -597,7 +595,6 @@ def test_along_bar_overlay_writes_png(tmp_path, plot_timeseries):
 
 def test_draw_lines_applies_color_and_width():
     from matplotlib.colors import to_rgb
-
     from weather_skills_plotting.charts import compile_lines
     from weather_skills_plotting.theme import mpl_color
 

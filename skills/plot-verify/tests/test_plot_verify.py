@@ -147,7 +147,6 @@ def test_patch_flag_merges_into_spec(tmp_path, plot_fn, verify_fn):
 def test_error_scale_bias_white_at_zero():
     import numpy as np
     import xarray as xr
-
     from weather_skills_plotting.maps import error_scale
 
     da = xr.DataArray(np.array([[-2.0, 0.0], [0.5, 3.0]]), name="bias")
@@ -163,7 +162,6 @@ def test_error_scale_bias_white_at_zero():
 def test_error_scale_mae_white_at_zero():
     import numpy as np
     import xarray as xr
-
     from weather_skills_plotting.maps import error_scale
 
     da = xr.DataArray(np.array([[0.0, 1.0], [2.0, 4.0]]), name="mae")

@@ -1,1411 +1,113 @@
-"""Weather-skills plot spec: dumpable JSON that compiles to a matplotlib figure."""
+"""The plot spec: a standard Plotly figure (``{"data": [...], "layout": {...}}``).
+
+Plotly validates every key except ``meta``, which Plotly accepts on any trace
+and on ``layout`` without looking inside. The weather-skills bindings live
+there: which Zarr and variable a trace reads (``trace.meta``), and figure-wide
+map settings (``layout.meta``). This module checks those two blocks, merges a
+``--spec`` onto the spec a skill builds from its files, and dumps it.
+"""
 
 from __future__ import annotations
 
 import copy
 import json
 import re
+import sys
 from pathlib import Path
 
 from weather_skills_core.errors import UsageError
 
-from weather_skills_plotting.theme import (
-    COLORMAP_SPEC_KEYS,
-    DEFAULT_MAX_COLUMNS,
-    deep_merge,
-    parse_colormap_spec,
-)
+SPEC_VERSION = 3
 
-SPEC_VERSION = 2
-TRACE_KINDS = frozenset(
+TOP_KEYS = frozenset({"data", "layout"})
+
+# How a trace's arrays are filled from a dataset. See ``bind.py``.
+BINDS = frozenset(
+    {"field", "speed", "arrows", "points", "series", "pair", "samples", "windrose", "geojson"}
+)
+# Bind used when ``meta.bind`` is unset, by Plotly trace type.
+DEFAULT_BIND = {
+    "heatmap": "field",
+    "contour": "field",
+    "scatter": "series",
+    "scattergl": "series",
+    "bar": "series",
+    "box": "samples",
+    "barpolar": "windrose",
+}
+MAP_BINDS = frozenset({"field", "speed", "arrows", "points", "geojson"})
+
+TRACE_META_KEYS = frozenset(
     {
-        "heatmap",
-        "contour",
-        "quiver",
-        "scatter",
-        "layer",
-        "timeseries",
-        "xy",
-        "windrose",
-        "grid",
-        "mediogram",
-    }
-)
-MAP_KINDS = frozenset({"heatmap", "contour", "quiver", "scatter", "layer"})
-
-_INDEX_INT_RE = re.compile(r"[+-]?[0-9]+")
-_NON_ZARR_SUFFIXES = {".geojson", ".json", ".shp", ".gpkg", ".kml"}
-
-# Artist option blocks. Contents are checked against figure allowlists.
-ARTIST_BLOCKS = frozenset(
-    {"line", "mesh", "contour", "scatter", "bar", "quiver", "windrose", "fill", "box", "mediogram"}
-)
-
-# The one home for every knob. A knob named here may not be read anywhere else.
-TOP_KEYS = frozenset(
-    {
-        "version",
-        "skill",
-        "inputs",
-        "traces",
-        "layers",
-        "subplots",
-        "layout",
-        "theme",
-        "geo",
-        "axes",
-        "annotations",
-        "shapes",
-        "title",
-        "subplot_titles",
-        "xlabel",
-        "ylabel",
-        "cbar_label",
-        "legend",
-        "vmin",
-        "vmax",
-        "weather_skills_history",
-    }
-)
-LAYOUT_KEYS = frozenset(
-    {
-        "figsize",
-        "autosize",
-        "dpi",
-        "facecolor",
+        "bind",
+        "source",
+        "x",
+        "y",
+        "pair_on",
         "facet",
-        "colorbar",
-        "suptitle",
-        "shared_colorscale",
-        "bar_mode",
+        "along",
+        "along_color",
+        "band",
+        "align",
+        "palette",
+        "arrows",
     }
 )
-FACET_KEYS = frozenset(
-    {"rows", "columns", "max_columns", "n_panels", "wspace", "hspace", "per_trace"}
+SOURCE_KEYS = frozenset(
+    {"input", "variable", "isel", "sel", "reduce", "u", "v", "geojson", "mask_geojson", "point"}
 )
-SUPTITLE_KEYS = frozenset({"y"})
-COLORBAR_KEYS = frozenset(
-    {
-        "extend",
-        "extendfrac",
-        "extendrect",
-        "drawedges",
-        "orientation",
-        "location",
-        "pad",
-        "spacing",
-        "format",
-        "len",
-        "shrink",
-        "thickness",
-        "ticks",
-        "labels",
-        "labelpad",
-        "labelsize",
-        "ticksize",
-    }
-)
-THEME_KEYS = frozenset({"template", "colormap", "fontsize", "rc"})
-GEO_KEYS = frozenset(
-    {"extent", "bbox", "cities", "mask_geojson", "draw_boxes", "overlays", "lat", "lon"}
-)
-SUBPLOT_KEYS = frozenset(
-    {
-        "row",
-        "col",
-        "title",
-        "vmin",
-        "vmax",
-        "colormap",
-        "cbar_label",
-        "variable",
-        "index",
-        "layers",
-        "colorbar",
-    }
-)
-INPUT_KEYS = frozenset(
-    {
-        "id",
-        "path",
-        "variable",
-        "index",
-        "label",
-        "colormap",
-        "vmin",
-        "vmax",
-        "cbar_label",
-        "role",
-    }
-)
-TRACE_KEYS = (
-    frozenset(
-        {
-            "kind",
-            "input",
-            "alpha",
-            "mark",
-            "time_dim",
-            "x",
-            "y",
-            "path",
-            "along",
-            "along_color",
-            "reduce",
-            "align",
-            "band",
-            "pair_on",
-            "u_variable",
-            "v_variable",
-            "x_variable",
-            "y_variable",
-            "metric",
-            "leads",
-        }
-    )
-    | ARTIST_BLOCKS
-)
-LAYER_SCALE_KEYS = frozenset(
-    {
-        "variable",
-        "index",
-        "colormap",
-        "vmin",
-        "vmax",
-        "u_variable",
-        "v_variable",
-    }
-)
-# A layer's own opacity, without having to know which nested artist block
-# (mesh, contour, quiver, scatter) its kind actually draws with.
-LAYER_STYLE_KEYS = frozenset({"alpha"})
-LAYER_KEYS = (
-    frozenset({"id", "kind", "path", "options", "input", "raw"})
-    | LAYER_SCALE_KEYS
-    | LAYER_STYLE_KEYS
-    | ARTIST_BLOCKS
-)
+ARROW_KEYS = frozenset({"step", "scale"})
+LAYOUT_META_KEYS = frozenset({"version", "skill", "inputs", "geo", "overlays", "export"})
+GEO_KEYS = frozenset({"bbox", "mask_geojson", "point"})
+EXPORT_KEYS = frozenset({"scale"})
+OVERLAY_NAMES = ("coastline", "borders", "lakes", "rivers", "admin1")
+PAIR_ON = frozenset({"time", "year", "index"})
+# Layout lists that merge by ``name`` (Plotly's own item identity).
+NAMED_LAYOUT_LISTS = ("annotations", "shapes", "images")
 
-# Which nested artist block each map kind is drawn with, for lifting a flat
-# ``alpha`` (or, in future, another shared style knob) into it.
-_KIND_STYLE_BLOCK = {
-    "heatmap": "mesh",
-    "contour": "contour",
-    "quiver": "quiver",
-    "scatter": "scatter",
-    "outline": "line",
-}
-
-
-def apply_layer_alpha(options: dict, kind: str | None) -> dict:
-    """Let a flat ``alpha`` reach the nested artist block ``kind`` draws with.
-
-    ``layers[].alpha`` / ``traces[].alpha`` is the intuitive, kind-agnostic
-    spelling; the renderer only reads opacity off ``mesh``/``contour``/
-    ``quiver``/``scatter``. A block that already sets its own ``alpha``
-    wins over the flat one.
-    """
-    alpha = options.get("alpha")
-    block_name = _KIND_STYLE_BLOCK.get(str(kind or "").lower())
-    if alpha is None or block_name is None:
-        return options
-    block = dict(options.get(block_name) or {})
-    block.setdefault("alpha", alpha)
-    out = dict(options)
-    out[block_name] = block
-    return out
-BAR_MODES = frozenset({"grouped", "stacked", "overlay"})
-
-_SECTIONS = {
-    "layout": LAYOUT_KEYS,
-    "theme": THEME_KEYS,
-    "geo": GEO_KEYS,
-}
-
-
-# Keys an agent reaches for when it has a place name instead of coordinates.
 _PLACE_NAME_KEYS = frozenset({"region", "country", "place", "name", "county", "admin"})
-# Line-style keys an agent puts flat on a layer instead of under ``line``.
-_FLAT_LINE_KEYS = frozenset(
-    {"color", "c", "edgecolor", "linewidth", "lw", "linestyle", "ls", "linecolor"}
+
+SPEC_HELP_HINT = (
+    "Run with --help for the meta keys and recipes; every other key is standard Plotly "
+    "(https://plotly.com/python/reference/). To edit the spec a command builds, run it "
+    "with --dump-spec - in place of --spec and pass the edited JSON back"
 )
 
 
-def _check_keys(obj, allowed, loc):
-    """Raise on any key of ``obj`` outside ``allowed``, listing the valid ones."""
-    if not isinstance(obj, dict):
-        raise UsageError(f"plot spec {loc} must be an object")
-    for key in obj:
-        if key in allowed:
-            continue
-        where = f"{loc}.{key}" if loc else key
-        hint = ""
-        if loc == "geo" and key in _PLACE_NAME_KEYS:
-            hint = (
-                "; geo takes coordinates only — run resolve-region for a named place"
-                " and pass its bbox as geo.bbox or its polygon as geo.mask_geojson"
-            )
-        elif loc.endswith("]") and "layers[" in loc and key in _FLAT_LINE_KEYS:
-            hint = (
-                f"; line styling goes in a nested block — {loc}.line, e.g. "
-                '{"id": "b", "line": {"color": "black", "linewidth": 2.5}}'
-            )
-        raise UsageError(
-            f"plot spec {where} is not a known key; allowed here: {', '.join(sorted(allowed))}"
-            f"{hint}"
-        )
+# --------------------------------------------------------------------- loading
 
 
-def _validate_mask_geojson(value) -> None:
-    """``geo.mask_geojson`` is a file path; styling an edge is an outline layer's job."""
-    if value is None or isinstance(value, str):
-        return
-    raise UsageError(
-        "plot spec geo.mask_geojson must be a GeoJSON file path string, "
-        f"not {type(value).__name__}; it only blanks cells outside the polygon. "
-        "To draw the boundary, add --layer outline:PATH and style it with "
-        'layers[].line (e.g. {"color": "black", "linewidth": 3})'
-    )
-
-
-def _validate_colorbar_dict(colorbar: dict, loc: str) -> None:
-    """``layout.colorbar`` / ``subplots[].colorbar`` share this schema."""
-    _check_keys(colorbar, COLORBAR_KEYS, loc)
-    ticks, labels = colorbar.get("ticks"), colorbar.get("labels")
-    if labels is not None and ticks is None:
-        raise UsageError(f"plot spec {loc}.labels requires {loc}.ticks")
-    if ticks is not None and labels is not None and len(list(ticks)) != len(list(labels)):
-        raise UsageError(
-            f"plot spec {loc}.labels has {len(list(labels))} entries "
-            f"but ticks has {len(list(ticks))}"
-        )
-
-
-def _validate_facet_spacing(facet: dict) -> None:
-    """``layout.facet.wspace`` / ``hspace`` are GridSpec fractions (>= 0)."""
-    for key in ("wspace", "hspace"):
-        value = facet.get(key)
-        if value is None:
-            continue
-        try:
-            number = float(value)
-        except (TypeError, ValueError) as exc:
-            raise UsageError(
-                f"plot spec layout.facet.{key} must be a number; got {value!r}"
-            ) from exc
-        if number < 0:
-            raise UsageError(f"plot spec layout.facet.{key} must be >= 0; got {number}")
-
-
-def _panel_spacing_pair(value):
-    """Coerce ``--panel-spacing`` to ``(wspace, hspace)``."""
-    if isinstance(value, (list, tuple)):
-        parts = [float(item) for item in value]
-        if len(parts) == 1:
-            return parts[0], parts[0]
-        if len(parts) == 2:
-            return parts[0], parts[1]
-        raise UsageError("--panel-spacing must be W or W,H (e.g. 0.25 or 0.4,0.2)")
-    from weather_skills_plotting.figure import parse_panel_spacing
-
-    return parse_panel_spacing(value)
-
-
-def _lift_facet_titles(data: dict, facet: dict) -> None:
-    """``layout.facet.titles`` names the panels. The canonical list is ``subplot_titles``.
-
-    A ``None`` entry means "use this panel's auto title" — it is never
-    turned into the literal string ``"None"``.
-    """
-    raw = facet.pop("titles", None)
-    if raw is None:
-        raw = facet.pop("title", None)
-    if raw is None:
-        return
-    if isinstance(raw, str):
-        raw = [raw]
-    if not isinstance(raw, list):
-        raise UsageError("layout.facet.titles must be a list of panel titles")
-    if not data.get("subplot_titles"):
-        data["subplot_titles"] = [None if title is None else str(title) for title in raw]
-
-
-def _lift_trace_titles(data: dict, traces: list) -> None:
-    """``traces[].title`` is the panel title. The canonical list is ``subplot_titles``.
-
-    A trace with no ``title`` lifts as ``None`` (use that panel's auto
-    title) rather than requiring every trace to set one.
-    """
-    lifted = []
-    saw = False
-    for item in traces:
-        if not isinstance(item, dict) or "title" not in item:
-            lifted.append(None)
-            continue
-        saw = True
-        lifted.append(item.pop("title"))
-    if not saw:
-        return
-    if data.get("subplot_titles"):
-        return
-    data["subplot_titles"] = [None if title is None else str(title) for title in lifted]
-
-
-def normalize_spec(data: dict) -> dict:
-    """Validate a spec against the canonical schema, returning it unchanged.
-
-    Every knob has exactly one home (see ``TOP_KEYS`` and friends). An unknown
-    key is an error rather than a silent no-op, and a key that used to live
-    somewhere else reports the path it moved to.
-    """
-    if not isinstance(data, dict):
-        raise UsageError("plot spec must be a JSON object")
-    version = data.get("version")
-    if version is not None:
-        try:
-            version = int(version)
-        except (TypeError, ValueError) as exc:
-            raise UsageError(f"plot spec version must be an integer; got {version!r}") from exc
-        if version != SPEC_VERSION:
-            raise UsageError(
-                f"plot spec version {version} is not supported; expected {SPEC_VERSION}"
-            )
-    _check_keys(data, TOP_KEYS, "")
-    for section, allowed in _SECTIONS.items():
-        block = data.get(section)
-        if block is None:
-            continue
-        _check_keys(block, allowed, section)
-    _validate_mask_geojson((data.get("geo") or {}).get("mask_geojson"))
-    if (data.get("geo") or {}).get("overlays") is not None:
-        from weather_skills_plotting.maps import overlay_choice
-
-        overlay_choice(data["geo"]["overlays"])
-    facet = (data.get("layout") or {}).get("facet")
-    if facet is not None:
-        _lift_facet_titles(data, facet)
-        _check_keys(facet, FACET_KEYS, "layout.facet")
-        _validate_facet_spacing(facet)
-    colorbar = (data.get("layout") or {}).get("colorbar")
-    if colorbar is not None:
-        _validate_colorbar_dict(colorbar, "layout.colorbar")
-    suptitle = (data.get("layout") or {}).get("suptitle")
-    if suptitle is not None:
-        _check_keys(suptitle, SUPTITLE_KEYS, "layout.suptitle")
-        y = suptitle.get("y")
-        if y is not None and (isinstance(y, bool) or not isinstance(y, (int, float))):
-            raise UsageError(
-                "plot spec layout.suptitle.y must be a number "
-                "(figure fraction; larger moves the title up, default 0.98)"
-            )
-    colormap = (data.get("theme") or {}).get("colormap")
-    if isinstance(colormap, dict):
-        _check_keys(colormap, COLORMAP_SPEC_KEYS, "theme.colormap")
-        parse_colormap_spec(colormap)
-    inputs = data.get("inputs")
-    if inputs is not None:
-        if not isinstance(inputs, list):
-            raise UsageError("plot spec inputs must be a list of objects")
-        for i, item in enumerate(inputs):
-            if not isinstance(item, dict):
-                raise UsageError(f"plot spec inputs[{i}] must be an object")
-            _check_keys(item, INPUT_KEYS, f"inputs[{i}]")
-            if isinstance(item.get("colormap"), dict):
-                parse_colormap_spec(item["colormap"])
-    traces = data.get("traces")
-    if traces is not None:
-        if not isinstance(traces, list):
-            raise UsageError("plot spec traces must be a list of objects")
-        _lift_trace_titles(data, traces)
-        for i, item in enumerate(traces):
-            if not isinstance(item, dict):
-                raise UsageError(f"plot spec traces[{i}] must be an object")
-            _check_keys(item, TRACE_KEYS, f"traces[{i}]")
-            kind = item.get("kind")
-            if kind is not None and kind not in TRACE_KINDS:
-                raise UsageError(
-                    f"plot spec traces[{i}].kind {kind!r} is not known; "
-                    f"expected one of {', '.join(sorted(TRACE_KINDS))}"
-                )
-            _validate_artist_blocks(item, f"traces[{i}]")
-    layers = data.get("layers")
-    if layers is not None:
-        if not isinstance(layers, list):
-            raise UsageError("plot spec layers must be a list of objects")
-        for i, item in enumerate(layers):
-            if not isinstance(item, dict):
-                raise UsageError(f"plot spec layers[{i}] must be an object")
-            _check_keys(item, LAYER_KEYS, f"layers[{i}]")
-            if isinstance(item.get("colormap"), dict):
-                parse_colormap_spec(item["colormap"])
-            if isinstance((item.get("options") or {}).get("colormap"), dict):
-                parse_colormap_spec(item["options"]["colormap"])
-            _validate_artist_blocks(item, f"layers[{i}]")
-    _validate_subplots(data)
-    _validate_axes_annotations(data)
-    return data
-
-
-def _positive_int(value, loc):
-    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise UsageError(f"plot spec {loc} must be an integer >= 1; got {value!r}")
-    return value
-
-
-def _validate_subplots(data: dict) -> None:
-    """A subplot is one grid cell. Its ``layers`` stack on that cell."""
-    items = data.get("subplots")
-    if items is None:
-        return
-    if not isinstance(items, list):
-        raise UsageError("plot spec subplots must be a list of objects")
-    if not items:
-        return
-    positioned = False
-    for i, item in enumerate(items):
-        if not isinstance(item, dict):
-            raise UsageError(f"plot spec subplots[{i}] must be an object")
-        _check_keys(item, SUBPLOT_KEYS, f"subplots[{i}]")
-        if item.get("row") is not None or item.get("col") is not None:
-            positioned = True
-            _positive_int(item.get("row"), f"subplots[{i}].row")
-            _positive_int(item.get("col"), f"subplots[{i}].col")
-        if isinstance(item.get("colormap"), dict):
-            parse_colormap_spec(item["colormap"])
-        if item.get("colorbar") is not None:
-            if not isinstance(item["colorbar"], dict):
-                raise UsageError(f"plot spec subplots[{i}].colorbar must be an object")
-            _validate_colorbar_dict(item["colorbar"], f"subplots[{i}].colorbar")
-        layers = item.get("layers")
-        if not isinstance(layers, list) or not layers:
-            raise UsageError(f"plot spec subplots[{i}].layers must be a non-empty list")
-        for j, layer in enumerate(layers):
-            if not isinstance(layer, dict):
-                raise UsageError(f"plot spec subplots[{i}].layers[{j}] must be an object")
-            _check_keys(layer, LAYER_KEYS, f"subplots[{i}].layers[{j}]")
-            if not layer.get("kind"):
-                raise UsageError(f"plot spec subplots[{i}].layers[{j}] needs kind")
-            if isinstance(layer.get("colormap"), dict):
-                parse_colormap_spec(layer["colormap"])
-            _validate_artist_blocks(layer, f"subplots[{i}].layers[{j}]")
-    if positioned and any(item.get("row") is None or item.get("col") is None for item in items):
-        raise UsageError("subplots[] row and col must be set on every subplot, or on none")
-    if positioned:
-        seen = set()
-        nrows = max(item["row"] for item in items)
-        ncols = max(item["col"] for item in items)
-        for i, item in enumerate(items):
-            cell = (item["row"], item["col"])
-            if cell in seen:
-                raise UsageError(f"subplots[{i}] repeats row {cell[0]}, col {cell[1]}")
-            seen.add(cell)
-        facet = data.setdefault("layout", {}).setdefault("facet", {})
-        if facet.get("rows") is None:
-            facet["rows"] = nrows
-        if facet.get("columns") is None:
-            facet["columns"] = ncols
-        if facet["rows"] < nrows or facet["columns"] < ncols:
-            raise UsageError(
-                f"layout.facet {facet['rows']}×{facet['columns']} is smaller than "
-                f"subplots row {nrows}, col {ncols}"
-            )
-    _apply_subplot_titles(data, items, positioned)
-
-
-def _apply_subplot_titles(data: dict, items: list, positioned: bool) -> None:
-    """A cell's own ``title`` overrides whatever default already filled
-    ``subplot_titles`` (``layout.facet.titles``, ``traces[].title``, or an
-    explicit top-level ``subplot_titles``) — same default+override contract
-    as ``vmin``/``vmax``, independent of validation order. A cell with no
-    title leaves its slot as ``None`` (use that panel's auto title) rather
-    than forcing a blank string.
-    """
-    if not any(item.get("title") is not None for item in items):
-        return
-    if positioned:
-        nrows = data["layout"]["facet"]["rows"]
-        ncols = data["layout"]["facet"]["columns"]
-        n = nrows * ncols
-    else:
-        n, ncols = len(items), None
-    existing = list(data.get("subplot_titles") or [])
-    if len(existing) < n:
-        existing += [None] * (n - len(existing))
-    for i, item in enumerate(items):
-        title = item.get("title")
-        if title is None:
-            continue
-        idx = (item["row"] - 1) * ncols + (item["col"] - 1) if positioned else i
-        existing[idx] = str(title)
-    data["subplot_titles"] = existing
-
-
-def _validate_artist_blocks(item: dict, loc: str) -> None:
-    from weather_skills_plotting.figure import (
-        BAR_KEYS,
-        BOX_KEYS,
-        CONTOUR_KEYS,
-        FILL_KEYS,
-        LINE_KEYS,
-        MESH_KEYS,
-        QUIVER_KEYS,
-        SCATTER_ALIASES,
-        SCATTER_KEYS,
-        WINDROSE_KEYS,
-        normalize_aliases,
-        pick,
-    )
-
-    keys = {
-        "line": LINE_KEYS,
-        "mesh": MESH_KEYS,
-        "contour": CONTOUR_KEYS,
-        "scatter": SCATTER_KEYS,
-        "bar": BAR_KEYS,
-        "quiver": QUIVER_KEYS,
-        "windrose": WINDROSE_KEYS,
-        "fill": FILL_KEYS,
-        "box": BOX_KEYS,
-        "mediogram": frozenset({"width", "forecast", "mclimate", "mean", "legend"}),
-    }
-    for name, allowed in keys.items():
-        block = item.get(name)
-        if block is None:
-            continue
-        if name == "mediogram":
-            if not isinstance(block, dict):
-                raise UsageError(f"{loc}.{name} must be an object")
-            _check_keys(block, allowed, f"{loc}.{name}")
-            continue
-        if name == "scatter":
-            block = normalize_aliases(block, SCATTER_ALIASES, loc=f"{loc}.{name}")
-            item[name] = block
-        pick(block, allowed, loc=f"{loc}.{name}")
-
-
-def _validate_axes_annotations(data: dict) -> None:
-    from weather_skills_plotting.figure import (
-        AXES_TEMPLATE,
-        check_annotation_keys,
-        check_shape_keys,
-        pick,
-    )
-
-    axes = data.get("axes")
-    allowed = frozenset(AXES_TEMPLATE)
-    if isinstance(axes, dict):
-        pick(axes, allowed, loc="axes")
-    elif isinstance(axes, list):
-        for i, item in enumerate(axes):
-            if isinstance(item, dict):
-                pick(item, allowed, loc=f"axes[{i}]")
-            elif item is not None:
-                raise UsageError(f"plot spec axes[{i}] must be an object")
-    elif axes is not None:
-        raise UsageError("plot spec axes must be an object or a list of objects")
-    for section in ("annotations", "shapes"):
-        items = data.get(section)
-        if items is None:
-            continue
-        if not isinstance(items, list):
-            raise UsageError(f"plot spec {section} must be a list")
-        for i, item in enumerate(items):
-            if not isinstance(item, dict):
-                raise UsageError(f"plot spec {section}[{i}] must be an object")
-            if section == "annotations":
-                check_annotation_keys(item, f"plot spec annotations[{i}]")
-            else:
-                check_shape_keys(item, f"plot spec shapes[{i}]")
-
-
-def trace_at(spec: dict | None, index: int = 0) -> dict:
-    """The ``traces[index]`` object, or ``{}``. The one home for trace knobs."""
-    traces = (spec or {}).get("traces") or []
-    if not isinstance(traces, list) or index >= len(traces):
-        return {}
-    trace = traces[index]
-    return trace if isinstance(trace, dict) else {}
-
-
-def _zarr_spec_path(raw):
-    """Return a Zarr ``Path`` from a spec field, or ``None`` for ids / GeoJSON."""
-    if raw is None:
-        return None
-    text = str(raw).strip()
-    if not text:
-        return None
-    if "/" not in text and "\\" not in text and not text.endswith(".zarr"):
-        return None
-    path = Path(text)
-    if path.suffix.lower() in _NON_ZARR_SUFFIXES:
-        return None
-    return path
-
-
-class PlotSpec:
-    """Resolved (or partial) plot configuration. Decorator may set ``.ds``."""
-
-    def __init__(self, data: dict, path: Path | None = None):
-        if not isinstance(data, dict):
-            raise UsageError("plot spec must be a JSON object")
-        self.data = normalize_spec(data)
-        self.path = Path(path) if path is not None else None
-        self.ds = None
-        self.datasets = None
-
-    def zarr_paths(self):
-        paths = []
-        seen = set()
-
-        def add(raw):
-            path = _zarr_spec_path(raw)
-            if path is None:
-                return
-            key = str(path)
-            if key in seen:
-                return
-            seen.add(key)
-            paths.append(path)
-
-        for item in self.data.get("inputs") or []:
-            if isinstance(item, dict):
-                add(item.get("path"))
-        for item in self.data.get("layers") or []:
-            if not isinstance(item, dict):
-                continue
-            kind = str(item.get("kind") or "").lower()
-            if kind in {"outline", "mask"}:
-                continue
-            add(item.get("path"))
-        for trace in self.data.get("traces") or []:
-            if isinstance(trace, dict):
-                add(trace.get("x"))
-                add(trace.get("y"))
-                add(trace.get("path"))
-        return paths
-
-    def to_dict(self) -> dict:
-        return copy.deepcopy(self.data)
-
-    def __str__(self):
-        return str(self.path) if self.path is not None else "<inline spec>"
-
-    def __repr__(self):
-        return f"PlotSpec({self.path!r})"
-
-
-def panel_shape(n, rows=None, columns=None, *, max_columns: int = DEFAULT_MAX_COLUMNS):
-    """``(nrows, ncols)`` for ``n`` heatmap panels.
-
-    Default: up to ``max_columns`` columns, extra rows as needed (leftover
-    cells stay blank). When ``rows`` and/or ``columns`` are set, leftover
-    cells stay blank the same way; both given must yield a grid large
-    enough to hold ``n``.
-    """
-    if rows is not None and rows < 1:
-        raise UsageError(f"--rows must be a positive integer; got {rows}")
-    if columns is not None and columns < 1:
-        raise UsageError(f"--columns must be a positive integer; got {columns}")
-    if rows is None and columns is None:
-        ncols = min(max_columns, max(n, 1))
-        nrows = (n + ncols - 1) // ncols if n else 1
-        return nrows, ncols
-    if rows is not None and columns is not None:
-        product = rows * columns
-        if product < n:
-            raise UsageError(
-                f"--rows {rows} × --columns {columns} = {product} panels, "
-                f"but the data has {n}; the grid must hold at least {n}"
-            )
-        return rows, columns
-    if columns is not None:
-        nrows = (n + columns - 1) // columns if n else 1
-        return nrows, columns
-    ncols = (n + rows - 1) // rows if n else 1
-    return rows, ncols
-
-
-def parse_index(spec):
-    """Parse ``--index`` into ``{dim: int | list[int]}`` (e.g. ``step=0,1,2``)."""
-    if isinstance(spec, dict):
-        return spec
-    if not spec or not str(spec).strip():
-        return {}
-    values = {}
-    current = None
-    for token in str(spec).split(","):
-        if "=" in token:
-            key, _, raw = token.partition("=")
-            current = key.strip()
-            if not current:
-                raise UsageError(f"--index token {token.strip()!r} has an empty dimension name")
-            if current in values:
-                raise UsageError(f"--index dimension {current!r} is given more than once")
-            values[current] = []
-            raw = raw.strip()
-            if not raw:
-                raise UsageError(f"--index value for {current!r} is empty")
-        else:
-            raw = token.strip()
-            if not raw:
-                raise UsageError("--index spec has an empty token (stray comma)")
-            if current is None:
-                raise UsageError(f"--index token {raw!r} appears before any 'dim=' assignment")
-        if not _INDEX_INT_RE.fullmatch(raw):
-            raise UsageError(f"--index value {raw!r} for {current!r} is not an integer")
-        pos = int(raw)
-        if pos in values[current]:
-            raise UsageError(f"--index position {pos} is repeated for dimension {current!r}")
-        values[current].append(pos)
-    return {k: v[0] if len(v) == 1 else v for k, v in values.items()}
-
-
-def apply_index(da, overrides, *, list_dims=()):
-    """Select integer positions from ``overrides`` (``--index``).
-
-    A dim in ``list_dims`` may keep several positions; any other dim must be a
-    single position (the dim is then dropped). Pass ``list_dims=None`` to allow
-    a list on every dim.
-    """
-    if not overrides:
-        return da
-    allow_all_lists = list_dims is None
-    list_dims = () if list_dims is None else list_dims
-    for dim, idx in overrides.items():
-        if dim not in da.dims:
-            raise UsageError(
-                f"--index dimension {dim!r} is not in the data (dims: {list(da.dims)})"
-            )
-        if isinstance(idx, list) and not allow_all_lists and dim not in list_dims:
-            panel_desc = ", ".join(repr(d) for d in list_dims) if list_dims else "step/time"
-            raise UsageError(
-                f"--index list selection on {dim!r} is only supported "
-                f"on the panel dimension ({panel_desc}); give a single position"
-            )
-    for dim, idx in overrides.items():
-        size = da.sizes[dim]
-        positions = idx if isinstance(idx, list) else [idx]
-        seen = {}
-        for pos in positions:
-            if not -size <= pos < size:
-                raise UsageError(
-                    f"--index position {pos} is out of range for dimension {dim!r} (size {size})"
-                )
-            norm = pos % size
-            if norm in seen:
-                raise UsageError(
-                    f"--index positions {seen[norm]} and {pos} address "
-                    f"the same element of dimension {dim!r} (size {size})"
-                )
-            seen[norm] = pos
-        da = da.isel({dim: idx}, drop=True)
-    return da
-
-
-def load_spec(value) -> PlotSpec:
-    """Load a spec from a path, inline JSON, or existing mapping/PlotSpec."""
-    if isinstance(value, PlotSpec):
-        return value
-    if isinstance(value, dict):
-        return PlotSpec(value)
-    raw = str(value).strip()
-    if not raw:
-        raise UsageError("plot spec is empty")
-    # Inline JSON first. Path.is_file() stats the whole string as a filename, and
-    # Linux NAME_MAX (~255 bytes) raises OSError 36 instead of returning False.
-    if raw[:1] in "{[":
-        return _plot_spec_from_json(raw)
-    path = Path(raw)
-    try:
-        is_file = path.is_file()
-    except OSError:
-        is_file = False
-    if is_file:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return PlotSpec(data, path)
-    try:
-        return _plot_spec_from_json(raw)
-    except UsageError as exc:
-        raise UsageError(f"plot spec is not a file or JSON object: {exc}") from exc
-
-
-def _plot_spec_from_json(raw: str) -> PlotSpec:
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise UsageError(f"invalid JSON: {exc}") from exc
-    if not isinstance(data, dict):
-        raise UsageError("plot spec JSON must be an object")
-    return PlotSpec(data)
-
-
-def prune_nulls(value):
-    """Drop keys whose value is null. A null in this schema means "unset", so a
-    dumped spec shows only what was actually resolved."""
-    if isinstance(value, dict):
-        return {k: prune_nulls(v) for k, v in value.items() if v is not None}
-    if isinstance(value, list):
-        return [prune_nulls(v) for v in value]
-    return value
-
-
-def dump_spec(spec: dict | PlotSpec, path=None) -> str:
-    """Serialize a spec (optionally write ``path``; ``-`` means stdout)."""
-    data = spec.to_dict() if isinstance(spec, PlotSpec) else copy.deepcopy(spec)
-    data.setdefault("version", SPEC_VERSION)
-    normalize_spec(data)
-    data = prune_nulls(data)
-    text = json.dumps(data, indent=2, default=str) + "\n"
-    if path is None:
-        return text
-    if str(path) == "-":
-        import sys
-
-        sys.stdout.write(text)
-        return text
-    out = Path(path)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(text, encoding="utf-8")
-    return text
-
-
-def facet_with_spacing(spec: dict | None, **dims) -> dict:
-    """``rows`` / ``columns`` plus any ``wspace`` / ``hspace`` already on the spec."""
-    facet = {key: value for key, value in dims.items() if value is not None}
-    src = ((spec or {}).get("layout") or {}).get("facet") or {}
-    for key in ("wspace", "hspace"):
-        if src.get(key) is not None:
-            facet[key] = src[key]
-    return facet
-
-
-def _object_id(item: dict | None, keys: tuple[str, ...]) -> str | None:
-    """First non-empty id field on an object, in ``keys`` order."""
-    if not isinstance(item, dict):
-        return None
-    for key in keys:
-        raw = item.get(key)
-        if raw is not None and str(raw).strip() != "":
-            return str(raw)
-    return None
-
-
-def _layer_id(item: dict | None) -> str | None:
-    """Stable layer id: explicit ``id``, else ``input``."""
-    return _object_id(item, ("id", "input"))
-
-
-def merge_object_lists(
-    base,
-    overlay,
-    *,
-    id_keys: tuple[str, ...] = (),
-    label: str,
-    known_ids: set[str] | None = None,
-    id_fn=None,
-) -> list:
-    """Merge ``overlay`` objects onto ``base`` by id, else by index.
-
-    Overlay keys win. Unknown ids error (they do not append a half-built
-    entry), except an id listed in ``known_ids``, which is appended. An
-    empty overlay leaves ``base`` unchanged. When ``base`` is empty,
-    ``overlay`` is kept as-is. Identity is ``id_fn(item)`` when given
-    (e.g. a composite ``row``/``col`` position), else the first non-empty
-    field in ``id_keys`` order; an item with no identity merges by index.
-    """
-    ident_of = id_fn or (lambda item: _object_id(item, id_keys))
-    if overlay is None:
-        return copy.deepcopy(list(base or []))
-    if not isinstance(overlay, list):
-        raise UsageError(f"plot spec {label} must be a list of objects")
-    if not overlay:
-        return copy.deepcopy(list(base or []))
-    if not base:
-        return [copy.deepcopy(item) if isinstance(item, dict) else item for item in overlay]
-    out = [copy.deepcopy(item) if isinstance(item, dict) else item for item in base]
-    used_indexes: set[int] = set()
-
-    def ids_on(items):
-        found = []
-        for item in items:
-            ident = ident_of(item) if isinstance(item, dict) else None
-            if ident is not None:
-                found.append(ident)
-        return found
-
-    for item in overlay:
-        if not isinstance(item, dict):
-            raise UsageError(f"plot spec {label} entries must be objects")
-        ident = ident_of(item)
-        if ident is not None:
-            matches = [
-                i
-                for i, current in enumerate(out)
-                if isinstance(current, dict) and ident_of(current) == ident
-            ]
-            if len(matches) > 1:
-                raise UsageError(f"{label} id {ident!r} is not unique")
-            if not matches:
-                if known_ids is not None and ident in known_ids:
-                    out.append(copy.deepcopy(item))
-                    continue
-                known = ids_on(out)
-                have = ", ".join(known) if known else "none"
-                raise UsageError(
-                    f"--spec {label} id {ident!r} does not match an entry (have {have})"
-                )
-            idx = matches[0]
-        else:
-            idx = next((i for i in range(len(out)) if i not in used_indexes), None)
-            if idx is None:
-                raise UsageError(f"--spec {label} has more items than the figure")
-        used_indexes.add(idx)
-        current = out[idx] if isinstance(out[idx], dict) else {}
-        out[idx] = deep_merge(current, item)
-    return out
-
-
-def fold_layer_options(item: dict) -> dict:
-    """Renderer bag: ``options`` plus lifted scale knobs and artist blocks.
-
-    Top-level keys win so a ``--spec`` ``colormap`` / ``mesh`` replaces a
-    leftover ``options`` bag from an older dump.
-    """
-    out = dict(item.get("options") or {})
-    for key in LAYER_SCALE_KEYS | LAYER_STYLE_KEYS | ARTIST_BLOCKS:
-        if item.get(key) is not None:
-            out[key] = item[key]
-    return apply_layer_alpha(out, item.get("kind"))
-
-
-def layer_item_from_parts(
-    kind, path, options=None, *, layer_id=None, raw=None, input_id=None
-) -> dict:
-    """Build a ``layers[]`` object with scale knobs at the top level."""
-    opts = dict(options or {})
-    entry = {
-        "kind": kind,
-        "path": str(path),
-    }
-    if layer_id is not None:
-        entry["id"] = str(layer_id)
-    if input_id is not None:
-        entry["input"] = str(input_id)
-    if raw:
-        entry["raw"] = raw
-    leftover = {}
-    for key, value in opts.items():
-        if key in LAYER_SCALE_KEYS or key in LAYER_STYLE_KEYS or key in ARTIST_BLOCKS:
-            entry[key] = value
-        else:
-            leftover[key] = value
-    if leftover:
-        entry["options"] = leftover
-    return entry
-
-
-def merge_layer_lists(base, overlay) -> list:
-    """Merge ``overlay`` layer objects onto ``base`` by ``id``, else by index.
-
-    Overlay keys win. Unknown ``id`` values error (they do not append a
-    half-built layer). An empty overlay leaves ``base`` unchanged so
-    ``--spec '{"layers": []}'`` cannot wipe the figure.
-    """
-    return merge_object_lists(base, overlay, id_keys=("id", "input"), label="layers[]")
-
-
-def _merge_named_list(
-    out: dict,
-    key: str,
-    overlay,
-    *,
-    id_keys: tuple[str, ...] = (),
-    label: str,
-    known_ids: set[str] | None = None,
-    id_fn=None,
-) -> None:
-    """Merge one object list onto ``out`` when the overlay set that key."""
-    if overlay is None:
-        return
-    existing = out.get(key) or []
-    if existing:
-        out[key] = merge_object_lists(
-            existing, overlay, id_keys=id_keys, label=label, known_ids=known_ids, id_fn=id_fn
-        )
-    else:
-        out[key] = list(overlay)
-
-
-def _subplot_cell_id(item: dict | None) -> str | None:
-    """Identity for a ``subplots[]`` cell: its ``(row, col)`` when positioned.
-
-    An unpositioned cell (no ``row``/``col``) has no stable identity and
-    merges by index instead, same as an id-less ``layers[]`` entry.
-    """
-    if not isinstance(item, dict):
-        return None
-    row, col = item.get("row"), item.get("col")
-    if row is None or col is None:
-        return None
-    return f"{row}:{col}"
-
-
-def overlay_spec(base: dict, overlay: dict | None) -> dict:
-    """Deep-merge ``overlay`` onto ``base`` (overlay wins).
-
-    ``inputs[]`` merges by ``id``, ``traces[]`` by ``input`` (else ``id``),
-    ``layers[]`` by ``id`` (else ``input``), and ``subplots[]`` by ``(row,
-    col)`` (else index) — all then fall back to merge-by-index for entries
-    with no identity. A trace whose ``input`` already names an input is
-    appended, so two heatmap traces become two panels. A partial ``--spec
-    '{"traces": [{"kind": "contour"}]}'`` keeps the other trace fields. An
-    empty list does not wipe the figure.
-    """
-    if not overlay:
-        return copy.deepcopy(base) if base else {}
-    if not base:
-        base = {}
-    overlay = dict(overlay)
-    input_overlay = overlay.pop("inputs", None)
-    trace_overlay = overlay.pop("traces", None)
-    layer_overlay = overlay.pop("layers", None)
-    subplot_overlay = overlay.pop("subplots", None)
-    out = deep_merge(base, overlay)
-    _merge_named_list(out, "inputs", input_overlay, id_keys=("id",), label="inputs[]")
-    input_ids = {
-        str(item.get("id"))
-        for item in (out.get("inputs") or [])
-        if isinstance(item, dict) and item.get("id") is not None and str(item.get("id")).strip()
-    }
-    _merge_named_list(
-        out,
-        "traces",
-        trace_overlay,
-        id_keys=("input", "id"),
-        label="traces[]",
-        known_ids=input_ids,
-    )
-    _merge_named_list(out, "layers", layer_overlay, id_keys=("id", "input"), label="layers[]")
-    _merge_named_list(out, "subplots", subplot_overlay, label="subplots[]", id_fn=_subplot_cell_id)
-    return out
-
-
-# One CLI flag, one canonical spec path. overlay_flags / spec_from_flags use
-# this table so a set flag overlays --spec. An int segment indexes a list.
-FLAG_TO_SPEC = {
-    "title": ("title",),
-    "subplot_titles": ("subplot_titles",),
-    "xlabel": ("xlabel",),
-    "ylabel": ("ylabel",),
-    "cbar_label": ("cbar_label",),
-    "legend": ("legend",),
-    "vmin": ("vmin",),
-    "vmax": ("vmax",),
-    "axes": ("axes",),
-    "annotations": ("annotations",),
-    "shapes": ("shapes",),
-    "colormap": ("theme", "colormap"),
-    "colormap_bounds": ("theme", "colormap", "bounds"),
-    "colormap_under": ("theme", "colormap", "under"),
-    "colormap_over": ("theme", "colormap", "over"),
-    "fontsize": ("theme", "fontsize"),
-    "template": ("theme", "template"),
-    "rc": ("theme", "rc"),
-    "figsize": ("layout", "figsize"),
-    "dpi": ("layout", "dpi"),
-    "facecolor": ("layout", "facecolor"),
-    "per_trace": ("layout", "facet", "per_trace"),
-    "bar_mode": ("layout", "bar_mode"),
-    "colorbar": ("layout", "colorbar"),
-    "cbar_ticks": ("layout", "colorbar", "ticks"),
-    "cbar_labels": ("layout", "colorbar", "labels"),
-    "rows": ("layout", "facet", "rows"),
-    "columns": ("layout", "facet", "columns"),
-    "max_columns": ("layout", "facet", "max_columns"),
-    "wspace": ("layout", "facet", "wspace"),
-    "hspace": ("layout", "facet", "hspace"),
-    "shared_colorscale": ("layout", "shared_colorscale"),
-    # plot-compare / plot-compare-forecasts name the panel-column count --panels.
-    "panels": ("layout", "facet", "columns"),
-    "extent": ("geo", "extent"),
-    "bbox": ("geo", "bbox"),
-    "cities": ("geo", "cities"),
-    "mask_geojson": ("geo", "mask_geojson"),
-    "draw_boxes": ("geo", "draw_boxes"),
-    "lat": ("geo", "lat"),
-    "lon": ("geo", "lon"),
-    "input_path": ("inputs", 0, "path"),
-    "variable": ("inputs", 0, "variable"),
-    "index": ("inputs", 0, "index"),
-    "label": ("inputs", 0, "label"),
-    # plot-compare's two sides are inputs[0] and inputs[1].
-    "variable_a": ("inputs", 0, "variable"),
-    "variable_b": ("inputs", 1, "variable"),
-    "colormap_a": ("inputs", 0, "colormap"),
-    "colormap_b": ("inputs", 1, "colormap"),
-    "kind": ("traces", 0, "kind"),
-    "mark": ("traces", 0, "mark"),
-    "time_dim": ("traces", 0, "time_dim"),
-    "along": ("traces", 0, "along"),
-    "along_color": ("traces", 0, "along_color"),
-    "reduce": ("traces", 0, "reduce"),
-    "align": ("traces", 0, "align"),
-    "band": ("traces", 0, "band"),
-    "pair_on": ("traces", 0, "pair_on"),
-    "u_variable": ("traces", 0, "u_variable"),
-    "v_variable": ("traces", 0, "v_variable"),
-    "x_variable": ("traces", 0, "x_variable"),
-    "y_variable": ("traces", 0, "y_variable"),
-    "metric": ("traces", 0, "metric"),
-    "leads": ("traces", 0, "leads"),
-    # plot-verify's repeatable --lead titles land on the same list.
-    "lead": ("traces", 0, "leads"),
-    "align_day_of_year": ("traces", 0, "align"),
-    "quiver_scale": ("traces", 0, "quiver", "scale"),
-    "quiver_step": ("traces", 0, "quiver", "step"),
-}
-
-# Flags whose value is normalized on the way into the spec (JSON-safe types).
-_FLAG_COERCE = {
-    "figsize": lambda v: [float(v[0]), float(v[1])],
-    "bbox": lambda v: list(v),
-    "draw_boxes": lambda v: [list(b) for b in v],
-    "subplot_titles": lambda v: list(v),
-    "mask_geojson": str,
-    "input_path": str,
-    "reduce": lambda v: [v] if isinstance(v, str) else list(v),
-    "band": lambda v: list(v) if isinstance(v, (list, tuple)) else v,
-    "colormap_bounds": lambda v: [float(x) for x in v],
-    "cbar_ticks": lambda v: [float(x) for x in v],
-    "cbar_labels": lambda v: [str(x) for x in v],
-    "lead": lambda v: [v] if isinstance(v, str) else list(v),
-    "leads": lambda v: [v] if isinstance(v, str) else list(v),
-    "wspace": float,
-    "hspace": float,
-    "align_day_of_year": lambda v: "dayofyear" if v else None,
-    "quiver_step": int,
-}
-
-# CLI flags that fold into style.colormap instead of replacing a string name.
-_COLORMAP_FOLD = {
-    "colormap_bounds": "bounds",
-    "colormap_under": "under",
-    "colormap_over": "over",
-}
-
-
-def _flag_path(flag):
-    try:
-        return FLAG_TO_SPEC[flag]
-    except KeyError:
-        raise UsageError(f"{flag!r} is not a known plot flag; add it to FLAG_TO_SPEC") from None
-
-
-def _dig(spec, path, *, create):
-    """Walk ``path[:-1]``, returning the container that holds ``path[-1]``."""
-    node = spec
-    for i, segment in enumerate(path[:-1]):
-        nxt = path[i + 1]
-        blank = [] if isinstance(nxt, int) else {}
-        if isinstance(segment, int):
-            if not isinstance(node, list):
-                return None
-            while create and len(node) <= segment:
-                node.append({})
-            if segment >= len(node):
-                return None
-            node = node[segment]
-        else:
-            if not isinstance(node, dict):
-                return None
-            if segment not in node or node[segment] is None:
-                if not create:
-                    return None
-                node[segment] = blank
-            node = node[segment]
-    return node
-
-
-def _colormap_object(value) -> dict:
-    """Coerce a stored ``theme.colormap`` value into a dict."""
+def load_spec(value) -> dict:
+    """A spec from a mapping, inline JSON, or a JSON file path."""
     if value is None:
         return {}
     if isinstance(value, dict):
-        return dict(value)
-    return parse_colormap_spec(value)
-
-
-def spec_set(spec: dict, flag: str, value) -> dict:
-    """Write ``value`` at ``flag``'s canonical path, creating containers.
-
-    ``colormap-bounds`` / ``under`` / ``over`` fold into the single
-    ``theme.colormap`` object so a string name becomes
-    ``{name, bounds, …}`` instead of crashing when the path walks into a string.
-    """
-    if flag == "panel_spacing":
-        wspace, hspace = _panel_spacing_pair(value)
-        facet = spec.setdefault("layout", {}).setdefault("facet", {})
-        facet["wspace"] = wspace
-        facet["hspace"] = hspace
-        return spec
-    if flag in _COLORMAP_FOLD:
-        field = _COLORMAP_FOLD[flag]
-        coerce = _FLAG_COERCE.get(flag)
-        theme = spec.setdefault("theme", {})
-        obj = _colormap_object(theme.get("colormap"))
-        obj[field] = coerce(value) if coerce else value
-        theme["colormap"] = obj
-        return spec
-    if flag == "colormap":
-        theme = spec.setdefault("theme", {})
-        current = theme.get("colormap")
-        incoming = parse_colormap_spec(value)
-        keep = isinstance(current, dict) and any(
-            current.get(key) is not None for key in ("bounds", "under", "over", "colors")
-        )
-        if keep:
-            merged = dict(current)
-            for key, item in incoming.items():
-                if item is not None:
-                    merged[key] = item
-            theme["colormap"] = merged
-            return spec
-        raw = value.strip() if isinstance(value, str) else None
-        if raw is not None and "," not in raw and not raw.startswith("{"):
-            theme["colormap"] = raw
-            return spec
-        theme["colormap"] = incoming if incoming else value
-        return spec
-    path = _flag_path(flag)
-    holder = _dig(spec, path, create=True)
-    coerce = _FLAG_COERCE.get(flag)
-    holder[path[-1]] = coerce(value) if coerce else value
-    return spec
-
-
-def spec_get(spec: dict | None, flag: str, default=None):
-    """Read ``flag`` from its canonical path in ``spec``."""
-    if flag == "panel_spacing":
-        wspace = spec_get(spec, "wspace")
-        hspace = spec_get(spec, "hspace")
-        if wspace is None and hspace is None:
-            return default
-        if wspace is None:
-            wspace = hspace
-        if hspace is None:
-            hspace = wspace
-        return (float(wspace), float(hspace))
-    path = _flag_path(flag)
-    holder = _dig(spec or {}, path, create=False)
-    if holder is None:
-        return default
-    key = path[-1]
-    if isinstance(key, int):
-        if not isinstance(holder, list) or key >= len(holder):
-            return default
-        found = holder[key]
+        data = copy.deepcopy(value)
     else:
-        if not isinstance(holder, dict):
-            return default
-        found = holder.get(key)
-    return default if found is None else found
-
-
-def overlay_flags(spec: dict | None, **flags) -> dict:
-    """Copy ``spec`` with every set flag written to its canonical path."""
-    out = copy.deepcopy(spec) if spec else {}
-    for flag, value in flags.items():
-        if value is None or value is False or value == () or value == []:
-            continue
-        spec_set(out, flag, value)
-    return out
-
-
-def resolve_flags(spec: dict | None, **cli) -> dict:
-    """Merge named knobs over a spec: a set value wins, else the spec's value."""
-    return {
-        flag: value if value is not None and value != () and value != [] else spec_get(spec, flag)
-        for flag, value in cli.items()
-    }
-
-
-def params_from_spec(spec: dict | None) -> dict:
-    """Read every FLAG_TO_SPEC knob from ``spec`` (``None`` if unset)."""
-    return {flag: spec_get(spec, flag) for flag in FLAG_TO_SPEC}
-
-
-def spec_from_flags(**flags) -> dict:
-    """Build a spec from named knobs, with the structural defaults filled in."""
-    kind = flags.pop("kind", None) or "heatmap"
-    spec = {
-        "version": SPEC_VERSION,
-        "inputs": [{"id": "a"}],
-        "layout": {"shared_colorscale": True, "autosize": True, "facet": {}},
-        "traces": [{"kind": kind, "input": "a"}],
-        "theme": {},
-        "geo": {},
-        "annotations": [],
-        "shapes": [],
-    }
-    if kind in ("heatmap", "contour"):
-        spec["layout"]["facet"]["max_columns"] = DEFAULT_MAX_COLUMNS
-    spec = overlay_flags(spec, **flags)
-    if flags.get("figsize") is not None:
-        spec["layout"]["autosize"] = False
-    if not spec["inputs"][0].get("path"):
-        spec["inputs"] = []
-    return normalize_spec(spec)
-
-
-def sidecar_path(output: Path) -> Path:
-    """``out.png`` → ``out.plot.json``. Optional dump filename; not written unless requested."""
-    output = Path(output)
-    return output.with_name(output.stem + ".plot.json")
-
-
-def spec_inputs_from_datasets(datasets) -> list[dict]:
-    """Build ``inputs`` entries from decorator-opened Datasets (stamped paths)."""
-    from weather_skills_core.decorator import INPUT_PATH_ATTR
-
-    if isinstance(datasets, dict):
-        items = list(datasets.items())
-    else:
-        items = [(chr(ord("a") + i), ds) for i, ds in enumerate(datasets)]
-    inputs = []
-    for key, ds in items:
-        item = {"id": str(key)}
-        path = getattr(ds, "attrs", {}).get(INPUT_PATH_ATTR)
-        if path:
-            item["path"] = str(path)
-        inputs.append(item)
-    return inputs
-
-
-SPEC_ARGUMENT_HELP = (
-    "Plot spec JSON (path or inline), deep-merged onto the spec built from "
-    "the input files. Set title, traces, layout, theme, geo, axes, and the "
-    "other knobs here. inputs[] merges by id, traces[] by input (else id), "
-    "layers[] by id (else index). "
-    'Example: {"title": "Week 1", "traces": [{"kind": "contour"}]}. '
-    "Paths listed in the spec are opened when no dataset flag is passed."
-)
-
-SPEC_HELP_HINT = (
-    "Run with --help for every spec key, with examples. To edit the spec you already "
-    "have, run the same command with --dump-spec - in place of --spec, then pass the "
-    "edited JSON back as --spec"
-)
-
-DUMP_SPEC_ARGUMENT_HELP = (
-    "Dump the assembled plot spec as JSON and skip drawing a PNG. "
-    "Bare --dump-spec (or '-') prints to stdout; a path writes a file. "
-    "--output is not required. Use it to get the current spec to modify; "
-    "for what keys exist, see --help."
-)
+        raw = str(value).strip()
+        if not raw:
+            raise UsageError("plot spec is empty")
+        if raw[:1] not in "{[":
+            path = Path(raw)
+            try:
+                is_file = path.is_file()
+            except OSError:
+                is_file = False
+            if not is_file:
+                raise UsageError(f"plot spec {raw!r} is not a file or a JSON object")
+            raw = path.read_text(encoding="utf-8")
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise UsageError(f"plot spec is not valid JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise UsageError("plot spec must be a JSON object with data and/or layout")
+    check_shape(data)
+    return data
 
 
 def parse_plot_spec(value):
-    """Argparse converter for a plot spec path or inline JSON object."""
+    """Argparse converter for ``--spec``."""
     import argparse
 
     try:
@@ -1414,171 +116,324 @@ def parse_plot_spec(value):
         raise argparse.ArgumentTypeError(f"{exc}. {SPEC_HELP_HINT}") from None
 
 
-def parse_plot_patch(value):
-    """Argparse converter for a partial spec JSON object (inline or file)."""
-    import argparse
+_OLD_TOP_KEYS = frozenset(
+    {"inputs", "traces", "layers", "subplots", "theme", "geo", "axes", "title", "vmin", "vmax"}
+)
 
-    if value is None or not str(value).strip():
-        return None
-    raw = str(value).strip()
-    if raw[:1] not in "{[":
-        path = Path(raw)
-        try:
-            is_file = path.is_file()
-        except OSError:
-            is_file = False
-        if is_file:
-            raw = path.read_text(encoding="utf-8")
+
+def check_shape(data: dict) -> None:
+    """Top level is ``data`` / ``layout`` only; a version-2 spec is rejected."""
+    old = sorted(set(data) & _OLD_TOP_KEYS)
+    if old:
+        raise UsageError(
+            f"plot spec keys {', '.join(old)} are from the retired version-2 spec. "
+            "The spec is now a standard Plotly figure: traces go in data[], titles, axes, "
+            "annotations and shapes in layout, and the dataset bindings in each trace's "
+            "meta. " + SPEC_HELP_HINT
+        )
+    unknown = sorted(set(data) - TOP_KEYS)
+    if unknown:
+        raise UsageError(
+            f"plot spec top-level key(s) {', '.join(unknown)} are not allowed; "
+            "a spec has data (list of traces) and layout (object)"
+        )
+    if not isinstance(data.get("data", []), list):
+        raise UsageError("plot spec data must be a list of trace objects")
+    if not isinstance(data.get("layout", {}), dict):
+        raise UsageError("plot spec layout must be an object")
+    for i, trace in enumerate(data.get("data") or []):
+        if not isinstance(trace, dict):
+            raise UsageError(f"plot spec data[{i}] must be an object")
+        if "uid" in trace and not isinstance(trace["uid"], str):
+            raise UsageError(f"plot spec data[{i}].uid must be a string")
+
+
+# --------------------------------------------------------------------- merging
+
+
+def deep_merge(base: dict, overlay: dict) -> dict:
+    """New dict: nested dicts merge, anything else replaces."""
+    out = dict(base)
+    for key, value in overlay.items():
+        if isinstance(value, dict) and isinstance(out.get(key), dict):
+            out[key] = deep_merge(out[key], value)
+        else:
+            out[key] = copy.deepcopy(value)
+    return out
+
+
+def fill_defaults(target: dict, defaults: dict) -> dict:
+    """Set every key of ``defaults`` that ``target`` leaves unset (in place)."""
+    for key, value in defaults.items():
+        if value is None:
+            continue
+        current = target.get(key)
+        if current is None:
+            target[key] = copy.deepcopy(value)
+        elif isinstance(current, dict) and isinstance(value, dict):
+            fill_defaults(current, value)
+    return target
+
+
+def _merge_named(base: list, overlay: list, loc: str) -> list:
+    """Items with a ``name`` replace-merge the same-named item; others append."""
+    out = [copy.deepcopy(item) for item in base]
+    for item in overlay:
+        if not isinstance(item, dict):
+            raise UsageError(f"plot spec {loc} entries must be objects")
+        name = item.get("name")
+        idx = next(
+            (i for i, cur in enumerate(out) if name is not None and cur.get("name") == name),
+            None,
+        )
+        if idx is None:
+            out.append(copy.deepcopy(item))
+        else:
+            out[idx] = deep_merge(out[idx], item)
+    return out
+
+
+def merge_traces(base: list, overlay: list) -> list:
+    """Overlay traces merge onto base traces by ``uid``, else by position.
+
+    A ``uid`` the base does not have appends a new trace, so ``--spec`` can
+    add plain Plotly traces (city markers, a box outline) next to the
+    data-bound ones.
+    """
+    out = [copy.deepcopy(t) for t in base]
+    used = set()
+    for i, trace in enumerate(overlay):
+        uid = trace.get("uid")
+        if uid is not None:
+            idx = next((j for j, t in enumerate(out) if t.get("uid") == uid), None)
+            if idx is None:
+                out.append(copy.deepcopy(trace))
+                continue
+        else:
+            idx = i if i < len(out) else None
+            if idx is None:
+                have = ", ".join(str(t.get("uid")) for t in out) or "none"
+                raise UsageError(
+                    f"--spec data[{i}] has no uid and the figure has only {len(out)} trace(s) "
+                    f"(uids: {have}); give a new trace a uid to add it"
+                )
+        used.add(idx)
+        out[idx] = deep_merge(out[idx], trace)
+    return out
+
+
+def merge_spec(base: dict, overlay: dict | None) -> dict:
+    """Deep-merge ``overlay`` onto ``base``; the overlay wins."""
+    base = copy.deepcopy(base or {})
+    if not overlay:
+        return base
+    out = {"data": merge_traces(base.get("data") or [], overlay.get("data") or [])}
+    layout = dict(base.get("layout") or {})
+    over_layout = dict(overlay.get("layout") or {})
+    for key in NAMED_LAYOUT_LISTS:
+        if key in over_layout:
+            layout[key] = _merge_named(
+                layout.get(key) or [], over_layout.pop(key) or [], f"layout.{key}"
+            )
+    out["layout"] = deep_merge(layout, over_layout)
+    return out
+
+
+# ------------------------------------------------------------------ validation
+
+
+def _check_keys(obj, allowed, loc: str) -> None:
+    if not isinstance(obj, dict):
+        raise UsageError(f"plot spec {loc} must be an object")
+    for key in obj:
+        if key in allowed:
+            continue
+        hint = ""
+        if loc.endswith("geo") and key in _PLACE_NAME_KEYS:
+            hint = (
+                "; geo takes coordinates only — run resolve-region for a named place and "
+                "pass its bbox as layout.meta.geo.bbox or its polygon as mask_geojson"
+            )
+        raise UsageError(
+            f"plot spec {loc}.{key} is not a known key; allowed here: "
+            f"{', '.join(sorted(allowed))}{hint}"
+        )
+
+
+def _check_source(source, loc: str) -> None:
+    _check_keys(source, SOURCE_KEYS, loc)
+    reduce = source.get("reduce")
+    if reduce is not None and not (
+        isinstance(reduce, list) and all(isinstance(d, str) for d in reduce)
+    ):
+        raise UsageError(f"plot spec {loc}.reduce must be a list of dimension names")
+    for key in ("isel", "sel"):
+        if source.get(key) is not None and not isinstance(source[key], dict):
+            raise UsageError(f"plot spec {loc}.{key} must be an object of dim: value")
+    point = source.get("point")
+    if point is not None:
+        if not isinstance(point, dict) or set(point) != {"lat", "lon"}:
+            raise UsageError(f'plot spec {loc}.point must be {{"lat": …, "lon": …}}')
+
+
+def check_trace_meta(meta, loc: str) -> None:
+    from weather_skills_plotting.palettes import load_theme, parse_palette
+
+    _check_keys(meta, TRACE_META_KEYS, loc)
+    bind = meta.get("bind")
+    if bind is not None and bind not in BINDS:
+        raise UsageError(f"plot spec {loc}.bind {bind!r} must be one of {', '.join(sorted(BINDS))}")
+    for key in ("source", "x", "y"):
+        if meta.get(key) is not None:
+            _check_source(meta[key], f"{loc}.{key}")
+    if meta.get("pair_on") is not None and meta["pair_on"] not in PAIR_ON:
+        raise UsageError(f"plot spec {loc}.pair_on must be one of {', '.join(sorted(PAIR_ON))}")
+    if meta.get("arrows") is not None:
+        _check_keys(meta["arrows"], ARROW_KEYS, f"{loc}.arrows")
+    if meta.get("along_color") not in (None, "same", "cycle"):
+        raise UsageError(f"plot spec {loc}.along_color must be 'same' or 'cycle'")
+    band = meta.get("band")
+    if band is not None and not (
+        isinstance(band, list) and len(band) == 2 and all(isinstance(b, (int, float)) for b in band)
+    ):
+        raise UsageError(f"plot spec {loc}.band must be a percentile pair such as [10, 90]")
+    if band is not None and not meta.get("along"):
+        raise UsageError(f"plot spec {loc}.band needs {loc}.along (the dim to take percentiles over)")
+    if meta.get("align") not in (None, "dayofyear"):
+        raise UsageError(f"plot spec {loc}.align must be 'dayofyear'")
+    if meta.get("palette") is not None:
+        parse_palette(meta["palette"], loc=f"{loc}.palette", registry=load_theme()["palettes"])
+
+
+def check_layout_meta(meta) -> None:
+    _check_keys(meta, LAYOUT_META_KEYS, "layout.meta")
+    version = meta.get("version")
+    if version is not None and version != SPEC_VERSION:
+        raise UsageError(
+            f"plot spec layout.meta.version {version!r} is not supported; expected {SPEC_VERSION}"
+        )
+    inputs = meta.get("inputs")
+    if inputs is not None and not (
+        isinstance(inputs, dict) and all(isinstance(v, str) for v in inputs.values())
+    ):
+        raise UsageError('plot spec layout.meta.inputs must map input ids to paths: {"a": "x.zarr"}')
+    geo = meta.get("geo")
+    if geo is not None:
+        _check_keys(geo, GEO_KEYS, "layout.meta.geo")
+        bbox = geo.get("bbox")
+        if bbox is not None and not (isinstance(bbox, list) and len(bbox) == 4):
+            raise UsageError("plot spec layout.meta.geo.bbox must be [N, W, S, E]")
+        point = geo.get("point")
+        if point is not None and (not isinstance(point, dict) or set(point) != {"lat", "lon"}):
+            raise UsageError('plot spec layout.meta.geo.point must be {"lat": …, "lon": …}')
+        if geo.get("mask_geojson") is not None and not isinstance(geo["mask_geojson"], str):
+            raise UsageError(
+                "plot spec layout.meta.geo.mask_geojson must be a GeoJSON file path; it only "
+                "blanks cells outside the polygon. To draw the boundary add a trace with "
+                'meta.bind "geojson"'
+            )
+    overlays = meta.get("overlays")
+    if overlays is not None and not isinstance(overlays, bool):
+        if not isinstance(overlays, dict):
+            raise UsageError(
+                "plot spec layout.meta.overlays must be true, false, or an object such as "
+                '{"rivers": false, "borders": {"line": {"width": 2}}}'
+            )
+        for key, value in overlays.items():
+            if key not in OVERLAY_NAMES:
+                raise UsageError(
+                    f"plot spec layout.meta.overlays.{key} is not a known overlay; "
+                    f"allowed: {', '.join(OVERLAY_NAMES)}"
+                )
+            if not isinstance(value, (bool, dict)):
+                raise UsageError(
+                    f"plot spec layout.meta.overlays.{key} must be true, false, or a "
+                    "Plotly scatter style object"
+                )
+    if meta.get("export") is not None:
+        _check_keys(meta["export"], EXPORT_KEYS, "layout.meta.export")
+
+
+def check_meta(spec: dict) -> None:
+    """Check every ``meta`` block (Plotly does not look inside them)."""
+    seen = set()
+    for i, trace in enumerate(spec.get("data") or []):
+        uid = trace.get("uid")
+        if uid is not None:
+            if uid in seen:
+                raise UsageError(f"plot spec data[] uid {uid!r} appears more than once")
+            seen.add(uid)
+        meta = trace.get("meta")
+        if meta is not None:
+            check_trace_meta(meta, f"data[{i}].meta")
+    meta = (spec.get("layout") or {}).get("meta")
+    if meta is not None:
+        check_layout_meta(meta)
+
+
+_VALID_PROP_RE = re.compile(r"^    ([A-Za-z_][A-Za-z0-9_]*)\s*$")
+
+
+def plotly_error(exc: Exception, loc: str = "") -> UsageError:
+    """Shorten a Plotly validation error: the bad key, a suggestion, the valid keys."""
+    text = str(exc).strip()
+    head, _, tail = text.partition("Valid properties:")
+    names = [m.group(1) for line in tail.splitlines() if (m := _VALID_PROP_RE.match(line))]
+    lines = [line for line in head.splitlines() if line.strip()]
+    msg = "\n".join(lines[:12])
+    if names:
+        msg += f"\nAllowed here: {', '.join(names)}"
+    elif len(lines) > 12:
+        msg += "\n…"
+    prefix = f"plot spec {loc}: " if loc else "plot spec: "
+    return UsageError(prefix + msg + "\nKeys are standard Plotly: https://plotly.com/python/reference/")
+
+
+def validate(spec: dict) -> dict:
+    """Check the meta blocks, then let Plotly validate everything else."""
+    import plotly.graph_objects as go
+
+    check_shape(spec)
+    check_meta(spec)
     try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise argparse.ArgumentTypeError(f"expected a JSON object: {exc}") from None
-    if not isinstance(data, dict):
-        raise argparse.ArgumentTypeError("--spec JSON must be an object")
-    return data
+        go.Figure(spec)
+    except ValueError as exc:
+        raise plotly_error(exc) from None
+    return spec
 
 
-def dump_spec_dest(value):
-    """Normalize ``--dump-spec``: ``None``/``False`` (skip), ``"-"`` (stdout), or a path."""
-    if value is None or value is False:
-        return value
-    if str(value).lower() in {"none", "off", "false"}:
-        return False
-    if str(value).strip() == "":
-        return "-"
-    return value
+# --------------------------------------------------------------------- dumping
 
 
-def emit_spec(spec, dest, *, datasets=None) -> str:
-    """Write assembled spec JSON without compiling a figure or writing a PNG."""
-    import sys
+DUMP_SPEC_HELP = (
+    "Print (bare or '-') or write (a path) the merged spec this command would draw, as a "
+    "Plotly figure without data arrays, and skip drawing. Edit it and pass it back as --spec."
+)
+SPEC_ARGUMENT_HELP = (
+    "Plotly figure JSON (inline or a path), deep-merged onto the figure built from the "
+    "input files. data[] merges by uid (else position); layout.annotations / shapes merge "
+    "by name. Dataset bindings live in each trace's meta. Example: "
+    '{"data": [{"uid": "a", "type": "contour"}], "layout": {"title": {"text": "Week 1"}}}'
+)
 
-    from weather_skills_plotting.figure import attach_figure_spec
 
-    dest = dump_spec_dest(dest)
-    if dest in (None, False):
-        raise ValueError("emit_spec requires a dump destination")
-    data = spec.data if hasattr(spec, "data") else spec
-    data = copy.deepcopy(data)
-    if datasets and not (data.get("inputs") or []):
-        data["inputs"] = spec_inputs_from_datasets(datasets)
-    elif datasets:
-        filled = {item.get("id"): item for item in spec_inputs_from_datasets(datasets)}
-        for item in data.get("inputs") or []:
-            extra = filled.get(item.get("id"))
-            if extra and extra.get("path") and not item.get("path"):
-                item["path"] = extra["path"]
-    spec_out = attach_figure_spec(data, data)
-    text = dump_spec(spec_out, None if str(dest) == "-" else dest)
+def dump_spec(spec: dict, dest) -> str:
+    """Write ``spec`` as JSON to ``dest`` (``-`` is stdout)."""
+    text = json.dumps(spec, indent=2, default=str) + "\n"
     if str(dest) == "-":
         sys.stdout.write(text)
     else:
+        out = Path(dest)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(text, encoding="utf-8")
         print(f"Wrote spec: {dest}", file=sys.stderr)
     return text
 
 
-def maybe_emit_spec(spec, dump_spec, *, datasets=None) -> bool:
-    """If ``dump_spec`` is set, write JSON and return True (caller should skip the PNG)."""
-    dest = dump_spec_dest(dump_spec)
-    if dest in (None, False):
-        return False
-    emit_spec(spec, dest, datasets=datasets)
-    return True
-
-
-def resolve_bar_mode(spec: dict | None) -> str:
-    """``layout.bar_mode`` (or ``traces[].bar.mode``): grouped, stacked, or overlay."""
-    layout = (spec or {}).get("layout") or {}
-    mode = layout.get("bar_mode")
-    if not mode:
-        for tr in (spec or {}).get("traces") or []:
-            bar = tr.get("bar") if isinstance(tr, dict) else None
-            if isinstance(bar, dict) and bar.get("mode"):
-                mode = bar["mode"]
-                break
-    mode = str(mode or "grouped").lower()
-    if mode not in BAR_MODES:
-        raise UsageError(f"layout.bar_mode {mode!r} must be one of {', '.join(sorted(BAR_MODES))}")
-    return mode
-
-
-def opened_datasets_from_spec(spec: PlotSpec | None) -> list:
-    """Datasets the decorator opened from ``spec.zarr_paths()``."""
-    if spec is None:
-        return []
-    if spec.datasets:
-        return list(spec.datasets)
-    if spec.ds is not None:
-        return [spec.ds]
-    return []
-
-
-def named_datasets_from_spec(spec: PlotSpec | None) -> dict:
-    """``{input id: Dataset}`` in spec ``inputs`` order."""
-    opened = opened_datasets_from_spec(spec)
-    if not opened:
-        return {}
-    inputs = [i for i in ((spec.data.get("inputs") if spec else None) or []) if isinstance(i, dict)]
-    named = {}
-    for i, ds in enumerate(opened):
-        key = inputs[i].get("id") if i < len(inputs) else None
-        named[str(key or chr(ord("a") + i))] = ds
-    return named
-
-
-def datasets_from_cli_or_spec(
-    cli,
-    spec,
-    *,
-    min_count=1,
-    exactly=None,
-    flag="-i/--input",
-):
-    """CLI dataset list wins when given; otherwise datasets opened from ``--spec``."""
-    if cli is None:
-        datasets = []
-    elif isinstance(cli, (list, tuple)):
-        datasets = [item for item in cli if item is not None]
-    else:
-        datasets = [cli]
-    if not datasets:
-        datasets = opened_datasets_from_spec(spec)
-    n = len(datasets)
-    if exactly is not None:
-        if n != exactly:
-            raise UsageError(
-                f"pass {flag} {exactly} time(s), or --spec with {exactly} input path(s); got {n}"
-            )
-        return datasets
-    if n < min_count:
-        raise UsageError(f"pass {flag}, or --spec with input paths")
-    return datasets
-
-
-def spec_role_datasets(named: dict, prefix: str) -> list:
-    """Datasets whose spec id is ``prefix`` or ``prefix`` + an integer (``forecast1``)."""
-    items = []
-    for key, ds in named.items():
-        raw = str(key)
-        if raw == prefix:
-            items.append((0, ds))
-        elif raw.startswith(prefix):
-            suffix = raw[len(prefix) :]
-            if suffix.isdigit():
-                items.append((int(suffix), ds))
-    items.sort(key=lambda item: item[0])
-    return [ds for _i, ds in items]
-
-
-def spec_input_labels(spec_data: dict | None) -> list | None:
-    """Per-input ``label`` values, or ``None`` when the spec has none."""
-    labels = []
-    found = False
-    for item in (spec_data or {}).get("inputs") or []:
-        if not isinstance(item, dict):
-            continue
-        label = item.get("label")
-        labels.append(label)
-        if label:
-            found = True
-    return labels if found else None
+def dump_spec_dest(value):
+    """``--dump-spec``: ``None`` (draw), ``"-"`` (stdout), or a path."""
+    if value is None or value is False:
+        return None
+    if str(value).strip() == "":
+        return "-"
+    return value
