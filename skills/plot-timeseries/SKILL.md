@@ -1,8 +1,8 @@
 ---
 name: plot-timeseries
-description: Render a PNG with traces overlaid on a shared time axis, as lines or bars. Name files with repeatable -i. Set parameters in --spec: traces[].reduce, traces[].along (e.g. number for ensemble spaghetti), traces[].mark, traces[].line, layout.facet.per_trace, layout.bar_mode, title, theme.fontsize (default 16). --dump-spec prints the merged spec. Leftover non-time dims must be reduced or fanned out; nothing is averaged silently. For precipitation, run aggregate-temporal then convert-to-totals first.
+description: Overlay one series per input Zarr on a shared time axis, as lines or bars, to PNG or interactive HTML. Name files with repeatable -i. The --spec is a standard Plotly figure JSON; each input is a trace with uid a, b, … whose meta.source.reduce averages leftover dims and meta.along fans one out (number for ensemble spaghetti, with meta.band for a percentile band). Settings on the first trace apply to the rest. Nothing is averaged silently. --dump-spec prints the merged spec. For precipitation, run aggregate-temporal then convert-to-totals first.
 license: MIT
-compatibility: Requires Python 3.12 and uv.
+compatibility: Requires Python 3.12 and uv. PNG/JPG export needs Chrome (installed, or `plotly_get_chrome -y`).
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py *)
 metadata:
   version: "0.0.2"
@@ -11,143 +11,64 @@ metadata:
 
 # plot-timeseries
 
-Source-agnostic multi-input timeseries plotting. Takes one or more weather-skills
-standard dataset Zarrs and draws them on a single set of axes against the
-time/step coord. `traces[].mark` `line` (default) is a polyline with a marker at each
-time; `bar` is a grouped bar chart (one bar group per time, one bar per
-bar-styled input). A per-trace `mark` overrides that choice, so observed
-totals can be bars with a climatology drawn as a line.
+Each `-i` becomes one trace on a shared time axis: uid `a`, `b`, … in order, named after the file (or the station id). `--spec` is a **standard Plotly figure** merged onto that, with traces matched by `uid`. Everything except `meta` is plain Plotly: `type: "bar"`, `line`, `marker`, `layout.barmode`, `layout.yaxis2`, `layout.grid`. The `-o` suffix picks `.png`, `.jpg`, or `.html`.
 
-Each `--input` is one legend series. A leftover non-time dim can be fanned
-with `traces[].along` (typically `number` / `member`): every value along that dim
-becomes a line. `along_color` `same` shares one color and one legend
-entry (ensemble spaghetti). `cycle` paints each value a distinct
-color with its own legend entry (analog years concatenated on one dim). That is
-how to plot 101 ensemble-member difference traces from a
-single Zarr — do not split members into 101 `--input` files (capped at 26
-inputs). `along` traces are always lines and may overlay bar-styled inputs.
+**Settings on `data[0]` apply to every series that leaves them unset:** `meta.source.variable`, `meta.source.reduce`, `meta.along`, `meta.along_color`, `meta.band`, `meta.align`. Set them once on trace `a`.
 
-1D inputs (only a time-like dim left after `inputs[].variable`) plot as-is. Any other
-non-time dim must be named in `traces[].reduce` (mean) or `along` (one line per
-value). There is no silent averaging, and no reference / climatology overlay
-beyond passing a second `--input`.
+## Dimensions
 
-A forecast input whose axis is `step` (timedelta lead times) plus a scalar
-init `time` is plotted against **valid time** (`init + step`) so the x-axis
-shows calendar dates, not raw nanoseconds. Run `step-to-time` first if you
-need a real `time` dim for other skills (`difference`, `verify`).
+A series keeps one time axis, either `time` or a forecast `step`. A forecast is plotted against valid time (`init + step`). Every other dim must be:
 
-For a single-input quick-look, use the `plot` skill with
-`traces[0].kind` `timeseries`. Leftover non-time dims are still not averaged: set
-`traces[].reduce` once per dim or `along` to fan them out.
+- **averaged:** `meta.source.reduce: ["latitude", "longitude"]`
+- **selected:** `meta.source.isel: {"number": 0}`, or `meta.source.sel: {"latitude": -1.3}` (nearest)
+- **fanned out:** `meta.along: "number"`, one line per member. `along_color: "same"` gives one color and one legend entry; `"cycle"` gives each value its own color. `band: [10, 90]` shades the 10–90% range around the mean.
 
-## Before guessing a flag or a key
+A leftover dim is an error that names the fix; nothing is averaged silently. For 101 ensemble members use `along` on one input, not 101 `-i` files (at most 26 inputs).
 
-Every drawing choice besides `-i`/`-o` is a JSON key under `--spec` (see
-**Parameters** below); an unknown or misplaced key is a hard error listing
-every valid key at that level, not a silent no-op. If you don't already
-know the shape of `--spec`, run `--help`: after the flags it prints the plot
-spec reference (every section and key, with recipes), rather than guessing
-keys one at a time. To modify a figure you already drew, `--dump-spec -`
-with the same files prints its current spec to edit and pass back. And render once and look at
-the PNG before trying another variation — the `plot hash` printed after a
-render only tells you the pixels changed, never what changed or how it
-looks.
+## Layout
 
-## When to use
+| Goal | `--spec` |
+| --- | --- |
+| Bars for one series | `{"data": [{"uid": "a", "type": "bar"}]}` |
+| Stacked or overlaid bars | `{"layout": {"barmode": "stack"}}` (`group` is the default, `overlay`) |
+| Highlight a series | `{"data": [{"uid": "b", "line": {"color": "black", "width": 3, "dash": "dash"}}]}` |
+| One panel per series (independent y) | `{"layout": {"grid": {"rows": 2, "columns": 1, "pattern": "coupled"}}}` |
+| Second y-axis | `{"data": [{"uid": "b", "yaxis": "y2"}], "layout": {"yaxis2": {"overlaying": "y", "side": "right"}}}` |
+| Seasonal overlay of years | `{"data": [{"uid": "a", "meta": {"align": "dayofyear"}}]}` |
+| Title, labels, size | `{"layout": {"title": {"text": "…"}, "yaxis": {"title": {"text": "mm"}}, "width": 1200, "font": {"size": 18}}}` |
 
-- Comparing the same variable across two or more datasets (forecast vs
-  observation, or two models) as lines or bars, or as `layout.facet.per_trace`
-  when the y-scales should stay independent.
-- Plotting every ensemble member from one forecast Zarr
-  (`traces[].along` `number`), optionally with a 1D overlay.
-- Highlighting one series (`traces[].line`, matched by `input` id).
-- Overlaying a climatology line on observed bars (`traces[].mark` `bar` on
-  one input and `line` on the other).
-- Plotting a single dataset as a 1D timeseries when you want explicit
-  control over which dims are reduced. Period totals often read better as
-  `mark` `bar`.
+Series on one y-axis in different units print a warning and still render; give them separate panels or a second axis.
 
-For maps of one dataset over time, use `plot`.
-
-## Usage
+## Command line
 
 ```
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py -i <a.zarr> [-i <b.zarr> ...] -o <out.png> \
-    --spec '{"inputs":[{"variable":"tp"}],"traces":[{"reduce":["latitude","longitude"],"mark":"line"}],"title":"Forecast"}'
-
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py -i <a.zarr> [-i <b.zarr> …] -o <out.png|.html> [--spec JSON]
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py -i <a.zarr> --dump-spec -
 ```
 
-### Arguments
-
-- `--input`, `-i` — input Zarr; repeat the flag for each series. Order is the legend order. Optional when `--spec` lists input paths.
-- `--output`, `-o` — PNG path.
-- `--spec` — JSON object or path, always deep-merged onto the spec built from the opened files. Your values win. `inputs[]` merges by id, `traces[]` by `input` (else id). A `patch` key inside the object is rejected.
-- `--dump-spec` — write the merged spec as JSON and skip the PNG. Bare `--dump-spec` or `-` prints to stdout. Use it to get the current spec to modify; for what keys exist, use `--help`.
-
-### Parameters (`--spec`)
-
-One internal trace per input, kind `timeseries`, mark `line`. `layout.bar_mode` defaults to `grouped`. `along`, `along_color`, `align`, `band`, and `time_dim` are read from `traces[0]` and apply to every series. `traces[].reduce` is per series; a trace that omits it uses `traces[0].reduce`. `inputs[].variable` is per input; an input that omits it uses `inputs[0].variable`. Per-series `line`, `bar`, and `mark` stay on that trace.
-
-- `inputs[].variable`, `inputs[].label`, `title`, `xlabel`, `ylabel`.
-- `traces[].reduce` — dims to average. Required for leftover non-time dims unless that dim is `along`.
-- `traces[0].along` — fan one leftover dim into lines (`number`). `along_color` is `same` or `cycle`.
-- `traces[].mark` — `line` or `bar`. `layout.bar_mode` — `grouped`, `stacked`, or `overlay`.
-- `traces[0].align` — `dayofyear` to overlay a seasonal axis. `traces[0].band` — percentile pair, e.g. `[10, 90]`, and it requires `along`.
-- `layout.facet.per_trace` — one panel per input. `layout.figsize` as `[W, H]`. `theme.fontsize` (default 16), `theme.template`.
-- Per-series style: `traces[].line` (`color`, `linewidth`, `linestyle`, `marker`, `markersize`, `alpha`, `zorder`) or `traces[].bar`. Match a series with `traces[].input` (`a`, `b`, …) or by index.
-
-### Output
-
-A PNG at `--output`. Stdout prints `plot hash` (sha256 of RGB pixels) and
-`data: not null` or `data: NULL`. `NULL` means inspect-zarr the inputs. A
-changed hash only proves the pixels differ, not what changed or whether it
-looks right — never use hash comparisons to answer a layout or appearance
-question; always look at the PNG. `--dump-spec` skips the PNG and this
-report.
-Overlay mode is a single axes (default `figsize=(10, 6)`).
-`layout.facet.per_trace` is one stacked panel per input. Override the canvas with
-`layout.figsize`. One series per input
-(line with markers, `along` spaghetti, or bars; a per-trace `mark` of `line`
-can overlay a line on bars), legend below the traces. The y-axis label is the variable `long_name` (then
-`GRIB_name`, then the variable name) plus `[<units>]` when the variable
-carries a `units` attribute. Units are a short display form (`mm/day`,
-`°C`), not the on-disk CF string.
-
-### Input units
-
-In overlay mode, all traces share one y-axis whose label takes the units of the
-first input. When the overlaid inputs carry the plotted variable in differing
-`units`, series in different units are drawn against a single scale and labeled
-with only one of them. The skill prints a warning to stderr naming the distinct
-units and still renders (exit status 0); set `layout.facet.per_trace` for independent
-y-axes. It is a rendering caveat, not a hard error.
-Only inputs that carry a `units` attr participate in the comparison.
-
-### Provenance
-
-The decorator stamps a single `weather_skills_history` JSON array into the PNG
-metadata. Read-back:
-
-```bash
-python3 -c "from PIL import Image; import json; img = Image.open('out.png'); print(json.loads(img.info['weather_skills_history']))"
-```
+`--help` lists every `meta` key with recipes. `--theme-file` takes `{"template": <Plotly template>, "palettes": {…}}`.
 
 ## Examples
 
 ```bash
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py \
-    -i /tmp/chirps.zarr -i /tmp/imerg.zarr -o /tmp/precip_panels.png \
-    --spec '{"inputs":[{"variable":"precip","label":"CHIRPS"},{"label":"IMERG"}],"traces":[{"reduce":["latitude","longitude"]}],"layout":{"facet":{"per_trace":true}}}'
+# CHIRPS and IMERG area means, one panel each
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py -i /tmp/chirps.zarr -i /tmp/imerg.zarr -o /tmp/precip.png \
+    --spec '{"data": [{"uid": "a", "name": "CHIRPS", "meta": {"source": {"reduce": ["latitude", "longitude"]}}},
+                      {"uid": "b", "name": "IMERG"}],
+             "layout": {"grid": {"rows": 2, "columns": 1, "pattern": "coupled"}}}'
 
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py \
-    -i /tmp/ens_diff.zarr -o /tmp/ens_traces.png \
-    --spec '{"inputs":[{"variable":"tp"}],"traces":[{"reduce":["latitude","longitude"],"along":"number","along_color":"same"}],"title":"Ensemble difference traces"}'
+# Every ensemble member, interactive
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py -i /tmp/ens_diff.zarr -o /tmp/members.html \
+    --spec '{"data": [{"uid": "a", "meta": {"along": "number", "source": {"reduce": ["latitude", "longitude"]}}}],
+             "layout": {"title": {"text": "Ensemble difference traces"}}}'
 
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py \
-    -i /tmp/obs.zarr -i /tmp/clim.zarr -o /tmp/obs_vs_clim.png \
-    --spec '{"traces":[{"mark":"bar","reduce":["latitude","longitude"]},{"input":"b","mark":"line","line":{"linestyle":"--","linewidth":2.5,"marker":"none"}}],"title":"30-day precip vs climatology"}'
+# Observed bars with a dashed climatology line
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py -i /tmp/obs.zarr -i /tmp/clim.zarr -o /tmp/obs_vs_clim.png \
+    --spec '{"data": [{"uid": "a", "type": "bar", "meta": {"source": {"reduce": ["latitude", "longitude"]}}},
+                      {"uid": "b", "mode": "lines", "line": {"dash": "dash", "width": 2.5}}],
+             "layout": {"title": {"text": "30-day precip vs climatology"}}}'
 ```
 
-`--dump-spec -` prints the merge when you need to inspect a key. Edit `--spec` and run again.
+## Output
+
+The figure at `--output`, 1000×600 px by default (2× pixels in PNG), legend below. The y-axis label is the variable's `long_name` plus short units. PNG/JPG print a pixel `plot hash` and `data: not null` / `NULL` (`NULL` means all-NaN input; run `inspect-zarr`). Look at the image rather than comparing hashes. Provenance is embedded in the PNG metadata or the HTML `<meta>` tag.

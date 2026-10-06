@@ -1,8 +1,8 @@
 ---
 name: plot
-description: Render a 2D heatmap, filled-contour map, 1D time series, xy scatter, wind-rose, u/v quiver, or layered map PNG from weather-skills standard dataset Zarrs. Side-by-side maps on different grids (CHIRPS 0.05° next to ECMWF 1.5°) are one repeated -i per file: each file is its own heatmap panel on its own lat/lon. Do not coarsen them onto one grid. --layer stacks inputs on a single map and does not make a panel per dataset. Name files with repeatable -i, --x/--y, or repeatable --layer KIND:PATH. Set every other parameter in --spec; --help lists every spec key (titles, spacing, colorbar, annotations, shapes, outlines) with recipes. Named places (countries, counties): get a bbox or polygon from resolve-region first; geo takes coordinates only. For precipitation, run aggregate-temporal then convert-to-totals first. For a lead-week verification grid, use plot-verify.
+description: Render a map (heatmap, filled contour, stations, wind quiver), time series, xy scatter, or wind rose from weather-skills standard dataset Zarrs as PNG, JPG, or interactive HTML. The --spec is a standard Plotly figure JSON; dataset bindings go in each trace's meta. Side-by-side maps on different grids (CHIRPS 0.05° next to ECMWF 1.5°) are one -i per file, each on its own axes and grid; do not coarsen them onto one grid. --layer KIND:PATH stacks files on one map. --help lists the meta keys and recipes. Named places: get a bbox or polygon from resolve-region first. For precipitation, run aggregate-temporal then convert-to-totals first. For a lead-week verification grid, use plot-verify.
 license: MIT
-compatibility: Requires Python 3.12 and uv.
+compatibility: Requires Python 3.12 and uv. PNG/JPG export needs Chrome (installed, or `plotly_get_chrome -y`).
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py *)
 metadata:
   version: "0.0.2"
@@ -11,230 +11,137 @@ metadata:
 
 # plot
 
-Name the files on the command line. Put every drawing choice in `--spec`.
+Name the files on the command line. Describe the figure in `--spec`, which is a **standard Plotly figure**: `{"data": [traces], "layout": {…}}`. Every key is Plotly's own ([reference](https://plotly.com/python/reference/)), so titles, fonts, axes, colorbars, legends, annotations and shapes work exactly as they do in Plotly. The only extra piece is `meta`, Plotly's free-form field, which says which dataset a trace draws.
 
-Kind, variable, titles, colormap, map window, panel layout, index, reduce, and font size are spec keys: `traces[0].kind`, `inputs[0].variable`, `title`, `theme.colormap`, `geo.bbox`, `layout.facet.rows` / `columns`, `inputs[0].index`, `traces[0].reduce`, `theme.fontsize`. `--layer` is `KIND:PATH` only; options for that layer go on the matching `layers[]` entry. A `patch` key inside the JSON is rejected.
+The output format follows the `-o` suffix: `.png`, `.jpg`, or `.html` (interactive, with hover values; works offline).
 
-## Before guessing a flag or a key
+## How a spec is built
 
-There is no `--rows`, `--title`, `--fontsize`, `--cbar-label`, `--patch`, or any other per-knob flag — only the ones in **Command line** below. Every drawing choice is a JSON key under `--spec`, and an unknown or misplaced key is a hard error listing every valid key at that level (never a silent no-op). Do **not** discover the spec by submitting guesses one at a time:
+The command builds a figure from the files you name, then merges `--spec` onto it:
 
-1. Run `--help`. After the flags it prints the **plot spec reference**: every kind, every spec section and key with what it does, annotation coordinates, shapes, artist-block keys, and copy-paste recipes (bigger titles, panel spacing, colorbar, annotations, outlines). This is the reference — it is generated from the validator's own key lists, so it is always complete.
-2. To change a figure you already drew, run the same command with `--dump-spec -` in place of `--spec`. It prints the spec that command would draw; edit that JSON and pass it back as `--spec`. It is the current spec, not documentation.
-3. Write one `--spec`, render once, and look at the resulting PNG (or run `inspect-figure` on it) before trying another variation. The `plot hash` printed after a render tells you only that the image changed, not what changed or how it looks — never use hash comparisons to choose between layout options (a title's position, panel spacing, colorbar placement). Look at the pixels.
+- `data[]` merges by `uid`. Files are `a`, `b`, `c`, … in `-i` / `--layer` order, and `x` / `y` for `--x` / `--y`. A `data[]` entry with no `uid` merges by position, and a new `uid` adds a trace.
+- `layout.annotations` and `layout.shapes` merge by `name`. Everything else in `layout` is deep-merged.
+- Your values win.
 
-## Side by side, or one map
+Run the same command with `--dump-spec -` in place of `-o` to print the figure it would draw, edit that JSON, and pass it back with `--spec`. A dumped spec replays on its own: the file paths are kept in `layout.meta.inputs`.
+
+What the command builds from each file:
+
+| File | Trace |
+| --- | --- |
+| lat/lon grid | `heatmap`, one panel per `time` or `step` value (ensemble `number` is averaged) |
+| `station_id` / `point_id` data | `scatter` markers at the stations, colored by value (`meta.bind: "points"`) |
+| 1-D along time | `scatter` line (`meta.bind: "series"`) |
+| `--x` + `--y` | `scatter` of one series against the other (`meta.bind: "pair"`) |
+
+## Panels and layers
 
 | Goal | How |
 | --- | --- |
-| Two datasets in one PNG, each on its own lat/lon (0.05° beside 1.5°) | Pass `-i` once per file. Put a `subplots` entry on each cell. `row` and `col` are 1-based. `layers` on that cell stack. The cell's `title`, `vmin`, `vmax`, `colormap`, `cbar_label`, and `colorbar` style that cell; a key on the layer wins. |
-| Those same datasets drawn on top of each other | `--layer`. One axes. This does not make a panel per dataset. `layers[].panel` is not a key. |
-| Several times or forecast steps of one dataset | One heatmap trace. `layout.facet.rows` and `columns` tile those slices. |
+| Two datasets side by side, each on its own grid | Repeat `-i`. Trace `a` sits on axes `x`/`y`, trace `b` on `x2`/`y2`, and so on. Each panel keeps its own lat/lon spacing and gets its own colorbar. Each input must already be one map: select or aggregate the time first. |
+| Datasets drawn on top of each other | `--layer heatmap:a.zarr --layer scatter:stations.zarr --layer outline:kenya.geojson`. Every trace on the same axes stacks on one map. Same-variable layers share a colorbar. |
+| Several times or steps of one dataset | One `-i`. The trace panels its `time` / `step` dim. `layout.grid.rows` / `columns` shape the grid (default up to 4 columns). |
+| One colorbar for side-by-side maps | Point both traces at the same axis: `"coloraxis": "coloraxis"`. |
 
-Different spacing is expected. Do not `coarsen` or `downscale` just to draw the figure. A shared lat/lon grid is only for `difference` and `verify`, which subtract cell by cell.
+Panel titles are annotations named `panel-title-1`, `panel-title-2`, …. Rename one with `{"layout": {"annotations": [{"name": "panel-title-2", "text": "ECMWF"}]}}`. Panel and colorbar spacing is computed for you. `layout.grid.xgap` / `ygap` add extra space, as a fraction of a panel. `layout.width` / `height` set the canvas size.
 
-Each side-by-side trace has to already be one map. A `time` or `step` longer than one value is an error — aggregate it first (`aggregate-temporal`, then `convert-to-totals` for precipitation).
+Do not `coarsen` or `downscale` just to draw a figure. Only `difference` and `verify` need a shared grid.
 
-## Panel spacing on map grids
+## The `meta` keys
 
-Every figure — map or chart, one panel or many — is laid out by matplotlib's constrained-layout engine, which redraws its margins from the actual rendered content every time. It automatically reserves room for panel titles, the figure title, and colorbars, including a row whose title happens to wrap onto two lines while its neighbors don't. You do **not** need to set `layout.facet.wspace` / `hspace` or `layout.suptitle.y` for a normal multi-row or multi-column map grid — that used to be required (Cartopy axes broke the old `tight_layout`-based sizing pass), it no longer is.
+`data[].meta`:
 
-`layout.facet.wspace` / `hspace` still exist as optional fine-tuning — set them if you want more breathing room than the automatic layout gives you, not to fix crushed or overlapping panels:
+| Key | Meaning |
+| --- | --- |
+| `bind` | How the arrays are filled: `field` (grid → heatmap/contour), `speed` (wind speed from u/v), `arrows` (u/v arrows), `points` (stations), `geojson` (boundary lines), `series` (1-D line or bar), `pair` (xy), `samples` (box per step), `windrose` (barpolar). The default comes from the trace type. |
+| `source` | `{input, variable, isel, sel, reduce, u, v, geojson, mask_geojson, point}`. `reduce` lists dims to average. **Nothing is averaged silently**: a leftover dim is an error naming the fix. |
+| `facet` | The dim to panel (default `step` or `time`); `false` turns paneling off. |
+| `along`, `along_color`, `band` | Series: one line per value of a dim (`"number"` gives ensemble spaghetti). `along_color` is `same` (default) or `cycle`. `band: [10, 90]` shades a percentile band around the mean. |
+| `align` | Series: `"dayofyear"` overlays years on one seasonal axis. |
+| `pair_on`, `x`, `y` | Pair: the two sources and how they join (`time`, `year`, `index`). |
+| `palette` | Class palette: a name (`ppt_daily`, `ppt_week`, `ppt_month`, `ppt_season`, `ppt_anom_*`, `spi`, `ppt_poa`, …), a color list, or `{colors, bounds, under, over}`. |
+| `arrows` | `{step, scale}`: thin to every Nth cell; degrees of arrow per unit of speed. |
 
-```bash
---spec '{"layout":{"facet":{"rows":2,"columns":4,"wspace":0.15,"hspace":0.35}}}'
-```
+`layout.meta`:
 
-A figure `title` that is wider than the figure itself wraps onto more lines automatically — a centered figure title does not grow the canvas to fit itself, so without wrapping it would get cut off at the left and right edges instead. Panel titles already wrapped the same way; nothing to set for either case.
+| Key | Meaning |
+| --- | --- |
+| `geo.bbox` | `[N, W, S, E]` map window; subsets every input. There is no `geo.region`: run `resolve-region` and pass its bbox. |
+| `geo.mask_geojson` | Blank map cells outside a polygon (does not draw it; add a `geojson` trace for the edge). |
+| `geo.point` | `{lat, lon}` for `samples` traces. |
+| `overlays` | Base map: `true` (default), `false`, or per layer, e.g. `{"rivers": false, "admin1": true, "borders": {"line": {"width": 2}}}`. Layers: `coastline`, `borders`, `lakes`, `rivers`, `admin1` (Natural Earth; scale follows the map span). |
+| `export.scale` | PNG/JPG pixel multiplier (default 2). |
 
-## Figure-wide vs per-panel settings
+## Colors
 
-One rule covers every knob that can vary panel by panel: a figure-level setting is the default that applies to **every** panel; a panel-specific key narrows or overrides it for just that panel.
+Precipitation totals get the nested absolute-mm class palette automatically: the same color always means the same millimetres, and the window follows `aggregation_period`. Anomalies get the diverging classes. Other fields get a sequential scale, or `RdBu_r` centred on zero when the data spans zero.
 
-| Setting | Figure-wide default | Per-panel override |
-| --- | --- | --- |
-| Color scale, colormap, colorbar label | `vmin` / `vmax` / `theme.colormap` / `cbar_label` (or `inputs[].*`) | `subplots[].vmin` / `.vmax` / `.colormap` / `.cbar_label` |
-| Colorbar styling (ticks, labels, size, …) | `layout.colorbar` | `subplots[].colorbar` — same keys, deep-merged onto the figure default for that cell's own colorbar only |
-| Titles | `layout.facet.titles` / `traces[].title` / top-level `subplot_titles` | `subplots[].title` |
-| Annotations and shapes | An `annotations[]` / `shapes[]` entry with no `panel` | Set `panel` on that entry to an int (one panel) or a list of ints (a subset) |
+- **A Plotly colorscale and limits:** set `colorscale`, `zmin` / `zmax` (or `marker.cmin` / `cmax` for stations) and `colorbar` on the trace. They apply to the trace's color axis. Setting limits on a class palette turns it into a continuous scale.
+- **A class palette:** `meta.palette`.
+- **A whole color axis:** `layout.coloraxis` (or `coloraxis2`, …), e.g. `{"layout": {"coloraxis": {"colorbar": {"title": {"text": "Rain [mm]"}}}}}`.
 
-**Breaking change:** an `annotations[]` / `shapes[]` entry with no `panel` (or `axes`) used to draw on panel 0 only. It now draws on **every panel**. If an existing spec relied on the old default targeting just the first panel, add `"panel": 0` explicitly.
-
-`subplots[].colorbar` only works when that cell's colorbar isn't shared with another cell's (i.e. the cells have distinct `vmin`/`vmax`/`colormap`, or `layout.shared_colorscale` isn't `true`) — one physical colorbar can't have two different styles, so a conflicting override is a hard error naming the cells involved.
+The colorbar label defaults to the variable's `long_name` and short units (`Total precipitation [mm]`). Dates belong in titles.
 
 ## Command line
 
 ```
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i <in.zarr> -o <out.png> \
-    --spec '{"inputs":[{"variable":"tp"}],"traces":[{"kind":"heatmap"}],"title":"Week 1"}'
-
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -o <out.png> \
-    --layer heatmap:<a.zarr> --layer scatter:<b.zarr> \
-    --spec '{"title":"IMERG vs TAHMO","layers":[{"id":"a","variable":"precip"},{"id":"b","variable":"precip"}]}'
-
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --x <x.zarr> --y <y.zarr> -o <out.png> \
-    --spec '{"traces":[{"kind":"xy","pair_on":"year"}]}'
-
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i <in.zarr> [-i <in2.zarr> …] -o <out.png|.html> [--spec JSON]
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --layer KIND:PATH [--layer …] -o <out.png> [--spec JSON]
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --x <x.zarr> --y <y.zarr> -o <out.png> [--spec JSON]
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i <in.zarr> --dump-spec -
 ```
 
-- `-i`, `--input` — repeatable Zarr. One file is one heatmap, contour, or quiver panel. `timeseries` and `windrose` take a single `-i`. Mutually exclusive with `--layer` and with `--x` / `--y`. Optional when `--spec` already lists paths and no dataset flag was passed.
-- `--x` / `--y` — the two Zarrs for `traces[0].kind` `xy`.
-- `--layer` — repeatable `KIND:PATH` only (`heatmap`, `scatter`, `quiver`, `outline`, `mask`). Layer ids are `a`, `b`, `c`, … in this order. Options go on `layers[]` in `--spec`, matched by that id.
-- `-o`, `--output` — PNG path. Required unless `--dump-spec` is set.
-- `--spec` — JSON object or path. Deep-merged onto the spec built from the files you named. Your values win. `inputs[]` merges by `id`, `traces[]` by `input` (else `id`), `layers[]` by `id` (else index). An empty list does not wipe the figure.
-- `--dump-spec` — write the merged spec as JSON and skip the PNG. Bare `--dump-spec` or `-` prints to stdout; a path writes a file. Use it to get the current spec so you can modify it. For what keys exist, use `--help`.
-- `--theme-file` — palette file (JSON or TOML). Not a spec key. Named colormaps resolve against this file, then `~/.config/weather-skills/plot.toml`.
+- `-i` — repeatable Zarr; exclusive with `--layer` and `--x`/`--y`.
+- `--layer KIND:PATH` — `heatmap`, `contour`, `scatter` (stations), `quiver` (u/v: speed plus arrows), `outline` (GeoJSON edge), `mask` (GeoJSON mask).
+- `--spec` — inline JSON or a file path.
+- `--dump-spec [PATH]` — print or write the merged spec and skip drawing.
+- `--theme-file` — JSON/TOML `{"template": <Plotly template>, "palettes": {name: {colors, bounds}}}`. `layout.template` also accepts `weather_skills` (default), `colorblind`, or any Plotly template name.
 
-Unset `traces[0].kind` stays `heatmap`. Unset `theme.fontsize` stays 16.
-
-## Kinds
-
-Set `traces[0].kind` in `--spec`.
-
-- `heatmap` — lon/lat `pcolormesh` with coastlines, country borders, filled lakes, rivers, and (on country-scale views) admin-1 boundaries. One `-i` is one panel per `step` or `time`. Each extra `-i` adds a panel on that file's own lat/lon; see **Side by side, or one map**. Shared color scale, colorbar on the right for one panel and on the bottom for several. A single file's panel titles are calendar dates (`14 Sept '26`) or inclusive ranges (`4–10 Aug '26`); forecast leads keep `<start> until <end>`. Several files use `subplot_titles`, then `inputs[].label`, then the file name. The colorbar label is the variable and units (`Total precipitation [mm]`), not the date. Default grid is up to 4 columns. Set `layout.facet.rows` and `layout.facet.columns` to override; leftover cells stay blank. Panel spacing (including room for titles between rows) is automatic — see **Panel spacing on map grids** below. Ensemble `number` is averaged. `inputs[0].index` overrides the reduction for any other extra dim. Precipitation totals use a nested absolute-mm palette (same color = same millimetres; the window follows `aggregation_period`). For rainfall anomalies, omit `theme.colormap` so the diverging millimetre classes apply. A single-input heatmap and `--layer heatmap:<path>` draw the same picture.
-- `contour` — the same map as `heatmap`, drawn with `contourf` and thin black isolines. Values are interpolated between grid points. Cannot be combined with `--layer`.
-- `timeseries` — one line plus a marker at each time. Leftover non-time dims are not averaged: set `traces[0].reduce` to a list of dim names, or `traces[0].along` to draw one line per value of that dim. A forecast (`step` plus a scalar init `time`) is plotted against valid time (`init + step`). An analysis or obs cube is plotted against its `time` axis. For several series as stacked panels, use `plot-timeseries`.
-- `xy` — scatter one 1D series against another. Pass `--x` and `--y`, or one `-i` with `traces[0].x_variable` and `traces[0].y_variable`. Each series is reduced like `timeseries` (`geo.bbox` / `geo.mask_geojson` subset first when lat/lon remain). `traces[0].pair_on` is `time` (default, inner-join on time or valid time), `year` (calendar year), or `index` (position; lengths must match). Duplicate keys are an error — aggregate or select first. Points are labeled when `pair_on` is `year`, or when it is `time` and there are 25 points or fewer. This is not kind `scatter` (or `--layer scatter`), which draws stations on a map.
-- `windrose` — one polar rose of meteorological-from direction (0° = N, 90° = E, clockwise), stacked by speed. Converts eastward `u` and northward `v`. Auto-detects `u10`/`v10` and CF `eastward_wind` / `northward_wind`, or set `traces[0].u_variable` and `traces[0].v_variable`. Remaining space, time, and ensemble dims become samples; the ensemble is not averaged. `geo.bbox`, `geo.mask_geojson`, and `inputs[0].index` subset samples first. 16 sectors; speed classes 0–2, 2–4, …, ≥12 m/s, with empty high bins dropped. `theme.colormap` colors the stacks (default blue→orange).
-- `quiver` — wind-speed `pcolormesh` (default `YlGn`) with `u`/`v` arrows on the native grid. Arrow length is auto-scaled so a typical wind is about 1.5× the subsampled spacing. Set `traces[0].quiver.step` to stride and `traces[0].quiver.scale` to override arrow length. A `--layer quiver:` entry uses the same keys on `layers[].quiver`. Same panels and geo overlays as `heatmap`. Ensemble `number` is averaged. Finer grids auto-thin to about 1.5° unless `quiver.step` is set. Colorbar is `Wind speed [m/s]` (or `Wind speed anomaly` when the u field name says so), with arrow keys at 5 and 10 m/s. With `--layer`, use `--layer quiver:PATH` instead of kind `quiver`.
-- `scatter` — station points on a map, colored by value (needs a `station_id` or `point_id` dimension — e.g. TAHMO or GHCN-Daily data). Same panels and geo overlays as `heatmap`. Style with `traces[0].scatter` (`s`/`size`, `marker`, `edgecolor(s)`, `linewidth(s)`, …). A single-input scatter and `--layer scatter:<path>` draw the same picture; reach for `--layer` only to combine scatter with a `heatmap`/`contour`/`quiver` layer on the same axes. This is not `xy`, which pairs two 1D series with no map.
-
-## Layers
-
-`--layer` draws several inputs on the **same** axes — use it to combine kinds (e.g. stations over a heatmap). It is not the side-by-side layout above, and it is not needed for a single `heatmap`, `contour`, `quiver`, or `scatter` map — those are one `-i` and `traces[0].kind` in `--spec`. There is no per-layer panel: `layers[].panel` is not a key.
-
-`heatmap`, `scatter` (`station_id` / `point_id`), and `quiver` read Zarrs. `outline` draws GeoJSON edges, black 1.2 pt by default; set `layers[].line` (`color`, `linewidth`, `linestyle`, `alpha`) to restyle them, e.g. `{"id":"b","line":{"color":"black","linewidth":3}}`. `mask` is a GeoJSON NaN mask, the same idea as `geo.mask_geojson`. A layer inherits `inputs[].variable`, `theme.colormap`, `inputs[].index`, `vmin`, and `vmax` when its own `layers[]` entry omits them. Set `layers[].alpha` for that layer's opacity — handy for a heatmap sitting under a scatter or quiver layer. A forecast `step` axis still panels one map per lead; a static layer (outline, cities, a single-time field) repeats on every panel. Another data layer on the same axis kind is intersected on labels. Overlaying calendar `time` on a raw `step` forecast is an error — run `step-to-time` first. Same-variable heatmap and scatter layers stacked with `--layer` share one color scale unless `layout.shared_colorscale` is `false`. Side-by-side traces and `subplots[]` cells each scale independently by default, even with the same variable — set `layout.shared_colorscale: true` to share one colorbar across all of them.
-
-`--layer` cannot be combined with kind `timeseries`, `xy`, `windrose`, or `contour`.
-
-## When to use
-
-- CHIRPS next to a forecast, each at its own resolution, in one PNG. Two heatmap traces. Do not coarsen the forecast onto the obs grid for this.
-- Stations or a GeoJSON outline on a forecast or obs heatmap. Use `--layer` for that overlay.
-- Station observations by themselves, with no forecast/obs field underneath. One `-i` with kind `scatter`, no `--layer` needed.
-- A quick-look map or a time/step profile.
-- One index against another (IOD vs rainfall, or two variables in one Zarr).
-- A wind rose or an S2S-style wind-vector map from u/v.
-- Precipitation only after `aggregate-temporal` and `convert-to-totals`. Fetchers write rates; the figure should show period totals (`mm`). For rainfall anomalies, omit `theme.colormap`.
-
-Do not `coarsen` datasets onto one grid just to draw them. A shared lat/lon grid is for `difference` and `verify`. For one obs week versus week-4 through week-1 forecasts with a hits row, use `plot-verify`. For rainy-season onset dates from `indicator --detect first`, use `plot` and do not average `number` first.
+`--help` prints the full `meta` reference and copy-paste recipes.
 
 ## Examples
 
 ```bash
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/ecmwf_namibia.zarr -o /tmp/ecmwf.png \
-    --spec '{"inputs":[{"variable":"tp"}],"title":"S2S precip"}'
+# Weekly CHIRPS totals, one panel per week, 2 rows
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/chirps_weekly_mm.zarr -o /tmp/chirps.png \
+    --spec '{"layout": {"title": {"text": "CHIRPS weekly totals"}, "grid": {"rows": 2}}}'
 
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/ecmwf_namibia.zarr -o /tmp/ecmwf_contour.png \
-    --spec '{"inputs":[{"variable":"tp"}],"traces":[{"kind":"contour"}],"title":"S2S precip"}'
+# CHIRPS 0.05° beside ECMWF 1.5°, each on its own grid, Kenya window, named panels
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/chirps_week.zarr -i /tmp/ecmwf_week.zarr \
+    -o /tmp/obs_vs_fc.png --spec '{
+  "data": [{"uid": "a", "name": "CHIRPS 0.05°"}, {"uid": "b", "name": "ECMWF 1.5°"}],
+  "layout": {"title": {"text": "Week 1"}, "meta": {"geo": {"bbox": [5, 33.5, -5, 42]}}}}'
 
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/weekly.zarr -o /tmp/weekly.png \
-    --spec '{"inputs":[{"variable":"tp"}],"layout":{"facet":{"rows":2,"columns":3,"wspace":0.25,"hspace":0.25}}}'
+# Filled contours, interactive
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/forecast_mm.zarr -o /tmp/fc.html \
+    --spec '{"data": [{"uid": "a", "type": "contour"}]}'
 
-# Side by side. Each -i is an input (a, then b). Each subplot is a cell.
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py \
-    -i /tmp/chirps.zarr -i /tmp/ecmwf.zarr -o /tmp/chirps_vs_ecmwf.png --spec '{
-  "inputs": [{"id": "a", "variable": "precip"}, {"id": "b", "variable": "tp"}],
-  "subplots": [
-    {
-      "row": 1, "col": 1, "title": "CHIRPS 0.05°",
-      "vmin": 0, "vmax": 50, "colormap": "Blues", "cbar_label": "Obs [mm]",
-      "layers": [{"kind": "heatmap", "input": "a"}]
-    },
-    {
-      "row": 1, "col": 2, "title": "ECMWF 1.5°",
-      "vmin": 0, "vmax": 200, "colormap": "YlGn", "cbar_label": "Forecast [mm]",
-      "colorbar": {"labelsize": 12},
-      "layers": [{"kind": "heatmap", "input": "b"}]
-    }
-  ],
-  "geo": {"bbox": [11.3, -3.5, 4.5, 1.3]}
-}'
+# Stations and a county outline over a forecast
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -o /tmp/layers.png \
+    --layer heatmap:/tmp/imerg.zarr --layer scatter:/tmp/tahmo.zarr --layer outline:/tmp/nairobi.geojson \
+    --spec '{"data": [{"uid": "b", "marker": {"size": 14}}, {"uid": "c", "line": {"width": 3}}]}'
 
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -o /tmp/imerg_vs_tahmo.png \
-    --layer heatmap:/tmp/imerg.zarr --layer scatter:/tmp/tahmo.zarr \
-    --layer outline:/tmp/kenya.geojson \
-    --spec '{"title":"IMERG vs TAHMO","layers":[{"id":"a","variable":"precip"},{"id":"b","variable":"precip"}]}'
+# Wind speed with arrows
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/wind.zarr -o /tmp/wind.png --spec '{"data": [
+  {"uid": "a", "meta": {"bind": "speed"}},
+  {"uid": "arrows", "type": "scatter", "meta": {"bind": "arrows", "source": {"input": "a"}}}]}'
 
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --x /tmp/iod_sep.zarr --y /tmp/rain_oct.zarr \
-    -o /tmp/iod_vs_rain.png \
-    --spec '{"traces":[{"kind":"xy","pair_on":"year"}],"xlabel":"September IOD","ylabel":"October rainfall"}'
+# Wind rose
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/wind.zarr -o /tmp/rose.png --spec '{"data": [{"uid": "a", "type": "barpolar"}]}'
+
+# Area-mean ensemble spaghetti with a 10–90% band
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/ens.zarr -o /tmp/ens.png --spec '{"data": [{"uid": "a", "type": "scatter",
+  "meta": {"bind": "series", "along": "number", "band": [10, 90], "source": {"reduce": ["latitude", "longitude"]}}}]}'
+
+# September IOD against October rainfall, one point per year
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --x /tmp/iod_sep.zarr --y /tmp/rain_oct.zarr -o /tmp/iod.png \
+    --spec '{"data": [{"uid": "xy", "meta": {"pair_on": "year"}}], "layout": {"xaxis": {"title": {"text": "September IOD"}}}}'
 ```
 
 ## Output
 
-A PNG at `--output`. Stdout prints a pixel `plot hash` (sha256 of RGB pixels) and `data: not null (<var> N/M finite)` or `data: NULL`. `NULL` means every plotted variable is all-NaN — run `inspect-zarr` on the input. A changed hash only proves the pixels differ, not what changed or whether it looks right (a title moved above vs. inside a panel hashes just as differently as a broken render) — comparing hashes across a few candidate specs is never a substitute for looking at the PNG. Always look at the PNG, or run `inspect-figure` on it. `--dump-spec` skips the PNG and this report.
+The figure is written at `--output`. For PNG/JPG, stdout prints a pixel `plot hash` and `data: not null (…)` or `data: NULL (…)`. `NULL` means every plotted variable is all-NaN: run `inspect-zarr` on the input. A changed hash only proves the pixels changed. Always look at the image before choosing between layout options.
 
-The colorbar and timeseries y-axis label come from variable attrs: `long_name`, then `GRIB_name`, then the variable name, then `"value"`, with `[units]` when present. Dates stay on panel titles. Display units are short (`mm/day`, `°C`, `mm`, `m/s`). A wind rose labels speed stacks in those units and the radial axis as frequency percent. Prefer an amount Zarr from `convert-to-totals` (`Total precipitation [mm]`). A precip rate that already has `aggregation_period` is converted to a period total for the figure only. Unaggregated fetch rates stay `mm day-1`.
+Provenance (`weather_skills_history`) is embedded in the PNG metadata or the HTML `<meta>` tag. Read it with the `provenance` skill.
 
-Provenance is one `weather_skills_history` JSON array in the PNG metadata:
-
-```bash
-python3 -c "from PIL import Image; import json; print(json.loads(Image.open('out.png').info['weather_skills_history']))"
-```
-
-## Spec keys
-
-Values are JSON. Unknown keys on artist or axes objects are errors. There is no `eval` and no Python callable.
-
-| What you want | `--spec` path |
-| --- | --- |
-| Kind | `traces[0].kind` |
-| Variable | `inputs[0].variable` (or `layers[].variable`) |
-| Titles and axis text | `title`, `subplot_titles`, `xlabel`, `ylabel`, `cbar_label`, `legend`. `layout.facet.titles` and `traces[].title` are panel titles and are stored on `subplot_titles`. |
-| Color limits | Figure `vmin`, `vmax` for every panel. One panel: `inputs[].vmin`, `inputs[].vmax`, `inputs[].colormap`, `inputs[].cbar_label`. `traces[].kind` and `traces[].mesh` / `contour` / `quiver` stay on that trace. |
-| Colormap and font | `theme.colormap`, `theme.fontsize`, `theme.template` (`weather_skills` or `colorblind`), `theme.rc` |
-| Map window | `geo.bbox` as `[N, W, S, E]`, `geo.extent`, `geo.mask_geojson`, `geo.cities`, `geo.draw_boxes`. There is no `geo.region` / `geo.country` — run `resolve-region` and pass its bbox as `geo.bbox` or its polygon as `geo.mask_geojson`. `geo.mask_geojson` is a path string that only blanks cells outside the polygon; to draw the boundary, add `--layer outline:PATH`. `geo.overlays` switches base-map layers: `false` for none, or e.g. `{"rivers": false, "admin1": true}` (keys `coastline`, `borders`, `lakes`, `rivers`, `admin1`). |
-| Panels | `layout.figsize` as `[W, H]`, `layout.dpi`, `layout.facecolor`, `layout.facet.rows` / `columns` / `wspace` / `hspace`. One heatmap trace: rows and columns tile `time` or `step`. Several heatmap traces: one panel per trace. `wspace` / `hspace` are optional fine-tuning, not required (see **Panel spacing on map grids**). |
-| Shared color scale | `layout.shared_colorscale` (`false` = never auto-share, even stacked `--layer` entries; `true` = one colorbar across every panel/cell), plus figure-level `vmin` / `vmax`. Unset: `--layer` stacks auto-share same-variable layers; side-by-side traces and `subplots[]` cells scale independently |
-| Extra-dim reduction | `inputs[0].index`, `traces[0].reduce`, `traces[0].along` |
-| xy / wind | `traces[0].pair_on`, `x_variable`, `y_variable`, `u_variable`, `v_variable`, `quiver.step`, `quiver.scale` |
-| One layer's options | `layers[]` entry with that layer's `id` |
-
-`theme.rc` applies after the seaborn theme, so it wins. Backend and interactive keys (`backend`, `interactive`, `tk.*`, …) are rejected. Do not invent `theme.subplot_title_fontsize` or `theme.label_fontsize`. `theme.fontsize` fills the seven size keys below; `--dump-spec` includes the resolved values.
-
-| `theme.rc` key | What it changes |
-| --- | --- |
-| `axes.titlesize` | map panel titles |
-| `figure.titlesize` | figure title |
-| `axes.labelsize` | x/y labels and the colorbar label. Colorbar-only size is `layout.colorbar.labelsize` |
-| `xtick.labelsize` / `ytick.labelsize` | tick labels |
-| `legend.fontsize` / `legend.title_fontsize` | legend text |
-| `font.size` | fallback when a more specific key is unset |
-| `font.family` / `font.weight` | typeface and default weight |
-| `axes.titleweight` / `figure.titleweight` | panel / figure title weight |
-| `axes.titlepad` / `axes.labelpad` | gap from a panel title or every axis label to the axes. Colorbar-only pad is `layout.colorbar.labelpad`. Figure-title height is `layout.suptitle.y` |
-| `xtick.major.pad` / `ytick.major.pad` | gap from tick labels to the spines |
-| `axes.labelweight` | axis-label weight |
-| `lines.linewidth` | default line width. One series belongs on `traces[].line.linewidth` |
-| `axes.linewidth` | spine thickness |
-
-Use `layout.dpi`, `layout.figsize`, and `layout.facecolor`, not `figure.dpi`, `figure.figsize`, or `figure.facecolor`.
-
-| Spec key | Matplotlib surface |
-| --- | --- |
-| `axes` | Applied after the data are drawn: scales, limits, labels, ticks (`xticks` / `yticks` as lists or `{values, labels}`), locators, formatters, spines, grid, legend, twins. `xlabel` / `ylabel` may be a string or `{text, loc, pad, coords, rotation, ha, va, …}` (`coords` is `[x, y]` in axes fraction; omit `text` to keep the drawn label). A dump includes only the keys you set. |
-| `annotations` | `ax.text`, or `ax.annotate` when `xytext` / `arrowprops` is set. Keys: `text`, `x`, `y` (or `xy`), `xref` / `yref` / `xycoords`, `panel`, `xytext`, `textcoords`, `arrowprops`, plus text style (`fontsize`, `fontweight`, `color`, `ha`, `va`, `rotation`, `bbox`, …). Coordinates: `data` (default; lon/lat on a map), `axes fraction` (0–1 across the panel; also `paper`, `domain`, `axes`), `figure fraction` (also `figure`); `xref` and `yref` must agree. No `axes` / `panel` draws on every panel (**breaking change** — previously panel 0 only); `panel` as an int or a list of ints narrows to that panel or subset. Example: `{"text":"Start of season","panel":1,"x":0.5,"y":0.03,"xref":"axes fraction","ha":"center","va":"bottom","bbox":{"facecolor":"white"}}`. `--help` lists every key. |
-| `shapes` | `rect`, `hline`, `vline`, `hspan`, `vspan`, `line`, `circle` / `ellipse`, in data coordinates (lon/lat on a map). Same `panel` broadcast/narrow rule as `annotations`. A key that type does not take is an error listing its geometry and style keys; `--help` lists them all. |
-| `traces[].line` / `.mesh` / `.contour` / `.scatter` / `.bar` / `.quiver` / `.windrose` | kwargs for that artist. `contour.lines: false` skips the isoline overlay. `.scatter` also takes `size` (alias for matplotlib's `s`), `edgecolor`, and `linewidth`, not just `s` / `edgecolors` / `linewidths` |
-| `traces[].alpha` / `layers[].alpha` | opacity for a `heatmap`, `contour`, `quiver`, or `scatter` trace or layer — a shorthand for that kind's own artist block (`mesh.alpha` for `heatmap`, `scatter.alpha` for `scatter`, …) so you don't need to know which block name it draws with. An explicit `mesh.alpha` / `scatter.alpha` etc. wins if both are set |
-| `traces[].fill` | `fill_between` for a band set on `traces[0].band` |
-| `traces[].mediogram` | `{width, forecast, mclimate, mean, legend}` |
-| `layout.facet.wspace` / `hspace` | gap between panels, as a fraction of panel size |
-| `layout.colorbar` | see below. Unknown keys error |
-
-| `layout.colorbar` key | What it changes |
-| --- | --- |
-| `labelpad` | points between colorbar ticks and the colorbar label |
-| `labelsize` | colorbar label font size |
-| `ticksize` | colorbar tick-label font size |
-| `pad` | gap between the map axes and the colorbar strip |
-| `len` / `shrink` | colorbar length as a fraction of the axes |
-| `thickness` | thickness in points (`> 1`) or a fraction (`≤ 1`) |
-| `location` / `orientation` | `right`, `bottom`, … |
-| `extend` / `extendfrac` / `extendrect` | arrows past the ends of the scale |
-| `ticks` / `labels` | tick positions and text (same count) |
-| `drawedges` / `spacing` / `format` | class edges, uniform or proportional spacing, tick format |
-
-A timeseries series can use a twin y-axis with `"twin": "y"`. Reposition a wind-rose frequency label with `--spec '{"axes": {"ylabel": {"coords": [1.15, 0.5], "rotation": 0}}}'`. The full key table is in [`docs/plotting.md`](../../docs/plotting.md).
+Errors name the bad key and the keys allowed there. Plotly's own validator checks everything outside `meta` and suggests the closest key (`Did you mean "colorscale"?`).
