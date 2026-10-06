@@ -3,168 +3,57 @@
   "datasets": {
     "obs": {
       "zarr": "obs",
-      "fields": {
-        "lon": "longitude.lo",
-        "lon2": "longitude.hi",
-        "lat": "latitude.lo",
-        "lat2": "latitude.hi",
-        "precip": "precip"
-      }
+      "fields": {"lon": "longitude.lo", "lon2": "longitude.hi", "lat": "latitude.lo", "lat2": "latitude.hi", "precip": "precip"}
     },
     "fcst": {
       "zarr": "fcst",
-      "sel": {
-        "step": "7D"
-      },
-      "fields": {
-        "lon": "longitude.lo",
-        "lon2": "longitude.hi",
-        "lat": "latitude.lo",
-        "lat2": "latitude.hi",
-        "precip": "tp"
-      }
+      "sel": {"step": "7D"},
+      "bbox": [5, 33.5, -5, 42],
+      "fields": {"lon": "longitude.lo", "lon2": "longitude.hi", "lat": "latitude.lo", "lat2": "latitude.hi", "precip": "tp"}
     },
-    "borders": {
-      "naturalearth": "borders",
-      "scale": "10m",
-      "bbox": [
-        5,
-        33.5,
-        -5,
-        42
-      ]
-    }
+    "borders": {"naturalearth": "borders", "scale": "10m"}
   },
   "hconcat": [
     {
       "title": "CHIRPS 0.05\u00b0",
       "width": 300,
       "height": 355,
-      "projection": {
-        "type": "equirectangular",
-        "fit": {
-          "$bbox": [
-            5,
-            33.5,
-            -5,
-            42
-          ]
-        }
-      },
+      "projection": {"type": "equirectangular"},
       "layer": [
         {
-          "data": {
-            "name": "obs"
-          },
-          "mark": {
-            "type": "rect",
-            "clip": true
-          },
+          "data": {"name": "obs"},
+          "mark": {"type": "rect", "clip": true},
           "encoding": {
-            "longitude": {
-              "field": "lon",
-              "type": "quantitative"
-            },
-            "latitude": {
-              "field": "lat",
-              "type": "quantitative"
-            },
-            "longitude2": {
-              "field": "lon2"
-            },
-            "latitude2": {
-              "field": "lat2"
-            },
-            "color": {
-              "field": "precip",
-              "type": "quantitative",
-              "title": {
-                "$label": "obs.precip"
-              },
-              "scale": {
-                "$palette": "default_precip",
-                "data": "obs.precip"
-              }
-            }
+            "longitude": {"field": "lon", "type": "quantitative"},
+            "latitude": {"field": "lat", "type": "quantitative"},
+            "longitude2": {"field": "lon2"},
+            "latitude2": {"field": "lat2"},
+            "color": {"field": "precip", "type": "quantitative"}
           }
         },
-        {
-          "data": {
-            "name": "borders"
-          },
-          "mark": {
-            "type": "geoshape",
-            "filled": false,
-            "stroke": "#222",
-            "clip": true
-          }
-        }
+        {"data": {"name": "borders"}, "mark": {"type": "geoshape", "filled": false, "stroke": "#222", "clip": true}}
       ]
     },
     {
       "title": "ECMWF 0.25\u00b0 (ensemble mean)",
       "width": 300,
       "height": 355,
-      "projection": {
-        "type": "equirectangular",
-        "fit": {
-          "$bbox": [
-            5,
-            33.5,
-            -5,
-            42
-          ]
-        }
-      },
+      "projection": {"type": "equirectangular"},
       "layer": [
         {
-          "data": {
-            "name": "fcst"
-          },
-          "mark": {
-            "type": "rect",
-            "clip": true
-          },
+          "data": {"name": "fcst"},
+          "mark": {"type": "rect", "clip": true},
           "encoding": {
-            "longitude": {
-              "field": "lon",
-              "type": "quantitative"
-            },
-            "latitude": {
-              "field": "lat",
-              "type": "quantitative"
-            },
-            "longitude2": {
-              "field": "lon2"
-            },
-            "latitude2": {
-              "field": "lat2"
-            },
-            "color": {
-              "field": "precip",
-              "type": "quantitative",
-              "title": {
-                "$label": "fcst.precip"
-              },
-              "scale": {
-                "$palette": "default_precip",
-                "data": "fcst.precip"
-              }
-            }
+            "longitude": {"field": "lon", "type": "quantitative"},
+            "latitude": {"field": "lat", "type": "quantitative"},
+            "longitude2": {"field": "lon2"},
+            "latitude2": {"field": "lat2"},
+            "color": {"field": "precip", "type": "quantitative"}
           }
         },
-        {
-          "data": {
-            "name": "borders"
-          },
-          "mark": {
-            "type": "geoshape",
-            "filled": false,
-            "stroke": "#222",
-            "clip": true
-          }
-        }
+        {"data": {"name": "borders"}, "mark": {"type": "geoshape", "filled": false, "stroke": "#222", "clip": true}}
       ]
     }
-  ]
+  ],
+  "resolve": {"scale": {"color": "shared"}}
 }

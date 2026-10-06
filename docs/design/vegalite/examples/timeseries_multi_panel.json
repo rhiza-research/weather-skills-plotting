@@ -14,7 +14,7 @@
           "mark": {"type": "line", "strokeWidth": 0.6, "opacity": 0.3, "color": "#7f7f7f"},
           "encoding": {
             "x": {"field": "valid", "type": "temporal", "title": null, "axis": {"format": "%d %b"}},
-            "y": {"field": "t2m", "type": "quantitative", "title": {"$label": "ens.t2m"}, "scale": {"zero": false}},
+            "y": {"field": "t2m", "type": "quantitative", "scale": {"zero": false}},
             "detail": {"field": "member"}
           }
         },

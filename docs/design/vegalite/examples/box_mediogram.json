@@ -20,7 +20,7 @@
       "layer": [
         {"mark": {"type": "rule", "strokeWidth": 1.2}, "encoding": {
           "x": {"field": "week", "type": "ordinal", "title": null, "axis": {"labelAngle": 0}},
-          "y": {"field": "p10", "type": "quantitative", "title": {"$label": "ens.t2m"}, "scale": {"zero": false}},
+          "y": {"field": "p10", "type": "quantitative", "title": "Weekly-mean 2 m temperature [°C]", "scale": {"zero": false}},
           "y2": {"field": "p90"}}},
         {"mark": {"type": "bar", "size": 34, "color": "#6baed6", "stroke": "#08306b"}, "encoding": {
           "x": {"field": "week", "type": "ordinal"},

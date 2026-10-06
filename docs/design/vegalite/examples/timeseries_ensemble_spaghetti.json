@@ -14,7 +14,7 @@
       "data": {"name": "ens"},
       "mark": {"type": "line", "strokeWidth": 0.7, "opacity": 0.35},
       "encoding": {
-        "y": {"field": "t2m", "type": "quantitative", "title": {"$label": "ens.t2m"}, "scale": {"zero": false}},
+        "y": {"field": "t2m", "type": "quantitative", "scale": {"zero": false}},
         "detail": {"field": "member"},
         "color": {"datum": "Members"}
       }

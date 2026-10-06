@@ -12,7 +12,7 @@
       "encoding": {
         "x": {"field": "lead", "type": "nominal", "title": null, "axis": {"labelAngle": 0}},
         "xOffset": {"field": "model", "sort": ["ECMWF", "UKMO", "NCEP", "Climatology"]},
-        "y": {"field": "rmse", "type": "quantitative", "title": {"$label": "scores.rmse"}},
+        "y": {"field": "rmse", "type": "quantitative"},
         "color": {
           "field": "model", "type": "nominal", "title": null,
           "sort": ["ECMWF", "UKMO", "NCEP", "Climatology"],

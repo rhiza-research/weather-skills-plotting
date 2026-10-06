@@ -3,132 +3,36 @@
   "datasets": {
     "fcst": {
       "zarr": "fcst",
-      "fields": {
-        "lon": "longitude.lo",
-        "lon2": "longitude.hi",
-        "lat": "latitude.lo",
-        "lat2": "latitude.hi",
-        "lead_days": "step",
-        "valid": "valid_time",
-        "tp": "tp"
-      }
+      "fields": {"lon": "longitude.lo", "lon2": "longitude.hi", "lat": "latitude.lo", "lat2": "latitude.hi", "lead_days": "step", "tp": "tp"}
     },
-    "borders": {
-      "naturalearth": "borders",
-      "scale": "50m",
-      "bbox": [
-        6,
-        33,
-        -5.5,
-        42.5
-      ]
-    },
-    "coast": {
-      "naturalearth": "coastline",
-      "scale": "50m",
-      "bbox": [
-        6,
-        33,
-        -5.5,
-        42.5
-      ]
-    }
+    "borders": {"naturalearth": "borders", "scale": "50m"},
+    "coast": {"naturalearth": "coastline", "scale": "50m"}
   },
-  "data": {
-    "name": "fcst"
-  },
-  "transform": [
-    {
-      "calculate": "'Week ' + (datum.lead_days / 7)",
-      "as": "week"
-    }
-  ],
-  "facet": {
-    "field": "week",
-    "type": "ordinal",
-    "title": null,
-    "header": {
-      "labelFontSize": 13
-    }
-  },
-  "columns": 2,
+  "data": {"name": "fcst"},
+  "transform": [{"calculate": "'Week ' + (datum.lead_days / 7)", "as": "week"}],
+  "facet": {"field": "week", "type": "ordinal", "title": null, "header": {"labelFontSize": 13}},
+  "columns": 4,
   "spec": {
-    "width": 230,
-    "height": 280,
-    "projection": {
-      "type": "equirectangular",
-      "fit": {
-        "$bbox": [
-          6,
-          33,
-          -5.5,
-          42.5
-        ]
-      }
-    },
+    "width": 170,
+    "height": 205,
+    "projection": {"type": "equirectangular"},
     "layer": [
       {
-        "mark": {
-          "type": "rect",
-          "clip": true
-        },
+        "mark": {"type": "rect", "clip": true},
         "encoding": {
-          "longitude": {
-            "field": "lon",
-            "type": "quantitative"
-          },
-          "latitude": {
-            "field": "lat",
-            "type": "quantitative"
-          },
-          "longitude2": {
-            "field": "lon2"
-          },
-          "latitude2": {
-            "field": "lat2"
-          },
+          "longitude": {"field": "lon", "type": "quantitative"},
+          "latitude": {"field": "lat", "type": "quantitative"},
+          "longitude2": {"field": "lon2"},
+          "latitude2": {"field": "lat2"},
           "color": {
             "field": "tp",
             "type": "quantitative",
-            "title": {
-              "$label": "fcst.tp"
-            },
-            "scale": {
-              "$palette": "default_precip",
-              "data": "fcst.tp"
-            },
-            "legend": {
-              "orient": "bottom",
-              "direction": "horizontal",
-              "gradientLength": 420
-            }
+            "legend": {"orient": "bottom", "direction": "horizontal", "columns": 8, "titleOrient": "left"}
           }
         }
       },
-      {
-        "data": {
-          "name": "coast"
-        },
-        "mark": {
-          "type": "geoshape",
-          "filled": false,
-          "stroke": "#222",
-          "strokeWidth": 0.7,
-          "clip": true
-        }
-      },
-      {
-        "data": {
-          "name": "borders"
-        },
-        "mark": {
-          "type": "geoshape",
-          "filled": false,
-          "stroke": "#222",
-          "strokeWidth": 1,
-          "clip": true
-        }
-      }
+      {"data": {"name": "coast"}, "mark": {"type": "geoshape", "filled": false, "stroke": "#222", "strokeWidth": 0.7, "clip": true}},
+      {"data": {"name": "borders"}, "mark": {"type": "geoshape", "filled": false, "stroke": "#222", "strokeWidth": 1, "clip": true}}
     ]
   }
 }

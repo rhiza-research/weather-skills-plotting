@@ -6,15 +6,7 @@
   "width": 480,
   "height": 480,
   "projection": {
-    "type": "equirectangular",
-    "fit": {
-      "$bbox": [
-        12,
-        28,
-        -12,
-        52
-      ]
-    }
+    "type": "equirectangular"
   },
   "datasets": {
     "cells": {
