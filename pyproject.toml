@@ -25,6 +25,13 @@ dependencies = [
     "cartopy",
     "shapely>=2.1.2",
     "nc-time-axis",
+    # plot-vega: Vega-Lite 6 schema + renderer. vl-convert is pinned exactly because a
+    # renderer bump can move pixels.
+    "altair>=6.3",
+    "vl-convert-python==1.9.0.post1",
+    "contourpy>=1.3",
+    "pandas>=2.2",
+    "pillow>=10",
 ]
 
 [dependency-groups]
