@@ -251,7 +251,10 @@ def bind_zarr(name: str, binding: dict, inputs: dict) -> tuple[list[dict], dict]
     sub = sub.squeeze(
         [d for d in sub.dims if d not in wanted_dims and sub.sizes[d] == 1], drop=False
     )
-    df = sub.to_dataframe().reset_index()
+    if sub.dims:
+        df = sub.to_dataframe().reset_index()
+    else:
+        df = sub.expand_dims("_row").to_dataframe().reset_index(drop=True)
     if binding.get("dropna", True):
         df = df.dropna(subset=var_names, how="all")
     out = pd.DataFrame(index=df.index)

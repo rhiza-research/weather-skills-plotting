@@ -298,7 +298,7 @@ Data problems (unreadable input, Natural Earth download failure) exit 1.
 
 ## Output, QA and provenance
 
-- The file at `-o`. Stdout lists `Wrote: PATH`, one `bound NAME: N rows (columns)`
+- The file at `-o` (`Wrote: PATH` on stderr). Stdout lists one `bound NAME: N rows (columns)`
   line per dataset, one `default ...` line per default applied, then for PNG/JPEG
   `plot hash: <sha256 of RGB pixels>` and `data: not null (precip 8500/8500 finite)`
   or `data: NULL`. `NULL` means every plotted variable is all-NaN after

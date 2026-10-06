@@ -120,9 +120,9 @@ def _named(inputs) -> dict:
     return named
 
 
-def _emit(lines, file=sys.stdout):
+def _emit(lines, file=None):
     for line in lines:
-        print(line, file=file)
+        print(line, file=file or sys.stdout)
 
 
 @weather_skill(name="plot-vega", version=_SKILL_VERSION)
@@ -145,8 +145,9 @@ def _emit(lines, file=sys.stdout):
     type=parse_spec,
     default=None,
     help=(
-        "The Vega-Lite 6 spec with data bindings: inline JSON, a file path, or - for stdin. "
-        "Required except with --describe."
+        "A plain Vega-Lite 6.4 spec (anything in the Vega-Lite docs works) whose datasets "
+        "may hold zarr/geojson/naturalearth bindings: inline JSON, a file path, or - for "
+        "stdin. Required except with --describe. Starting points: the skill's recipes/*.json."
     ),
 )
 @weather_skill.argument(
@@ -221,8 +222,6 @@ def plot_vega(
             Path(dump_spec).write_text(text + "\n", encoding="utf-8")
             print(f"Wrote: {dump_spec}", file=sys.stderr)
         return None
-    if output is None:
-        raise UsageError("--output is required unless --describe or --dump-spec is set")
     if Path(output).suffix.lower() not in vega.OUTPUT_SUFFIXES:
         raise UsageError(f"--output {output}: use one of {list(vega.OUTPUT_SUFFIXES)}")
     prep = vega.render(spec, named, Path(output), scale=scale, max_rows=max_rows)
