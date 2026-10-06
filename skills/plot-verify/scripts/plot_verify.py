@@ -21,7 +21,6 @@ color scale; row 2 holds each lead's verify map (hits, bias, or MAE) on a
 second scale. The cell under the observation names the metric.
 """
 
-
 import numpy as np
 from weather_skills_core import Dataset, UsageError, weather_skill
 from weather_skills_core.cf import auto_variable, cf_dim
@@ -108,18 +107,39 @@ def _user_variable(user, uid):
 
 
 @weather_skill(name="plot-verify", version=_SKILL_VERSION)
-@weather_skill.argument("--obs", type=Dataset("spatial"), required=False,
-                        help="Observation Zarr for the verifying week (input id obs).")
-@weather_skill.argument("--forecast", type=Dataset("spatial"), action="append", required=False,
-                        help="Forecast Zarr for that week at one lead; repeat, week-1 first "
-                        "(input ids forecast1, forecast2, …).")
-@weather_skill.argument("--verify", type=Dataset("any"), action="append", required=False,
-                        help="Verify Zarr from the verify skill, once per --forecast, same order.")
+@weather_skill.argument(
+    "--obs",
+    type=Dataset("spatial"),
+    required=False,
+    help="Observation Zarr for the verifying week (input id obs).",
+)
+@weather_skill.argument(
+    "--forecast",
+    type=Dataset("spatial"),
+    action="append",
+    required=False,
+    help="Forecast Zarr for that week at one lead; repeat, week-1 first "
+    "(input ids forecast1, forecast2, …).",
+)
+@weather_skill.argument(
+    "--verify",
+    type=Dataset("any"),
+    action="append",
+    required=False,
+    help="Verify Zarr from the verify skill, once per --forecast, same order.",
+)
 @weather_skill.argument("--spec", default=None, type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
-@weather_skill.argument("--theme-file", default=None,
-                        help="Theme JSON/TOML: {template: <Plotly template>, palettes: {…}}.")
-@weather_skill.argument("--dump-spec", nargs="?", const="-", default=None, probe=True, help=DUMP_SPEC_HELP)
-def plot_verify(obs, forecast, verify, output, spec=None, theme_file=None, dump_spec=None, **kwargs):
+@weather_skill.argument(
+    "--theme-file",
+    default=None,
+    help="Theme JSON/TOML: {template: <Plotly template>, palettes: {…}}.",
+)
+@weather_skill.argument(
+    "--dump-spec", nargs="?", const="-", default=None, probe=True, help=DUMP_SPEC_HELP
+)
+def plot_verify(
+    obs, forecast, verify, output, spec=None, theme_file=None, dump_spec=None, **kwargs
+):
     """Lead-week verification grid from obs, forecast, and pre-computed verify Zarrs."""
     forecasts, verifies = _as_list(forecast), _as_list(verify)
     if obs is None and spec is not None:
@@ -140,7 +160,9 @@ def plot_verify(obs, forecast, verify, output, spec=None, theme_file=None, dump_
     for i, v in enumerate(verifies, start=1):
         metric = v.attrs.get("verify_metric")
         if metric not in VERIFY_VARS:
-            raise UsageError(f"--verify {i} has no supported verify_metric attr; run the verify skill first")
+            raise UsageError(
+                f"--verify {i} has no supported verify_metric attr; run the verify skill first"
+            )
         if VERIFY_VARS[metric] not in v:
             raise UsageError(f"--verify {i} is missing its {VERIFY_VARS[metric]!r} variable")
         metrics.add(metric)
@@ -150,21 +172,30 @@ def plot_verify(obs, forecast, verify, output, spec=None, theme_file=None, dump_
     user = spec.data if spec is not None else {}
     n = len(forecasts)
     cols = n + 1
-    datasets = {"obs": obs, **{f"forecast{i}": f for i, f in enumerate(forecasts, 1)},
-                **{f"verify{i}": v for i, v in enumerate(verifies, 1)}}
+    datasets = {
+        "obs": obs,
+        **{f"forecast{i}": f for i, f in enumerate(forecasts, 1)},
+        **{f"verify{i}": v for i, v in enumerate(verifies, 1)},
+    }
 
     obs_var = _user_variable(user, "obs") or auto_variable(obs)
     obs_da = _single_map(obs, obs_var, "--obs")
     fc_vars, fc_das = [], []
     for i, fc in enumerate(forecasts, 1):
-        var = _user_variable(user, f"forecast{i}") or (obs_var if obs_var in fc else auto_variable(fc))
+        var = _user_variable(user, f"forecast{i}") or (
+            obs_var if obs_var in fc else auto_variable(fc)
+        )
         if var not in fc:
-            raise UsageError(f"--forecast {i} has no variable {var!r}; available: {', '.join(fc.data_vars)}")
+            raise UsageError(
+                f"--forecast {i} has no variable {var!r}; available: {', '.join(fc.data_vars)}"
+            )
         fc_vars.append(var)
         fc_das.append(_single_map(fc, var, f"--forecast {i}"))
         u_fc, u_obs = variable_units(fc[var]), variable_units(obs_da)
         if u_fc and u_obs and not units_equal(u_fc, u_obs):
-            warn(f"--forecast {i} {var!r} units={u_fc!r} and --obs {obs_var!r} units={u_obs!r} differ")
+            warn(
+                f"--forecast {i} {var!r} units={u_fc!r} and --obs {obs_var!r} units={u_obs!r} differ"
+            )
         _require_same_grid(forecasts[0], fc, "--forecast 1", f"--forecast {i}")
     _require_same_grid(forecasts[0], obs, "--forecast 1", "--obs")
     for i, v in enumerate(verifies, 1):
@@ -174,28 +205,60 @@ def plot_verify(obs, forecast, verify, output, spec=None, theme_file=None, dump_
 
     field_meta = {}
     if is_precip(obs_da):
-        window = widest_precip_window(aggregation_days(obs_da), *(aggregation_days(d) for d in fc_das))
+        window = widest_precip_window(
+            aggregation_days(obs_da), *(aggregation_days(d) for d in fc_das)
+        )
         field_meta = {"palette": window}
-    data = [{"uid": "obs", "type": "heatmap", "coloraxis": "coloraxis",
-             "meta": {"source": {"input": "obs", "variable": obs_var}, **field_meta}}]
+    data = [
+        {
+            "uid": "obs",
+            "type": "heatmap",
+            "coloraxis": "coloraxis",
+            "meta": {"source": {"input": "obs", "variable": obs_var}, **field_meta},
+        }
+    ]
     for i, var in enumerate(fc_vars, 1):
-        data.append({"uid": f"forecast{i}", "type": "heatmap", "coloraxis": "coloraxis",
-                     "xaxis": f"x{i + 1}", "yaxis": f"y{i + 1}",
-                     "meta": {"source": {"input": f"forecast{i}", "variable": var}, **field_meta}})
+        data.append(
+            {
+                "uid": f"forecast{i}",
+                "type": "heatmap",
+                "coloraxis": "coloraxis",
+                "xaxis": f"x{i + 1}",
+                "yaxis": f"y{i + 1}",
+                "meta": {"source": {"input": f"forecast{i}", "variable": var}, **field_meta},
+            }
+        )
     for i in range(1, n + 1):
         p = cols + i + 1
-        data.append({"uid": f"verify{i}", "type": "heatmap", "coloraxis": "coloraxis2",
-                     "xaxis": f"x{p}", "yaxis": f"y{p}",
-                     "meta": {"source": {"input": f"verify{i}", "variable": VERIFY_VARS[metric]},
-                              **({"palette": HITS_PALETTE} if metric == "hits" else {})}})
+        data.append(
+            {
+                "uid": f"verify{i}",
+                "type": "heatmap",
+                "coloraxis": "coloraxis2",
+                "xaxis": f"x{p}",
+                "yaxis": f"y{p}",
+                "meta": {
+                    "source": {"input": f"verify{i}", "variable": VERIFY_VARS[metric]},
+                    **({"palette": HITS_PALETTE} if metric == "hits" else {}),
+                },
+            }
+        )
 
     obs_label = dataset_display_label(obs, "Observation")
     fc_label = combine_display_labels([dataset_display_label(f, "Forecast") for f in forecasts])
     titles = [obs_label] + [f"{i}-week lead" for i in range(1, n + 1)]
     annotations = [
-        {"name": f"panel-title-{p + 1}", "text": t, "xref": f"x{axis_suffix(p)} domain",
-         "yref": f"y{axis_suffix(p)} domain", "x": 0.5, "y": 1, "yanchor": "bottom",
-         "yshift": 3, "showarrow": False}
+        {
+            "name": f"panel-title-{p + 1}",
+            "text": t,
+            "xref": f"x{axis_suffix(p)} domain",
+            "yref": f"y{axis_suffix(p)} domain",
+            "x": 0.5,
+            "y": 1,
+            "yanchor": "bottom",
+            "yshift": 3,
+            "showarrow": False,
+        }
         for p, t in enumerate(titles)
     ]
     # Verify cells sit under their forecast column title; no date of their own.
@@ -204,30 +267,55 @@ def plot_verify(obs, forecast, verify, output, spec=None, theme_file=None, dump_
     metric_label = METRIC_LABELS[metric]
     metric_title = f"{metric_label} [{units}]" if units and metric != "hits" else metric_label
     blank = axis_suffix(cols)
-    annotations.append({"name": "row-label-metric", "text": f"<b>{metric_label}</b><br>{fc_label}",
-                        "xref": f"x{blank} domain", "yref": f"y{blank} domain", "x": 0.5,
-                        "y": 0.5, "showarrow": False, "font": {"size": 18}})
+    annotations.append(
+        {
+            "name": "row-label-metric",
+            "text": f"<b>{metric_label}</b><br>{fc_label}",
+            "xref": f"x{blank} domain",
+            "yref": f"y{blank} domain",
+            "x": 0.5,
+            "y": 0.5,
+            "showarrow": False,
+            "font": {"size": 18},
+        }
+    )
     if metric == "hits":
-        axis2 = {"colorbar": {"title": {"text": "Event"}, "tickvals": [0, 1, 2],
-                              "ticktext": ["disagree", "below", "hit"]}}
+        axis2 = {
+            "colorbar": {
+                "title": {"text": "Event"},
+                "tickvals": [0, 1, 2],
+                "ticktext": ["disagree", "below", "hit"],
+            }
+        }
     elif metric == "bias":
-        axis2 = {"colorscale": [[i / 10, c] for i, c in enumerate(BIAS_COLORS)],
-                 "colorbar": {"title": {"text": metric_title}}}
+        axis2 = {
+            "colorscale": [[i / 10, c] for i, c in enumerate(BIAS_COLORS)],
+            "colorbar": {"title": {"text": metric_title}},
+        }
     else:
-        axis2 = {"colorscale": [[i / 5, c] for i, c in enumerate(MAE_COLORS)], "cmin": 0,
-                 "colorbar": {"title": {"text": metric_title}}}
+        axis2 = {
+            "colorscale": [[i / 5, c] for i, c in enumerate(MAE_COLORS)],
+            "cmin": 0,
+            "colorbar": {"title": {"text": metric_title}},
+        }
     week = _week_title(obs_da)
-    user_title = ((user.get("layout") or {}).get("title") or {})
+    user_title = (user.get("layout") or {}).get("title") or {}
     user_title = user_title.get("text") if isinstance(user_title, dict) else user_title
-    title = week if not user_title else (f"{user_title} · {week}" if week and week not in user_title else user_title)
+    title = (
+        week
+        if not user_title
+        else (f"{user_title} · {week}" if week and week not in user_title else user_title)
+    )
     layout = {"grid": {"rows": 2, "columns": cols}, "annotations": annotations, "coloraxis2": axis2}
     if title:
         layout["title"] = {"text": title}
     base = skeleton("plot-verify", datasets, data, layout)
     if user_title:
-        user = {**user, "layout": {k: v for k, v in (user.get("layout") or {}).items() if k != "title"}}
+        user = {
+            **user,
+            "layout": {k: v for k, v in (user.get("layout") or {}).items() if k != "title"},
+        }
     return run(merge_spec(base, user), None, datasets, output, dump_spec, theme_file=theme_file)
-
 
 
 install_spec_help(plot_verify)

@@ -316,7 +316,10 @@ def overlay_geoms(extent, settings: dict):
     warns and is skipped, so the map still renders.
     """
     scale = boundary_layers(extent)
-    key = (tuple(round(float(v), 4) for v in extent), tuple(sorted((k, bool(v) if v is not None else None) for k, v in settings.items())))
+    key = (
+        tuple(round(float(v), 4) for v in extent),
+        tuple(sorted((k, bool(v) if v is not None else None) for k, v in settings.items())),
+    )
     if key in _OVERLAY_CACHE:
         return _OVERLAY_CACHE[key]
     try:

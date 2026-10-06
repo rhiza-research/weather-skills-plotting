@@ -23,15 +23,31 @@ CHART_SIZE = (1000, 600)
 
 def _template_layout(colorway) -> dict:
     return {
-        "font": {"size": DEFAULT_FONTSIZE, "family": "Helvetica, Arial, sans-serif", "color": "#222"},
+        "font": {
+            "size": DEFAULT_FONTSIZE,
+            "family": "Helvetica, Arial, sans-serif",
+            "color": "#222",
+        },
         "colorway": colorway,
         "title": {"x": 0.5, "xanchor": "center"},
         "paper_bgcolor": "white",
         "plot_bgcolor": "white",
-        "xaxis": {"showline": True, "linecolor": "#444", "ticks": "outside", "zeroline": False,
-                  "automargin": True, "title": {"standoff": 8}},
-        "yaxis": {"showline": True, "linecolor": "#444", "ticks": "outside", "zeroline": False,
-                  "automargin": True, "title": {"standoff": 8}},
+        "xaxis": {
+            "showline": True,
+            "linecolor": "#444",
+            "ticks": "outside",
+            "zeroline": False,
+            "automargin": True,
+            "title": {"standoff": 8},
+        },
+        "yaxis": {
+            "showline": True,
+            "linecolor": "#444",
+            "ticks": "outside",
+            "zeroline": False,
+            "automargin": True,
+            "title": {"standoff": 8},
+        },
         "legend": {"bgcolor": "rgba(255,255,255,0.8)"},
         "colorscale": {"sequential": None},
     }
@@ -60,7 +76,9 @@ def register_templates(user_template: dict | None = None) -> None:
 def grid_shape(n, rows=None, columns=None, *, max_columns=DEFAULT_MAX_COLUMNS):
     """``(rows, columns)`` for ``n`` panels; unset sides fill in, leftover cells stay blank."""
     for value, name in ((rows, "rows"), (columns, "columns")):
-        if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 1):
+        if value is not None and (
+            isinstance(value, bool) or not isinstance(value, int) or value < 1
+        ):
             raise UsageError(f"layout.grid.{name} must be an integer >= 1; got {value!r}")
     if rows is None and columns is None:
         columns = min(max_columns, max(n, 1))
@@ -116,9 +134,7 @@ def map_grid(
         max((right_bars[r * cols + c] for r in range(rows) if r * cols + c < n), default=0)
         for c in range(cols)
     ]
-    gap_x = [
-        (20 + (xgap or 0) * est_w) + per_col_bars[c] * bar_w for c in range(cols - 1)
-    ]
+    gap_x = [(20 + (xgap or 0) * est_w) + per_col_bars[c] * bar_w for c in range(cols - 1)]
     gap_y = 10 + (ygap or 0) * est_h + title_h
     margin = {
         "l": 14,
@@ -148,7 +164,9 @@ def map_grid(
     plot_w = width - margin["l"] - margin["r"]
     plot_h = height - margin["t"] - margin["b"]
     if plot_w <= 50 or plot_h <= 50:
-        raise UsageError(f"layout width {width} × height {height} leaves no room for the map panels")
+        raise UsageError(
+            f"layout width {width} × height {height} leaves no room for the map panels"
+        )
     panel_w = (plot_w - sum(gap_x)) / cols
     panel_h = (plot_h - gap_y * (rows - 1)) / rows
     domains = []
@@ -227,12 +245,28 @@ def map_axes(grid: dict, p: int, extent) -> tuple[dict, dict]:
     """Equal-degree lon/lat axes for panel ``p`` (no ticks, framed)."""
     s = axis_suffix(p)
     xd, yd = grid["domains"][p]
-    frame = {"showgrid": False, "zeroline": False, "showticklabels": False, "ticks": "",
-             "showline": True, "mirror": True, "linecolor": "black", "linewidth": 1,
-             "constrain": "domain", "fixedrange": False, "automargin": False}
+    frame = {
+        "showgrid": False,
+        "zeroline": False,
+        "showticklabels": False,
+        "ticks": "",
+        "showline": True,
+        "mirror": True,
+        "linecolor": "black",
+        "linewidth": 1,
+        "constrain": "domain",
+        "fixedrange": False,
+        "automargin": False,
+    }
     xaxis = {**frame, "domain": xd, "range": [extent[0], extent[1]], "anchor": f"y{s}"}
-    yaxis = {**frame, "domain": yd, "range": [extent[2], extent[3]], "anchor": f"x{s}",
-             "scaleanchor": f"x{s}", "scaleratio": 1}
+    yaxis = {
+        **frame,
+        "domain": yd,
+        "range": [extent[2], extent[3]],
+        "anchor": f"x{s}",
+        "scaleanchor": f"x{s}",
+        "scaleratio": 1,
+    }
     return xaxis, yaxis
 
 

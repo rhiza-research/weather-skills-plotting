@@ -41,22 +41,22 @@ _META = {
 _SOURCE = {
     "input": "input id: a, b, … in -i order (x / y for --x / --y; obs, forecast1 … for plot-verify)",
     "variable": "data variable (default: auto-detected)",
-    "isel": "positions to select, e.g. {\"number\": 0, \"step\": [0, 1]}",
-    "sel": "labels to select (nearest for numbers and dates), e.g. {\"time\": \"2026-09-21\"}",
-    "reduce": "dims to average, e.g. [\"latitude\", \"longitude\"]; nothing is averaged silently",
+    "isel": 'positions to select, e.g. {"number": 0, "step": [0, 1]}',
+    "sel": 'labels to select (nearest for numbers and dates), e.g. {"time": "2026-09-21"}',
+    "reduce": 'dims to average, e.g. ["latitude", "longitude"]; nothing is averaged silently',
     "u / v": "wind component variables (default: auto-detected u10/v10, eastward/northward …)",
     "geojson": "geojson bind: path to the boundary file",
     "mask_geojson": "blank cells outside this polygon for this trace only",
-    "point": "samples bind: {\"lat\": …, \"lon\": …}, nearest grid cell",
+    "point": 'samples bind: {"lat": …, "lon": …}, nearest grid cell',
 }
 
 _LAYOUT_META = {
     "inputs": "{id: path} — opened when no file flag is passed (written by --dump-spec)",
     "geo.bbox": "[N, W, S, E] map window; subsets every input. Named places: run resolve-region",
     "geo.mask_geojson": "blank every map cell outside this polygon (does not draw it)",
-    "geo.point": "{\"lat\": …, \"lon\": …} for samples traces (plot-mediogram); nearest cell",
+    "geo.point": '{"lat": …, "lon": …} for samples traces (plot-mediogram); nearest cell',
     "overlays": "true, false, or {coastline|borders|lakes|rivers|admin1: false or a scatter "
-    "style such as {\"line\": {\"width\": 2}}}",
+    'style such as {"line": {"width": 2}}}',
     "export.scale": "PNG/JPG pixel multiplier (default 2)",
     "version / skill": "leave as dumped",
 }
@@ -64,48 +64,79 @@ _LAYOUT_META = {
 _RECIPES = [
     ("Title and font size", '{"layout": {"title": {"text": "Week 1"}, "font": {"size": 20}}}'),
     ("Contour instead of heatmap", '{"data": [{"uid": "a", "type": "contour"}]}'),
-    ("Color limits and colorscale (continuous)",
-     '{"data": [{"uid": "a", "zmin": 0, "zmax": 50, "colorscale": "YlGnBu"}]}'),
+    (
+        "Color limits and colorscale (continuous)",
+        '{"data": [{"uid": "a", "zmin": 0, "zmax": 50, "colorscale": "YlGnBu"}]}',
+    ),
     ("Class palette", '{"data": [{"uid": "a", "meta": {"palette": "ppt_month"}}]}'),
-    ("Colorbar label and ticks",
-     '{"layout": {"coloraxis": {"colorbar": {"title": {"text": "Rain [mm]"}, "len": 0.5}}}}'),
-    ("Grid shape and extra gaps (fractions of a panel)",
-     '{"layout": {"grid": {"rows": 2, "columns": 3, "xgap": 0.3, "ygap": 0.2}}}'),
+    (
+        "Colorbar label and ticks",
+        '{"layout": {"coloraxis": {"colorbar": {"title": {"text": "Rain [mm]"}, "len": 0.5}}}}',
+    ),
+    (
+        "Grid shape and extra gaps (fractions of a panel)",
+        '{"layout": {"grid": {"rows": 2, "columns": 3, "xgap": 0.3, "ygap": 0.2}}}',
+    ),
     ("Rename panel 2", '{"layout": {"annotations": [{"name": "panel-title-2", "text": "ECMWF"}]}}'),
     ("Map window", '{"layout": {"meta": {"geo": {"bbox": [5, 33.5, -5, 42]}}}}'),
     ("Base-map layers", '{"layout": {"meta": {"overlays": {"rivers": false, "admin1": true}}}}'),
-    ("One shared colorbar for two side-by-side maps",
-     '{"data": [{"uid": "a", "coloraxis": "coloraxis"}, {"uid": "b", "coloraxis": "coloraxis"}]}'),
-    ("Boundary outline",
-     '{"data": [{"uid": "kenya", "type": "scatter", "meta": {"bind": "geojson", '
-     '"source": {"geojson": "kenya.geojson"}}, "line": {"width": 3}}]}'),
-    ("City markers (a plain Plotly trace; repeats on every map panel)",
-     '{"data": [{"uid": "cities", "type": "scatter", "mode": "markers+text", "x": [36.82], '
-     '"y": [-1.29], "text": ["Nairobi"], "textposition": "top right"}]}'),
-    ("Box outline on the map",
-     '{"data": [{"uid": "box", "type": "scatter", "mode": "lines", "x": [34, 42, 42, 34, 34], '
-     '"y": [-5, -5, 5, 5, -5], "line": {"color": "red"}}]}'),
-    ("Wind quiver map",
-     '{"data": [{"uid": "a", "meta": {"bind": "speed"}}, {"uid": "wind", "type": "scatter", '
-     '"meta": {"bind": "arrows", "source": {"input": "a"}, "arrows": {"step": 2}}}]}'),
+    (
+        "One shared colorbar for two side-by-side maps",
+        '{"data": [{"uid": "a", "coloraxis": "coloraxis"}, {"uid": "b", "coloraxis": "coloraxis"}]}',
+    ),
+    (
+        "Boundary outline",
+        '{"data": [{"uid": "kenya", "type": "scatter", "meta": {"bind": "geojson", '
+        '"source": {"geojson": "kenya.geojson"}}, "line": {"width": 3}}]}',
+    ),
+    (
+        "City markers (a plain Plotly trace; repeats on every map panel)",
+        '{"data": [{"uid": "cities", "type": "scatter", "mode": "markers+text", "x": [36.82], '
+        '"y": [-1.29], "text": ["Nairobi"], "textposition": "top right"}]}',
+    ),
+    (
+        "Box outline on the map",
+        '{"data": [{"uid": "box", "type": "scatter", "mode": "lines", "x": [34, 42, 42, 34, 34], '
+        '"y": [-5, -5, 5, 5, -5], "line": {"color": "red"}}]}',
+    ),
+    (
+        "Wind quiver map",
+        '{"data": [{"uid": "a", "meta": {"bind": "speed"}}, {"uid": "wind", "type": "scatter", '
+        '"meta": {"bind": "arrows", "source": {"input": "a"}, "arrows": {"step": 2}}}]}',
+    ),
     ("Wind rose", '{"data": [{"uid": "a", "type": "barpolar"}]}'),
-    ("Area-mean time series of a grid",
-     '{"data": [{"uid": "a", "type": "scatter", "meta": {"bind": "series", '
-     '"source": {"reduce": ["latitude", "longitude"]}}}]}'),
-    ("Ensemble spaghetti with a 10–90% band",
-     '{"data": [{"uid": "a", "meta": {"along": "number", "band": [10, 90]}}]}'),
-    ("Bars instead of lines; stacked", '{"data": [{"uid": "a", "type": "bar"}], "layout": {"barmode": "stack"}}'),
-    ("Second series on a right-hand axis",
-     '{"data": [{"uid": "b", "yaxis": "y2"}], "layout": {"yaxis2": {"overlaying": "y", "side": "right"}}}'),
-    ("One stacked panel per series",
-     '{"layout": {"grid": {"rows": 2, "columns": 1, "pattern": "coupled"}}}'),
-    ("Text label on panel 1",
-     '{"layout": {"annotations": [{"text": "Onset", "xref": "x domain", "yref": "y domain", '
-     '"x": 0.5, "y": 0.03, "showarrow": false, "bgcolor": "white"}]}}'),
-    ("Shaded period on a time axis",
-     '{"layout": {"shapes": [{"type": "rect", "xref": "x", "yref": "y domain", '
-     '"x0": "2026-10-01", "x1": "2026-10-10", "y0": 0, "y1": 1, "fillcolor": "grey", '
-     '"opacity": 0.2, "line": {"width": 0}}]}}'),
+    (
+        "Area-mean time series of a grid",
+        '{"data": [{"uid": "a", "type": "scatter", "meta": {"bind": "series", '
+        '"source": {"reduce": ["latitude", "longitude"]}}}]}',
+    ),
+    (
+        "Ensemble spaghetti with a 10–90% band",
+        '{"data": [{"uid": "a", "meta": {"along": "number", "band": [10, 90]}}]}',
+    ),
+    (
+        "Bars instead of lines; stacked",
+        '{"data": [{"uid": "a", "type": "bar"}], "layout": {"barmode": "stack"}}',
+    ),
+    (
+        "Second series on a right-hand axis",
+        '{"data": [{"uid": "b", "yaxis": "y2"}], "layout": {"yaxis2": {"overlaying": "y", "side": "right"}}}',
+    ),
+    (
+        "One stacked panel per series",
+        '{"layout": {"grid": {"rows": 2, "columns": 1, "pattern": "coupled"}}}',
+    ),
+    (
+        "Text label on panel 1",
+        '{"layout": {"annotations": [{"text": "Onset", "xref": "x domain", "yref": "y domain", '
+        '"x": 0.5, "y": 0.03, "showarrow": false, "bgcolor": "white"}]}}',
+    ),
+    (
+        "Shaded period on a time axis",
+        '{"layout": {"shapes": [{"type": "rect", "xref": "x", "yref": "y domain", '
+        '"x0": "2026-10-01", "x1": "2026-10-10", "y0": 0, "y1": 1, "fillcolor": "grey", '
+        '"opacity": 0.2, "line": {"width": 0}}]}}',
+    ),
 ]
 
 
@@ -120,7 +151,7 @@ def spec_reference() -> str:
     """Plain-text reference appended to ``--help``."""
     parts = [
         "PLOT SPEC (--spec)",
-        "  A standard Plotly figure: {\"data\": [traces], \"layout\": {…}}. Every key is Plotly's",
+        '  A standard Plotly figure: {"data": [traces], "layout": {…}}. Every key is Plotly\'s',
         "  (https://plotly.com/python/reference/) except meta, which holds the dataset bindings.",
         "  --spec is merged onto the figure the command builds from its files: data[] by uid",
         "  (else position; a new uid adds a trace), layout.annotations / shapes by name, and",

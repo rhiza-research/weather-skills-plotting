@@ -167,7 +167,9 @@ def _sel(da, source: dict, loc: str):
     """Apply ``isel`` (positions) then ``sel`` (labels, nearest for numbers/dates)."""
     for dim, idx in (source.get("isel") or {}).items():
         if dim not in da.dims:
-            raise UsageError(f"{loc}.isel dimension {dim!r} is not in the data (dims: {list(da.dims)})")
+            raise UsageError(
+                f"{loc}.isel dimension {dim!r} is not in the data (dims: {list(da.dims)})"
+            )
         size = da.sizes[dim]
         for pos in idx if isinstance(idx, list) else [idx]:
             if isinstance(pos, bool) or not isinstance(pos, int) or not -size <= pos < size:
@@ -175,22 +177,32 @@ def _sel(da, source: dict, loc: str):
         da = da.isel({dim: idx})
     for dim, value in (source.get("sel") or {}).items():
         if dim not in da.dims:
-            raise UsageError(f"{loc}.sel dimension {dim!r} is not in the data (dims: {list(da.dims)})")
+            raise UsageError(
+                f"{loc}.sel dimension {dim!r} is not in the data (dims: {list(da.dims)})"
+            )
         coord = da[dim].values
         kind = getattr(coord.dtype, "kind", "O")
         try:
             if kind == "M":
-                target = np.datetime64(value) if not isinstance(value, list) else [np.datetime64(v) for v in value]
+                target = (
+                    np.datetime64(value)
+                    if not isinstance(value, list)
+                    else [np.datetime64(v) for v in value]
+                )
                 da = da.sel({dim: target}, method="nearest")
             elif kind == "m":
-                target = np.timedelta64(int(value), "D") if isinstance(value, (int, float)) else value
+                target = (
+                    np.timedelta64(int(value), "D") if isinstance(value, (int, float)) else value
+                )
                 da = da.sel({dim: target})
             elif kind in "iuf":
                 da = da.sel({dim: value}, method="nearest")
             else:
                 da = da.sel({dim: value})
         except (KeyError, ValueError, TypeError) as exc:
-            raise UsageError(f"{loc}.sel {dim}={value!r} does not match the coordinate ({exc})") from None
+            raise UsageError(
+                f"{loc}.sel {dim}={value!r} does not match the coordinate ({exc})"
+            ) from None
     return da
 
 
@@ -288,10 +300,7 @@ def _slices(da, fdim):
     if fdim is None:
         return [(None, None, da)]
     values = list(da[fdim].values)
-    return [
-        (v, panel_title(da, fdim, v, values), da.isel({fdim: i}))
-        for i, v in enumerate(values)
-    ]
+    return [(v, panel_title(da, fdim, v, values), da.isel({fdim: i})) for i, v in enumerate(values)]
 
 
 # --------------------------------------------------------------------- binders
@@ -376,21 +385,39 @@ def bind_arrows(trace, meta, ctx, loc):
     extent = extent_from_da(u_da, lat, lon, ctx.bbox)
     units = speed_units_display(ds[u_name])
     panels = []
-    for (key, ptitle, u_part), (_, _, v_part) in zip(_slices(u_da, fdim), _slices(v_da, fdim), strict=True):
+    for (key, ptitle, u_part), (_, _, v_part) in zip(
+        _slices(u_da, fdim), _slices(v_da, fdim), strict=True
+    ):
         lon_q, lat_q, uq, vq = subsample_quiver(
             u_part[lon].values, u_part[lat].values, u_part.values, v_part.values, step
         )
         xs, ys = _arrow_segments(lon_q, lat_q, uq, vq, scale)
         span_x, span_y = extent[1] - extent[0], extent[3] - extent[2]
         kx, ky = extent[1] - 0.04 * span_x - ARROW_KEY_SPEED * scale, extent[2] + 0.04 * span_y
-        kxs, kys = _arrow_segments(np.array([kx]), np.array([ky]), np.array([ARROW_KEY_SPEED]), np.array([0.0]), scale)
-        arrows = {"mode": "lines", "x": xs, "y": ys, "hoverinfo": "skip", "showlegend": False,
-                  "line": {"color": "black", "width": 1}}
-        key_trace = {"type": "scatter", "mode": "lines+text", "x": kxs + [kx - 0.01 * span_x],
-                     "y": kys + [ky], "text": [""] * len(kxs) + [f"{ARROW_KEY_SPEED:g} {units}"],
-                     "textposition": "middle left", "hoverinfo": "skip", "showlegend": False,
-                     "line": {"color": "black", "width": 1.5}, "textfont": {"size": 13},
-                     "uid_suffix": "key"}
+        kxs, kys = _arrow_segments(
+            np.array([kx]), np.array([ky]), np.array([ARROW_KEY_SPEED]), np.array([0.0]), scale
+        )
+        arrows = {
+            "mode": "lines",
+            "x": xs,
+            "y": ys,
+            "hoverinfo": "skip",
+            "showlegend": False,
+            "line": {"color": "black", "width": 1},
+        }
+        key_trace = {
+            "type": "scatter",
+            "mode": "lines+text",
+            "x": kxs + [kx - 0.01 * span_x],
+            "y": kys + [ky],
+            "text": [""] * len(kxs) + [f"{ARROW_KEY_SPEED:g} {units}"],
+            "textposition": "middle left",
+            "hoverinfo": "skip",
+            "showlegend": False,
+            "line": {"color": "black", "width": 1.5},
+            "textfont": {"size": 13},
+            "uid_suffix": "key",
+        }
         panels.append(Panel([arrows, key_trace], ptitle, key))
     return Bound(panels, is_map=True, extent=extent)
 
@@ -401,8 +428,12 @@ def _points_extent(da):
     lon = np.asarray(da[lon_name].values, dtype=float)
     pad_lat = max(0.5, 0.1 * float(np.nanmax(lat) - np.nanmin(lat)))
     pad_lon = max(0.5, 0.1 * float(np.nanmax(lon) - np.nanmin(lon)))
-    return [float(np.nanmin(lon)) - pad_lon, float(np.nanmax(lon)) + pad_lon,
-            float(np.nanmin(lat)) - pad_lat, float(np.nanmax(lat)) + pad_lat]
+    return [
+        float(np.nanmin(lon)) - pad_lon,
+        float(np.nanmax(lon)) + pad_lon,
+        float(np.nanmin(lat)) - pad_lat,
+        float(np.nanmax(lat)) + pad_lat,
+    ]
 
 
 def bind_points(trace, meta, ctx, loc):
@@ -413,6 +444,10 @@ def bind_points(trace, meta, ctx, loc):
         raise UsageError(
             f'{loc}: meta.bind "points" needs a station_id or point_id dimension '
             f"(dims: {list(da.dims)})"
+        )
+    if da.sizes[pdim] == 0:
+        raise UsageError(
+            f"{loc}: no stations remain after layout.meta.geo.bbox / mask_geojson; nothing to plot"
         )
     da = _reduce(da, source)
     fdim = _facet_dim(meta, da, (pdim,), loc)
@@ -428,16 +463,40 @@ def bind_points(trace, meta, ctx, loc):
     for key, ptitle, part in _slices(da, fdim):
         vals = np.asarray(part.values, dtype=float)
         values.append(vals)
-        panels.append(Panel([{
-            "mode": "markers", "x": lon, "y": lat, "text": names, "customdata": vals,
-            "marker": {"color": vals, "size": 11, "line": {"color": "black", "width": 0.6}},
-            "hovertemplate": "%{text}: %{customdata:.4g}<extra></extra>", "showlegend": False,
-        }], ptitle, key))
+        panels.append(
+            Panel(
+                [
+                    {
+                        "mode": "markers",
+                        "x": lon,
+                        "y": lat,
+                        "text": names,
+                        "customdata": vals,
+                        "marker": {
+                            "color": vals,
+                            "size": 11,
+                            "line": {"color": "black", "width": 0.6},
+                        },
+                        "hovertemplate": "%{text}: %{customdata:.4g}<extra></extra>",
+                        "showlegend": False,
+                    }
+                ],
+                ptitle,
+                key,
+            )
+        )
     extent = (
         [ctx.bbox[1], ctx.bbox[3], ctx.bbox[2], ctx.bbox[0]] if ctx.bbox else _points_extent(da)
     )
-    return Bound(panels, is_map=True, extent=extent, color_values=values,
-                 color_key="marker.color", color_da=da, color_title=variable_label_for_display(da))
+    return Bound(
+        panels,
+        is_map=True,
+        extent=extent,
+        color_values=values,
+        color_key="marker.color",
+        color_da=da,
+        color_title=variable_label_for_display(da),
+    )
 
 
 def _geojson_lines(path):
@@ -467,13 +526,21 @@ def bind_geojson(trace, meta, ctx, loc):
     if not path:
         raise UsageError(f'{loc}: meta.bind "geojson" needs meta.source.geojson (a file path)')
     xs, ys, (w, s, e, n) = _geojson_lines(path)
-    line = {"mode": "lines", "x": xs, "y": ys, "hoverinfo": "skip", "showlegend": False,
-            "line": {"color": "black", "width": 1.6}}
+    line = {
+        "mode": "lines",
+        "x": xs,
+        "y": ys,
+        "hoverinfo": "skip",
+        "showlegend": False,
+        "line": {"color": "black", "width": 1.6},
+    }
     return Bound([Panel([line])], is_map=True, static=True, extent=[w, e, s, n])
 
 
 def _color_name(trace, color):
-    return (trace.get("line") or {}).get("color") or (trace.get("marker") or {}).get("color") or color
+    return (
+        (trace.get("line") or {}).get("color") or (trace.get("marker") or {}).get("color") or color
+    )
 
 
 def _rgba(color, alpha):
@@ -500,9 +567,13 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
             raise UsageError(f"{loc}: a series needs a step or time axis; got {list(da.dims)}")
     along = along_dim(da, meta.get("along"))
     if meta.get("along") and along is None:
-        raise UsageError(f"{loc}.along {meta['along']!r} is not a dimension (dims: {list(da.dims)})")
+        raise UsageError(
+            f"{loc}.along {meta['along']!r} is not a dimension (dims: {list(da.dims)})"
+        )
     if along == sdim:
-        raise UsageError(f"{loc}.along is the time axis {sdim!r}; pass a non-time dim such as number")
+        raise UsageError(
+            f"{loc}.along is the time axis {sdim!r}; pass a non-time dim such as number"
+        )
     extra = [d for d in da.dims if d not in (sdim, along)]
     if extra:
         raise UsageError(
@@ -539,28 +610,63 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
         if band is not None:
             col = _color_name(trace, color)
             lo, hi = np.nanpercentile(y, band[0], axis=1), np.nanpercentile(y, band[1], axis=1)
-            common = {"type": "scatter", "x": xs, "mode": "lines", "line": {"width": 0},
-                      "showlegend": False, "hoverinfo": "skip", "legendgroup": label}
+            common = {
+                "type": "scatter",
+                "x": xs,
+                "mode": "lines",
+                "line": {"width": 0},
+                "showlegend": False,
+                "hoverinfo": "skip",
+                "legendgroup": label,
+            }
             traces += [
                 {**common, "y": lo, "uid_suffix": "band-low"},
-                {**common, "y": hi, "fill": "tonexty", "fillcolor": _rgba(col, 0.25),
-                 "uid_suffix": "band-high"},
-                {**base, "x": xs, "y": np.nanmean(y, axis=1), "mode": "lines",
-                 "line": {"color": col, "width": 2}},
+                {
+                    **common,
+                    "y": hi,
+                    "fill": "tonexty",
+                    "fillcolor": _rgba(col, 0.25),
+                    "uid_suffix": "band-high",
+                },
+                {
+                    **base,
+                    "x": xs,
+                    "y": np.nanmean(y, axis=1),
+                    "mode": "lines",
+                    "line": {"color": col, "width": 2},
+                },
             ]
         elif meta.get("along_color") == "cycle":
             if (trace.get("line") or {}).get("color"):
-                raise UsageError(f"{loc}: along_color cycle gives each member its own color; drop line.color")
+                raise UsageError(
+                    f"{loc}: along_color cycle gives each member its own color; drop line.color"
+                )
             for j, member in enumerate(members):
-                traces.append({**base, "x": xs, "y": y[:, j], "name": member, "mode": "lines",
-                               "uid_suffix": f"{along}={member}"})
+                traces.append(
+                    {
+                        **base,
+                        "x": xs,
+                        "y": y[:, j],
+                        "name": member,
+                        "mode": "lines",
+                        "uid_suffix": f"{along}={member}",
+                    }
+                )
         else:
             gx, gy = [], []
             for j in range(y.shape[1]):
                 gx += xs + [None]
                 gy += list(y[:, j]) + [None]
-            traces.append({**base, "x": gx, "y": gy, "mode": "lines", "opacity": 0.45,
-                           "line": {"width": 1, "color": _color_name(trace, color)}})
+            traces.append(
+                {
+                    **base,
+                    "x": gx,
+                    "y": gy,
+                    "mode": "lines",
+                    "opacity": 0.45,
+                    "line": {"width": 1, "color": _color_name(trace, color)},
+                }
+            )
     titles = {"x": "" if is_date else axis_label(xname), "y": variable_label_for_display(da)}
     return Bound([Panel(traces)], axis_titles=titles, x_is_date=is_date)
 
@@ -570,7 +676,9 @@ def _xy_series(ctx, source, loc):
     sdim = "step" if "step" in da.dims else cf_dim(da, "time")
     if sdim is None or sdim not in da.dims:
         if da.ndim != 1:
-            raise UsageError(f"{loc} needs a time or step axis to pair samples; got {list(da.dims)}")
+            raise UsageError(
+                f"{loc} needs a time or step axis to pair samples; got {list(da.dims)}"
+            )
         sdim = da.dims[0]
     rest = [d for d in da.dims if d != sdim]
     reduced = da.mean(rest, keep_attrs=True) if rest else da
@@ -591,11 +699,19 @@ def bind_pair(trace, meta, ctx, loc):
     if xv.size == 0:
         raise UsageError(f"{loc}: no finite paired samples to plot")
     labelled = pair_on == "year" or (pair_on == "time" and xv.size <= 25)
-    out = {"mode": "markers+text" if labelled else "markers", "x": xv, "y": yv,
-           "marker": {"size": 10}, "showlegend": False}
+    out = {
+        "mode": "markers+text" if labelled else "markers",
+        "x": xv,
+        "y": yv,
+        "marker": {"size": 10},
+        "showlegend": False,
+    }
     if labelled:
-        out.update(text=[format_plot_date(k) if pair_on == "time" else str(k) for k in keys],
-                   textposition="top right", textfont={"size": 11})
+        out.update(
+            text=[format_plot_date(k) if pair_on == "time" else str(k) for k in keys],
+            textposition="top right",
+            textfont={"size": 11},
+        )
     x_qty = variable_label_for_display(x_da, include_units=False)
     y_qty = variable_label_for_display(y_da, include_units=False)
     return Bound(
@@ -613,11 +729,13 @@ def bind_samples(trace, meta, ctx, loc):
     lat, lon = cf_dim(da, "latitude"), cf_dim(da, "longitude")
     if point is not None:
         if lat not in da.dims or lon not in da.dims:
-            raise UsageError(f"{loc}.source.point needs latitude/longitude dims; got {list(da.dims)}")
+            raise UsageError(
+                f"{loc}.source.point needs latitude/longitude dims; got {list(da.dims)}"
+            )
         da = da.sel({lat: point["lat"], lon: point["lon"]}, method="nearest")
     elif lat in da.dims or lon in da.dims:
         raise UsageError(
-            f"{loc}.source.point or layout.meta.geo.point ({{\"lat\": …, \"lon\": …}}) is "
+            f'{loc}.source.point or layout.meta.geo.point ({{"lat": …, "lon": …}}) is '
             "required to take samples at a point"
         )
     da = _reduce(da, source)
@@ -663,22 +781,35 @@ def bind_windrose(trace, meta, ctx, loc):
     freq = 100.0 * hist / float(hist.sum())
     n = freq.shape[1]
     palette = meta.get("palette")
-    colors = parse_palette(palette, loc=f"{loc}.palette", registry=ctx.palettes)["colors"] if palette else WIND_SPEED_COLORS
+    colors = (
+        parse_palette(palette, loc=f"{loc}.palette", registry=ctx.palettes)["colors"]
+        if palette
+        else WIND_SPEED_COLORS
+    )
     from plotly.colors import sample_colorscale
 
     colors = sample_colorscale(continuous_colorscale(colors), [i / max(n - 1, 1) for i in range(n)])
     units = speed_units_display(u_da)
     theta = [i * 360.0 / WIND_ROSE_SECTORS for i in range(WIND_ROSE_SECTORS)]
     traces = [
-        {"r": freq[:, i], "theta": theta, "name": f"{label} {units}", "uid_suffix": f"bin{i}",
-         "marker": {"color": colors[i], "line": {"color": "white", "width": 0.6}}}
+        {
+            "r": freq[:, i],
+            "theta": theta,
+            "name": f"{label} {units}",
+            "uid_suffix": f"bin{i}",
+            "marker": {"color": colors[i], "line": {"color": "white", "width": 0.6}},
+        }
         for i, label in enumerate(speed_bin_labels(edges))
     ]
     compass = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
     layout = {
         "polar": {
-            "angularaxis": {"rotation": 90, "direction": "clockwise",
-                            "tickvals": [i * 45 for i in range(8)], "ticktext": compass},
+            "angularaxis": {
+                "rotation": 90,
+                "direction": "clockwise",
+                "tickvals": [i * 45 for i in range(8)],
+                "ticktext": compass,
+            },
             "radialaxis": {"ticksuffix": "%", "angle": 90, "tickangle": 90},
         },
         "legend": {"title": {"text": "Wind speed"}},
@@ -730,4 +861,3 @@ def bind_trace(trace: dict, ctx: Context, loc: str, *, color=None) -> Bound:
     if bind == "series":
         return bind_series(trace, trace.get("meta") or {}, ctx, loc, color=color)
     return BINDERS[bind](trace, trace.get("meta") or {}, ctx, loc)
-

@@ -171,12 +171,18 @@ def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
     user = deep_merge(lifted, user_axis or {})
     first = members[0][1]
     palette_raw = next(
-        ((st.get("meta") or {}).get("palette") for st, _, _ in members if (st.get("meta") or {}).get("palette")),
+        (
+            (st.get("meta") or {}).get("palette")
+            for st, _, _ in members
+            if (st.get("meta") or {}).get("palette")
+        ),
         None,
     )
     palette = parse_palette(palette_raw, registry=ctx.palettes) if palette_raw else None
     if palette is None and "colorscale" not in user:
-        palette = next((default_palette(b.color_da) for _, b, _ in members if b.color_da is not None), None)
+        palette = next(
+            (default_palette(b.color_da) for _, b, _ in members if b.color_da is not None), None
+        )
     values = np.concatenate([np.ravel(v) for _, b, _ in members for v in b.color_values])
     finite = values[np.isfinite(values)]
     stretch = "cmin" in user or "cmax" in user
@@ -245,7 +251,9 @@ def _assemble_map(items, user_layout, lmeta, ctx, font):
     order = sorted(groups)
     plan = []  # per group: list of panel keys (None for an unfaceted group)
     for g in order:
-        faceted = [b for _, _, b in groups[g] if b is not None and not b.static and len(b.panels) > 1]
+        faceted = [
+            b for _, _, b in groups[g] if b is not None and not b.static and len(b.panels) > 1
+        ]
         if faceted:
             keys = [p.key for p in faceted[0].panels]
             for b in faceted[1:]:
@@ -268,7 +276,9 @@ def _assemble_map(items, user_layout, lmeta, ctx, font):
     if len(order) > 1:
         # Unfaceted side-by-side traces keep their axis number as their cell,
         # so x, x2, x4 leaves cell 3 empty.
-        panels = [(order.index(a), None) if a in order else (None, None) for a in range(1, order[-1] + 1)]
+        panels = [
+            (order.index(a), None) if a in order else (None, None) for a in range(1, order[-1] + 1)
+        ]
     else:
         panels = [(0, k) for k in plan[0]]
     n = len(panels)
@@ -286,7 +296,9 @@ def _assemble_map(items, user_layout, lmeta, ctx, font):
         for i, spec_trace, bound in groups[g]:
             uid = spec_trace.get("uid") or f"trace{i}"
             if bound is None:
-                tr = copy.deepcopy({k: v for k, v in spec_trace.items() if k not in ("xaxis", "yaxis")})
+                tr = copy.deepcopy(
+                    {k: v for k, v in spec_trace.items() if k not in ("xaxis", "yaxis")}
+                )
                 tr["uid"] = safe_uid(f"{uid}-p{p + 1}" if n > 1 else uid)
                 panel_traces[p].append((_MAP_RANK[None], tr, spec_trace, None))
                 continue
@@ -303,15 +315,21 @@ def _assemble_map(items, user_layout, lmeta, ctx, font):
                 tr = _concrete(spec_trace, gen, pid if j == 0 else f"{pid}-{j}")
                 panel_traces[p].append((_MAP_RANK[bind_of(spec_trace)], tr, spec_trace, bound))
         if extents[p] is None:
-            extents[p] = next((b.extent for _, _, b in groups[g] if b is not None and b.extent), None)
+            extents[p] = next(
+                (b.extent for _, _, b in groups[g] if b is not None and b.extent), None
+            )
         if extents[p] is None:
             raise UsageError("a map panel has no data extent; set layout.meta.geo.bbox")
     if len(order) > 1:
+        # Side by side, a panel is named for its dataset (trace name, else file name).
         for p, (gi, _) in enumerate(panels):
-            if gi is not None and panel_titles[p] is None:
-                bound_items = [(t, b) for _, t, b in groups[order[gi]] if b is not None and not b.static]
-                if bound_items:
-                    panel_titles[p] = _input_label(ctx, bound_items[0][0])
+            if gi is None:
+                continue
+            bound_items = [
+                (t, b) for _, t, b in groups[order[gi]] if b is not None and not b.static
+            ]
+            if bound_items:
+                panel_titles[p] = _input_label(ctx, bound_items[0][0]) or panel_titles[p]
 
     # Color axes: explicit coloraxis wins; else same color title on one group shares.
     axis_of = {}  # id(spec_trace) -> coloraxis name
@@ -322,7 +340,11 @@ def _assemble_map(items, user_layout, lmeta, ctx, font):
         for _, spec_trace, bound in groups[g]:
             if bound is None or not bound.color_values:
                 continue
-            name = spec_trace.get("coloraxis") if bound.color_key == "z" else (spec_trace.get("marker") or {}).get("coloraxis")
+            name = (
+                spec_trace.get("coloraxis")
+                if bound.color_key == "z"
+                else (spec_trace.get("marker") or {}).get("coloraxis")
+            )
             if not name:
                 key = (g, bound.color_title)
                 name = auto.get(key)
@@ -350,7 +372,9 @@ def _assemble_map(items, user_layout, lmeta, ctx, font):
                 entry[2].append(tr)
     # Which panels each axis covers, for colorbar placement.
     covers = {
-        name: sorted({p for p in range(n) for _, tr, st, _ in panel_traces[p] if axis_of.get(id(st)) == name})
+        name: sorted(
+            {p for p in range(n) for _, tr, st, _ in panel_traces[p] if axis_of.get(id(st)) == name}
+        )
         for name in axis_members
     }
     right_bars = [0] * n
@@ -372,25 +396,53 @@ def _assemble_map(items, user_layout, lmeta, ctx, font):
             placement[name] = ("right", last, right_bars[last])
             right_bars[last] += 1
     xgap, ygap = grid_in.get("xgap"), grid_in.get("ygap")
-    has_title = bool(((user_layout.get("title") or {}).get("text")) if isinstance(user_layout.get("title"), dict) else user_layout.get("title"))
-    user_titles = [a for a in (user_layout.get("annotations") or []) if str(a.get("name", "")).startswith("panel-title-")]
+    has_title = bool(
+        ((user_layout.get("title") or {}).get("text"))
+        if isinstance(user_layout.get("title"), dict)
+        else user_layout.get("title")
+    )
+    user_titles = [
+        a
+        for a in (user_layout.get("annotations") or [])
+        if str(a.get("name", "")).startswith("panel-title-")
+    ]
     aspect = float(np.median([(e[1] - e[0]) / max(e[3] - e[2], 1e-6) for e in extents if e]))
     grid = map_grid(
-        n, rows, cols, aspect, font=font, has_title=has_title,
+        n,
+        rows,
+        cols,
+        aspect,
+        font=font,
+        has_title=has_title,
         has_panel_titles=any(panel_titles) or bool(user_titles),
-        right_bars=right_bars, bottom_bars=len(bottom), side_bar=side is not None,
-        width=user_layout.get("width"), height=user_layout.get("height"),
-        xgap=xgap, ygap=ygap,
+        right_bars=right_bars,
+        bottom_bars=len(bottom),
+        side_bar=side is not None,
+        width=user_layout.get("width"),
+        height=user_layout.get("height"),
+        xgap=xgap,
+        ygap=ygap,
     )
-    layout = {"width": grid["width"], "height": grid["height"], "margin": grid["margin"],
-              "showlegend": False, "annotations": []}
+    layout = {
+        "width": grid["width"],
+        "height": grid["height"],
+        "margin": grid["margin"],
+        "showlegend": False,
+        "annotations": [],
+    }
     for p in range(n):
         s = axis_suffix(p)
         if extents[p] is None:
             xd, yd = grid["domains"][p]
             # An empty cell keeps a bare axis so annotations can still target it.
-            bare = {"showline": False, "showgrid": False, "zeroline": False,
-                    "showticklabels": False, "ticks": "", "fixedrange": True}
+            bare = {
+                "showline": False,
+                "showgrid": False,
+                "zeroline": False,
+                "showticklabels": False,
+                "ticks": "",
+                "fixedrange": True,
+            }
             layout[f"xaxis{s}"] = {**bare, "domain": xd, "anchor": f"y{s}"}
             layout[f"yaxis{s}"] = {**bare, "domain": yd, "anchor": f"x{s}"}
             continue
@@ -400,8 +452,12 @@ def _assemble_map(items, user_layout, lmeta, ctx, font):
     for name, members in axis_members.items():
         contours = [tr for _, b, trs in members for tr in trs if tr.get("type") == "contour"]
         for tr in contours:
-            fill_defaults(tr, {"contours": {"coloring": "fill"}, "line": {"color": "black", "width": 0.5}})
-        axis = _resolve_coloraxis(name, members, user_layout.get(name), ctx, contour_traces=contours)
+            fill_defaults(
+                tr, {"contours": {"coloring": "fill"}, "line": {"color": "black", "width": 0.5}}
+            )
+        axis = _resolve_coloraxis(
+            name, members, user_layout.get(name), ctx, contour_traces=contours
+        )
         where = placement.get(name)
         if where is None:
             axis["showscale"] = False
@@ -423,17 +479,34 @@ def _assemble_map(items, user_layout, lmeta, ctx, font):
         s = axis_suffix(p)
         if extents[p] is None:
             # plotly.js only builds axes a trace uses; keep the empty cell's axis alive.
-            data.append({"type": "scatter", "x": [None], "y": [None], "xaxis": f"x{s}",
-                         "yaxis": f"y{s}", "hoverinfo": "skip", "showlegend": False,
-                         "uid": f"empty-p{p + 1}"})
+            data.append(
+                {
+                    "type": "scatter",
+                    "x": [None],
+                    "y": [None],
+                    "xaxis": f"x{s}",
+                    "yaxis": f"y{s}",
+                    "hoverinfo": "skip",
+                    "showlegend": False,
+                    "uid": f"empty-p{p + 1}",
+                }
+            )
             continue
         for name, geoms in overlay_geoms(extents[p], settings):
             xs, ys = geoms_to_xy(geoms, rings_only=name == "lakes")
             style = copy.deepcopy(OVERLAY_STYLES[name])
             if isinstance(settings.get(name), dict):
                 style = deep_merge(style, settings[name])
-            tr = {"type": "scatter", "mode": "lines", "x": xs, "y": ys, "hoverinfo": "skip",
-                  "showlegend": False, "uid": f"overlay-{name}-{p + 1}", **style}
+            tr = {
+                "type": "scatter",
+                "mode": "lines",
+                "x": xs,
+                "y": ys,
+                "hoverinfo": "skip",
+                "showlegend": False,
+                "uid": f"overlay-{name}-{p + 1}",
+                **style,
+            }
             panel_traces[p].append((_MAP_RANK["overlay"], tr, None, None))
         for _, tr, _, _ in sorted(panel_traces[p], key=lambda item: item[0]):
             tr["xaxis"], tr["yaxis"] = f"x{s}", f"y{s}"
@@ -444,7 +517,11 @@ def _assemble_map(items, user_layout, lmeta, ctx, font):
 def _key(value):
     arr = np.asarray(value)
     if arr.dtype.kind in "Mm":
-        return int(arr.astype("datetime64[ns]" if arr.dtype.kind == "M" else "timedelta64[ns]").astype("int64"))
+        return int(
+            arr.astype("datetime64[ns]" if arr.dtype.kind == "M" else "timedelta64[ns]").astype(
+                "int64"
+            )
+        )
     return str(value)
 
 
@@ -492,7 +569,13 @@ def _assemble_chart(items, user_layout, font):
     if cells > 1 and grid.get("rows", 1) > 1:
         layout["height"] = max(CHART_SIZE[1], 300 * grid["rows"])
     if n_legend > 1 and "polar" not in layout:
-        layout["legend"] = {"orientation": "h", "x": 0.5, "xanchor": "center", "y": -0.15, "yanchor": "top"}
+        layout["legend"] = {
+            "orientation": "h",
+            "x": 0.5,
+            "xanchor": "center",
+            "y": -0.15,
+            "yanchor": "top",
+        }
     if "polar" in layout:
         layout["width"], layout["height"] = 850, 700
     return data, layout

@@ -298,7 +298,9 @@ def check_trace_meta(meta, loc: str) -> None:
     ):
         raise UsageError(f"plot spec {loc}.band must be a percentile pair such as [10, 90]")
     if band is not None and not meta.get("along"):
-        raise UsageError(f"plot spec {loc}.band needs {loc}.along (the dim to take percentiles over)")
+        raise UsageError(
+            f"plot spec {loc}.band needs {loc}.along (the dim to take percentiles over)"
+        )
     if meta.get("align") not in (None, "dayofyear"):
         raise UsageError(f"plot spec {loc}.align must be 'dayofyear'")
     if meta.get("palette") is not None:
@@ -316,7 +318,9 @@ def check_layout_meta(meta) -> None:
     if inputs is not None and not (
         isinstance(inputs, dict) and all(isinstance(v, str) for v in inputs.values())
     ):
-        raise UsageError('plot spec layout.meta.inputs must map input ids to paths: {"a": "x.zarr"}')
+        raise UsageError(
+            'plot spec layout.meta.inputs must map input ids to paths: {"a": "x.zarr"}'
+        )
     geo = meta.get("geo")
     if geo is not None:
         _check_keys(geo, GEO_KEYS, "layout.meta.geo")
@@ -386,7 +390,9 @@ def plotly_error(exc: Exception, loc: str = "") -> UsageError:
     elif len(lines) > 12:
         msg += "\n…"
     prefix = f"plot spec {loc}: " if loc else "plot spec: "
-    return UsageError(prefix + msg + "\nKeys are standard Plotly: https://plotly.com/python/reference/")
+    return UsageError(
+        prefix + msg + "\nKeys are standard Plotly: https://plotly.com/python/reference/"
+    )
 
 
 def validate(spec: dict) -> dict:

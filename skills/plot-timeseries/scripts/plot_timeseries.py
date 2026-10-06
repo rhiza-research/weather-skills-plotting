@@ -101,13 +101,22 @@ def warn_mixed_units(spec: dict, datasets: dict) -> None:
 
 @weather_skill(name="plot-timeseries", version=_SKILL_VERSION)
 @weather_skill.argument(
-    "-i", "--input", type=Dataset("any"), action="append", required=False,
+    "-i",
+    "--input",
+    type=Dataset("any"),
+    action="append",
+    required=False,
     help="Input Zarr; repeat once per series (legend order; trace uids a, b, …).",
 )
 @weather_skill.argument("--spec", default=None, type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
-@weather_skill.argument("--theme-file", default=None,
-                        help="Theme JSON/TOML: {template: <Plotly template>, palettes: {…}}.")
-@weather_skill.argument("--dump-spec", nargs="?", const="-", default=None, probe=True, help=DUMP_SPEC_HELP)
+@weather_skill.argument(
+    "--theme-file",
+    default=None,
+    help="Theme JSON/TOML: {template: <Plotly template>, palettes: {…}}.",
+)
+@weather_skill.argument(
+    "--dump-spec", nargs="?", const="-", default=None, probe=True, help=DUMP_SPEC_HELP
+)
 def plot_timeseries(ds, output, spec=None, theme_file=None, dump_spec=None, **kwargs):
     """Overlay one series per input Zarr on a shared time axis."""
     files = [d for d in (ds or []) if d is not None]
@@ -120,8 +129,12 @@ def plot_timeseries(ds, output, spec=None, theme_file=None, dump_spec=None, **kw
     if not datasets:
         raise UsageError("pass -i/--input, or a --spec with layout.meta.inputs")
     data = [
-        {"uid": key, "type": "scatter", "name": trace_label(d, i),
-         "meta": {"bind": "series", "source": {"input": key}}}
+        {
+            "uid": key,
+            "type": "scatter",
+            "name": trace_label(d, i),
+            "meta": {"bind": "series", "source": {"input": key}},
+        }
         for i, (key, d) in enumerate(datasets.items())
     ]
     base = skeleton("plot-timeseries", datasets, data)

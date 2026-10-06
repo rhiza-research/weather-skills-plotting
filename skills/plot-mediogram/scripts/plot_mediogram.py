@@ -35,8 +35,12 @@ MCLIMATE_COLOR = "red"
 
 def _box(uid, name, color, source):
     return {
-        "uid": uid, "type": "box", "name": name, "fillcolor": color,
-        "line": {"color": "black", "width": 1}, "marker": {"color": "black", "size": 4},
+        "uid": uid,
+        "type": "box",
+        "name": name,
+        "fillcolor": color,
+        "line": {"color": "black", "width": 1},
+        "marker": {"color": "black", "size": 4},
         "meta": {"bind": "samples", "source": source},
     }
 
@@ -48,13 +52,22 @@ def _variable(ds, user, uid):
 
 @weather_skill(name="plot-mediogram", version=_SKILL_VERSION)
 @weather_skill.argument(
-    "-i", "--input", type=Dataset("any"), action="append", required=False,
+    "-i",
+    "--input",
+    type=Dataset("any"),
+    action="append",
+    required=False,
     help="Pass twice: the forecast Zarr, then the m-climate Zarr (input ids forecast, mclimate).",
 )
 @weather_skill.argument("--spec", default=None, type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
-@weather_skill.argument("--theme-file", default=None,
-                        help="Theme JSON/TOML: {template: <Plotly template>, palettes: {…}}.")
-@weather_skill.argument("--dump-spec", nargs="?", const="-", default=None, probe=True, help=DUMP_SPEC_HELP)
+@weather_skill.argument(
+    "--theme-file",
+    default=None,
+    help="Theme JSON/TOML: {template: <Plotly template>, palettes: {…}}.",
+)
+@weather_skill.argument(
+    "--dump-spec", nargs="?", const="-", default=None, probe=True, help=DUMP_SPEC_HELP
+)
 def plot_mediogram(ds, output, spec=None, theme_file=None, dump_spec=None, **kwargs):
     """ECMWF-style mediogram: forecast vs m-climate ensemble distributions at a point."""
     files = [d for d in (ds or []) if d is not None]
@@ -70,7 +83,9 @@ def plot_mediogram(ds, output, spec=None, theme_file=None, dump_spec=None, **kwa
     user = spec.data if spec is not None else {}
     point = (((user.get("layout") or {}).get("meta") or {}).get("geo") or {}).get("point")
     if point is None:
-        raise UsageError('set the point in --spec: {"layout": {"meta": {"geo": {"point": {"lat": -1.3, "lon": 36.8}}}}}')
+        raise UsageError(
+            'set the point in --spec: {"layout": {"meta": {"geo": {"point": {"lat": -1.3, "lon": 36.8}}}}}'
+        )
     das = {}
     for key, d in datasets.items():
         var = _variable(d, user, key)
@@ -86,9 +101,14 @@ def plot_mediogram(ds, output, spec=None, theme_file=None, dump_spec=None, **kwa
     data = [
         _box("forecast", "forecast", FORECAST_COLOR, fc),
         _box("mclimate", "m-climate", MCLIMATE_COLOR, {"input": "mclimate", "isel": steps}),
-        {"uid": "forecast-mean", "type": "scatter", "name": "forecast mean",
-         "line": {"color": "black", "width": 2}, "marker": {"color": "black"},
-         "meta": {"bind": "samples", "source": fc}},
+        {
+            "uid": "forecast-mean",
+            "type": "scatter",
+            "name": "forecast mean",
+            "line": {"color": "black", "width": 2},
+            "marker": {"color": "black"},
+            "meta": {"bind": "samples", "source": fc},
+        },
     ]
     da = das["forecast"]
     lat, lon = cf_dim(da, "latitude"), cf_dim(da, "longitude")

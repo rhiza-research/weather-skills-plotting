@@ -80,43 +80,91 @@ def _layer_traces(layers):
             mask = layer.path
             continue
         if layer.kind == "outline":
-            data.append({"uid": uid, "type": "scatter",
-                         "meta": {"bind": "geojson", "source": {"geojson": layer.path}}})
+            data.append(
+                {
+                    "uid": uid,
+                    "type": "scatter",
+                    "meta": {"bind": "geojson", "source": {"geojson": layer.path}},
+                }
+            )
             continue
         datasets[uid] = layer.ds
         source = {"input": uid}
         if layer.kind in ("heatmap", "contour"):
             data.append({"uid": uid, "type": layer.kind, "meta": {"source": source}})
         elif layer.kind == "scatter":
-            data.append({"uid": uid, "type": "scatter", "meta": {"bind": "points", "source": source}})
+            data.append(
+                {"uid": uid, "type": "scatter", "meta": {"bind": "points", "source": source}}
+            )
         else:
-            data.append({"uid": uid, "type": "heatmap", "meta": {"bind": "speed", "source": source}})
-            data.append({"uid": f"{uid}-arrows", "type": "scatter",
-                         "meta": {"bind": "arrows", "source": source}})
+            data.append(
+                {"uid": uid, "type": "heatmap", "meta": {"bind": "speed", "source": source}}
+            )
+            data.append(
+                {
+                    "uid": f"{uid}-arrows",
+                    "type": "scatter",
+                    "meta": {"bind": "arrows", "source": source},
+                }
+            )
     return data, datasets, mask
 
 
 @weather_skill(name="plot", version=_SKILL_VERSION)
 @weather_skill.argument(
-    "-i", "--input", type=Dataset("any"), action="append", required=False,
+    "-i",
+    "--input",
+    type=Dataset("any"),
+    action="append",
+    required=False,
     help="Input Zarr. Repeat for side-by-side maps, one panel per file on its own grid "
     "(input ids a, b, … in order). Exclusive with --layer and --x/--y.",
 )
-@weather_skill.argument("--x", dest="x_ds", type=Dataset("any"), required=False, default=None,
-                        help="X series Zarr for an xy scatter (input id x).")
-@weather_skill.argument("--y", dest="y_ds", type=Dataset("any"), required=False, default=None,
-                        help="Y series Zarr for an xy scatter (input id y).")
 @weather_skill.argument(
-    "--layer", action="append", default=None, type=parse_layer,
+    "--x",
+    dest="x_ds",
+    type=Dataset("any"),
+    required=False,
+    default=None,
+    help="X series Zarr for an xy scatter (input id x).",
+)
+@weather_skill.argument(
+    "--y",
+    dest="y_ds",
+    type=Dataset("any"),
+    required=False,
+    default=None,
+    help="Y series Zarr for an xy scatter (input id y).",
+)
+@weather_skill.argument(
+    "--layer",
+    action="append",
+    default=None,
+    type=parse_layer,
     help="KIND:PATH layer drawn on one shared map; repeat to stack. Kinds: heatmap, contour, "
     "scatter (stations), quiver (u/v), outline (GeoJSON), mask (GeoJSON). Trace uids are a, b, … "
     "in order.",
 )
 @weather_skill.argument("--spec", default=None, type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
-@weather_skill.argument("--theme-file", default=None,
-                        help="Theme JSON/TOML: {template: <Plotly template>, palettes: {name: {colors, bounds}}}.")
-@weather_skill.argument("--dump-spec", nargs="?", const="-", default=None, probe=True, help=DUMP_SPEC_HELP)
-def plot(ds, output, layer=None, x_ds=None, y_ds=None, spec=None, theme_file=None, dump_spec=None, **kwargs):
+@weather_skill.argument(
+    "--theme-file",
+    default=None,
+    help="Theme JSON/TOML: {template: <Plotly template>, palettes: {name: {colors, bounds}}}.",
+)
+@weather_skill.argument(
+    "--dump-spec", nargs="?", const="-", default=None, probe=True, help=DUMP_SPEC_HELP
+)
+def plot(
+    ds,
+    output,
+    layer=None,
+    x_ds=None,
+    y_ds=None,
+    spec=None,
+    theme_file=None,
+    dump_spec=None,
+    **kwargs,
+):
     """Render a map, time series, xy scatter, or wind rose from weather-skills Zarrs."""
     files = [d for d in (ds or []) if d is not None]
     layers = list(layer or [])
@@ -131,8 +179,13 @@ def plot(ds, output, layer=None, x_ds=None, y_ds=None, spec=None, theme_file=Non
             layout["meta"] = {"geo": {"mask_geojson": mask}}
     elif x_ds is not None:
         datasets = {"x": x_ds, "y": y_ds}
-        data = [{"uid": "xy", "type": "scatter",
-                 "meta": {"bind": "pair", "x": {"input": "x"}, "y": {"input": "y"}}}]
+        data = [
+            {
+                "uid": "xy",
+                "type": "scatter",
+                "meta": {"bind": "pair", "x": {"input": "x"}, "y": {"input": "y"}},
+            }
+        ]
     else:
         datasets = {letter(i): d for i, d in enumerate(files)}
         data = [
@@ -142,7 +195,9 @@ def plot(ds, output, layer=None, x_ds=None, y_ds=None, spec=None, theme_file=Non
     datasets = spec_datasets(spec, datasets)
     if not datasets and not any((t.get("meta") or {}).get("bind") == "geojson" for t in data):
         if spec is None or not (spec.data.get("data")):
-            raise UsageError("pass -i/--input, --layer, --x/--y, or a --spec with data and layout.meta.inputs")
+            raise UsageError(
+                "pass -i/--input, --layer, --x/--y, or a --spec with data and layout.meta.inputs"
+            )
     base = skeleton("plot", datasets, data)
     if layout.get("meta"):
         base["layout"]["meta"].update(layout["meta"])
