@@ -1,0 +1,47 @@
+{
+  "description": "One country highlighted on a precipitation grid: Natural Earth admin-1 lines, dashed national borders, and a heavy outline of the country picked by a filter on its ISO code (no -i GeoJSON needed). Inputs: -i obs=<grid Zarr: latitude x longitude, size-1 time, a precip total variable (here precip)>. Change 'KEN' to another ADM0_A3 code for another country.",
+  "title": {
+    "text": ["Weekly precipitation total", "Kenya"],
+    "subtitle": "Week ending 1 Oct 2026"
+  },
+  "width": 250,
+  "height": 315,
+  "projection": {"type": "equirectangular"},
+  "datasets": {
+    "obs": {
+      "zarr": "obs",
+      "fields": {"lon": "longitude.lo", "lon2": "longitude.hi", "lat": "latitude.lo", "lat2": "latitude.hi", "precip": "precip"}
+    },
+    "lakes": {"naturalearth": "lakes", "scale": "10m"},
+    "coast": {"naturalearth": "coastline", "scale": "10m"},
+    "borders": {"naturalearth": "borders", "scale": "10m"},
+    "admin1": {"naturalearth": "admin1", "scale": "10m"},
+    "countries": {"naturalearth": "countries", "scale": "10m", "properties": ["adm0_a3"]}
+  },
+  "layer": [
+    {
+      "data": {"name": "obs"},
+      "mark": {"type": "rect", "clip": true},
+      "encoding": {
+        "longitude": {"field": "lon", "type": "quantitative"},
+        "latitude": {"field": "lat", "type": "quantitative"},
+        "longitude2": {"field": "lon2"},
+        "latitude2": {"field": "lat2"},
+        "color": {"field": "precip", "type": "quantitative", "title": ["Precipitation", "[mm]"]}
+      }
+    },
+    {"data": {"name": "lakes"}, "mark": {"type": "geoshape", "fill": "#cfe8f3", "stroke": "#4a7fa5", "strokeWidth": 0.5, "clip": true}},
+    {"data": {"name": "coast"}, "mark": {"type": "geoshape", "filled": false, "stroke": "#444", "strokeWidth": 0.8, "clip": true}},
+    {"data": {"name": "borders"}, "mark": {"type": "geoshape", "filled": false, "stroke": "#444", "strokeWidth": 0.8, "strokeDash": [3, 2], "clip": true}},
+    {"data": {"name": "admin1"}, "mark": {"type": "geoshape", "filled": false, "stroke": "#666", "strokeWidth": 0.5, "clip": true}},
+    {
+      "data": {"name": "countries"},
+      "transform": [{"filter": "datum.properties.ADM0_A3 == 'KEN'"}],
+      "mark": {"type": "geoshape", "filled": false, "stroke": "black", "strokeWidth": 1.8, "clip": true}
+    }
+  ],
+  "config": {
+    "title": {"fontSize": 15, "subtitleFontSize": 11},
+    "legend": {"labelFontSize": 11, "titleFontSize": 12, "rowPadding": 3}
+  }
+}

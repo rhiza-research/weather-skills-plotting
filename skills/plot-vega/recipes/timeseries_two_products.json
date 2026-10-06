@@ -1,0 +1,30 @@
+{
+  "description": "Two products of the same quantity on one time axis (e.g. IMERG and CHIRPS weekly area means). Each binding maps its own variable name to the same columns, the shared x/y/color encodings sit at the top level, and each layer only picks its data and a constant color datum, which becomes its legend entry. The y title is the default (both variables have the same long_name and units). Inputs: -i imerg=<Zarr: time, variable precipitation_surface> -i chirps=<Zarr: time, variable precip>.",
+  "title": {"text": "Weekly precipitation: area average", "subtitle": "Points at week start"},
+  "width": 640,
+  "height": 260,
+  "datasets": {
+    "imerg": {"zarr": "imerg", "fields": {"week": "time", "precip": "precipitation_surface"}},
+    "chirps": {"zarr": "chirps", "fields": {"week": "time", "precip": "precip"}}
+  },
+  "encoding": {
+    "x": {"field": "week", "type": "temporal", "title": null, "axis": {"format": "%b %Y"}},
+    "y": {"field": "precip", "type": "quantitative"},
+    "color": {
+      "scale": {"range": ["#2c7fb8", "#d95f02"]},
+      "legend": {"orient": "top-left", "title": null, "fillColor": "white", "padding": 4, "symbolType": "stroke", "symbolStrokeWidth": 2.5}
+    }
+  },
+  "layer": [
+    {
+      "data": {"name": "imerg"},
+      "mark": {"type": "line", "point": {"size": 25}},
+      "encoding": {"color": {"datum": "IMERG Late"}}
+    },
+    {
+      "data": {"name": "chirps"},
+      "mark": {"type": "line", "point": {"size": 25}},
+      "encoding": {"color": {"datum": "CHIRPS"}}
+    }
+  ]
+}

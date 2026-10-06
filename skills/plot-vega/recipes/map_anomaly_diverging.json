@@ -1,0 +1,170 @@
+{
+  "description": "The same anomaly field twice: the default classed anomaly palette (left) and a continuous diverging Vega scheme centred on zero with domainMid (right). Inputs: -i anom=<anomaly Zarr: step x latitude x longitude, variable tp; long_name contains 'anomaly'>.",
+  "title": "Week 2 ensemble-mean precipitation anomaly",
+  "datasets": {
+    "anom": {
+      "zarr": "anom",
+      "sel": {
+        "step": "14D"
+      },
+      "fields": {
+        "lon": "longitude.lo",
+        "lon2": "longitude.hi",
+        "lat": "latitude.lo",
+        "lat2": "latitude.hi",
+        "tp": "tp"
+      }
+    },
+    "borders": {
+      "naturalearth": "borders",
+      "scale": "50m"
+    },
+    "coast": {
+      "naturalearth": "coastline",
+      "scale": "50m"
+    }
+  },
+  "hconcat": [
+    {
+      "title": "Default: classed precip anomaly palette",
+      "width": 280,
+      "height": 340,
+      "projection": {
+        "type": "equirectangular"
+      },
+      "layer": [
+        {
+          "data": {
+            "name": "anom"
+          },
+          "mark": {
+            "type": "rect",
+            "clip": true
+          },
+          "encoding": {
+            "longitude": {
+              "field": "lon",
+              "type": "quantitative"
+            },
+            "latitude": {
+              "field": "lat",
+              "type": "quantitative"
+            },
+            "longitude2": {
+              "field": "lon2"
+            },
+            "latitude2": {
+              "field": "lat2"
+            },
+            "color": {
+              "field": "tp",
+              "type": "quantitative",
+              "legend": {
+                "orient": "bottom",
+                "direction": "horizontal",
+                "columns": 4
+              }
+            }
+          }
+        },
+        {
+          "data": {
+            "name": "coast"
+          },
+          "mark": {
+            "type": "geoshape",
+            "filled": false,
+            "stroke": "#222",
+            "clip": true
+          }
+        },
+        {
+          "data": {
+            "name": "borders"
+          },
+          "mark": {
+            "type": "geoshape",
+            "filled": false,
+            "stroke": "#222",
+            "clip": true
+          }
+        }
+      ]
+    },
+    {
+      "title": "Continuous Vega scheme centred on zero",
+      "width": 280,
+      "height": 340,
+      "projection": {
+        "type": "equirectangular"
+      },
+      "layer": [
+        {
+          "data": {
+            "name": "anom"
+          },
+          "mark": {
+            "type": "rect",
+            "clip": true
+          },
+          "encoding": {
+            "longitude": {
+              "field": "lon",
+              "type": "quantitative"
+            },
+            "latitude": {
+              "field": "lat",
+              "type": "quantitative"
+            },
+            "longitude2": {
+              "field": "lon2"
+            },
+            "latitude2": {
+              "field": "lat2"
+            },
+            "color": {
+              "field": "tp",
+              "type": "quantitative",
+              "scale": {
+                "scheme": "brownbluegreen",
+                "domainMid": 0
+              },
+              "legend": {
+                "orient": "bottom",
+                "direction": "horizontal",
+                "gradientLength": 260
+              }
+            }
+          }
+        },
+        {
+          "data": {
+            "name": "coast"
+          },
+          "mark": {
+            "type": "geoshape",
+            "filled": false,
+            "stroke": "#222",
+            "clip": true
+          }
+        },
+        {
+          "data": {
+            "name": "borders"
+          },
+          "mark": {
+            "type": "geoshape",
+            "filled": false,
+            "stroke": "#222",
+            "clip": true
+          }
+        }
+      ]
+    }
+  ],
+  "resolve": {
+    "scale": {
+      "color": "independent"
+    }
+  }
+}

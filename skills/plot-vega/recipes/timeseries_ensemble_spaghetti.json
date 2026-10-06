@@ -1,0 +1,183 @@
+{
+  "description": "Ensemble members as thin lines, a 10-90% quantile band, the ensemble mean, and a dashed climatology, with one legend built from color datum values. Inputs: -i ens=<point ensemble Zarr: number x step (+ scalar init time), variables t2m and t2m_clim>.",
+  "title": {
+    "text": "2 m temperature, 51-member ensemble",
+    "subtitle": "Init 1 Oct 2026 · members, 10–90% band, ensemble mean, climatology"
+  },
+  "width": 640,
+  "height": 300,
+  "datasets": {
+    "ens": {
+      "zarr": "ens",
+      "fields": {
+        "valid": "valid_time",
+        "member": "number",
+        "t2m": "t2m"
+      }
+    },
+    "clim": {
+      "zarr": "ens",
+      "fields": {
+        "valid": "valid_time",
+        "t2m": "t2m_clim"
+      }
+    }
+  },
+  "encoding": {
+    "x": {
+      "field": "valid",
+      "type": "temporal",
+      "title": null,
+      "axis": {
+        "format": "%d %b"
+      }
+    }
+  },
+  "layer": [
+    {
+      "data": {
+        "name": "ens"
+      },
+      "mark": {
+        "type": "line",
+        "strokeWidth": 0.7,
+        "opacity": 0.35
+      },
+      "encoding": {
+        "y": {
+          "field": "t2m",
+          "type": "quantitative",
+          "scale": {
+            "zero": false
+          }
+        },
+        "detail": {
+          "field": "member"
+        },
+        "color": {
+          "datum": "Members"
+        }
+      }
+    },
+    {
+      "data": {
+        "name": "ens"
+      },
+      "transform": [
+        {
+          "quantile": "t2m",
+          "groupby": [
+            "valid"
+          ],
+          "probs": [
+            0.1,
+            0.9
+          ]
+        },
+        {
+          "calculate": "datum.prob < 0.5 ? 'lo' : 'hi'",
+          "as": "edge"
+        },
+        {
+          "pivot": "edge",
+          "value": "value",
+          "groupby": [
+            "valid"
+          ]
+        }
+      ],
+      "mark": {
+        "type": "area",
+        "opacity": 0.35
+      },
+      "encoding": {
+        "y": {
+          "field": "lo",
+          "type": "quantitative"
+        },
+        "y2": {
+          "field": "hi"
+        },
+        "color": {
+          "datum": "10–90%"
+        }
+      }
+    },
+    {
+      "data": {
+        "name": "ens"
+      },
+      "transform": [
+        {
+          "aggregate": [
+            {
+              "op": "mean",
+              "field": "t2m",
+              "as": "mean"
+            }
+          ],
+          "groupby": [
+            "valid"
+          ]
+        }
+      ],
+      "mark": {
+        "type": "line",
+        "strokeWidth": 2.5
+      },
+      "encoding": {
+        "y": {
+          "field": "mean",
+          "type": "quantitative"
+        },
+        "color": {
+          "datum": "Ensemble mean"
+        }
+      }
+    },
+    {
+      "data": {
+        "name": "clim"
+      },
+      "mark": {
+        "type": "line",
+        "strokeWidth": 2,
+        "strokeDash": [
+          6,
+          4
+        ]
+      },
+      "encoding": {
+        "y": {
+          "field": "t2m",
+          "type": "quantitative"
+        },
+        "color": {
+          "datum": "Climatology"
+        }
+      }
+    }
+  ],
+  "resolve": {
+    "scale": {
+      "color": "shared"
+    }
+  },
+  "config": {
+    "range": {
+      "category": [
+        "#9e9e9e",
+        "#6baed6",
+        "#08306b",
+        "#d62728"
+      ]
+    },
+    "legend": {
+      "orient": "top",
+      "title": null,
+      "symbolOpacity": 1,
+      "symbolType": "stroke",
+      "symbolStrokeWidth": 3
+    }
+  }
+}

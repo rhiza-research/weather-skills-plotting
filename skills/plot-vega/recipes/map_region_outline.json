@@ -1,0 +1,32 @@
+{
+  "description": "A precipitation grid with an agent-supplied boundary drawn on top: the polygon comes in as a GeoJSON input (e.g. resolve-region --geojson, or any custom area) and is bound with {\"geojson\": NAME}. For a country, the naturalearth countries layer with a filter (map_country_admin1) needs no file. Inputs: -i obs=<grid Zarr: latitude x longitude, a precip total variable (here precip)> -i region=<GeoJSON polygon file>.",
+  "title": {"text": "Weekly precipitation total", "subtitle": "Week ending 1 Oct 2026"},
+  "width": 400,
+  "height": 480,
+  "projection": {"type": "equirectangular"},
+  "datasets": {
+    "obs": {
+      "zarr": "obs",
+      "fields": {"lon": "longitude.lo", "lon2": "longitude.hi", "lat": "latitude.lo", "lat2": "latitude.hi", "precip": "precip"}
+    },
+    "coast": {"naturalearth": "coastline", "scale": "50m"},
+    "borders": {"naturalearth": "borders", "scale": "50m"},
+    "region": {"geojson": "region"}
+  },
+  "layer": [
+    {
+      "data": {"name": "obs"},
+      "mark": {"type": "rect", "clip": true},
+      "encoding": {
+        "longitude": {"field": "lon", "type": "quantitative"},
+        "latitude": {"field": "lat", "type": "quantitative"},
+        "longitude2": {"field": "lon2"},
+        "latitude2": {"field": "lat2"},
+        "color": {"field": "precip", "type": "quantitative"}
+      }
+    },
+    {"data": {"name": "coast"}, "mark": {"type": "geoshape", "filled": false, "stroke": "#444", "strokeWidth": 0.8, "clip": true}},
+    {"data": {"name": "borders"}, "mark": {"type": "geoshape", "filled": false, "stroke": "#444", "strokeWidth": 0.8, "clip": true}},
+    {"data": {"name": "region"}, "mark": {"type": "geoshape", "filled": false, "stroke": "black", "strokeWidth": 2, "clip": true}}
+  ]
+}

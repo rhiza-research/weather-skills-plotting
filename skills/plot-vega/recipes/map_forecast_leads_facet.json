@@ -1,0 +1,108 @@
+{
+  "description": "One map per forecast lead week (facet over step, 4 columns) with a horizontal classed legend underneath. Inputs: -i fcst=<forecast Zarr: step x latitude x longitude, variable tp (weekly totals; ensemble already reduced)>.",
+  "title": "ECMWF ensemble-mean weekly precipitation, init 1 Oct 2026",
+  "datasets": {
+    "fcst": {
+      "zarr": "fcst",
+      "fields": {
+        "lon": "longitude.lo",
+        "lon2": "longitude.hi",
+        "lat": "latitude.lo",
+        "lat2": "latitude.hi",
+        "lead_days": "step",
+        "tp": "tp"
+      }
+    },
+    "borders": {
+      "naturalearth": "borders",
+      "scale": "50m"
+    },
+    "coast": {
+      "naturalearth": "coastline",
+      "scale": "50m"
+    }
+  },
+  "data": {
+    "name": "fcst"
+  },
+  "transform": [
+    {
+      "calculate": "'Week ' + (datum.lead_days / 7)",
+      "as": "week"
+    }
+  ],
+  "facet": {
+    "field": "week",
+    "type": "ordinal",
+    "title": null,
+    "header": {
+      "labelFontSize": 13
+    }
+  },
+  "columns": 4,
+  "spec": {
+    "width": 170,
+    "height": 205,
+    "projection": {
+      "type": "equirectangular"
+    },
+    "layer": [
+      {
+        "mark": {
+          "type": "rect",
+          "clip": true
+        },
+        "encoding": {
+          "longitude": {
+            "field": "lon",
+            "type": "quantitative"
+          },
+          "latitude": {
+            "field": "lat",
+            "type": "quantitative"
+          },
+          "longitude2": {
+            "field": "lon2"
+          },
+          "latitude2": {
+            "field": "lat2"
+          },
+          "color": {
+            "field": "tp",
+            "type": "quantitative",
+            "legend": {
+              "orient": "bottom",
+              "direction": "horizontal",
+              "columns": 8,
+              "titleOrient": "left"
+            }
+          }
+        }
+      },
+      {
+        "data": {
+          "name": "coast"
+        },
+        "mark": {
+          "type": "geoshape",
+          "filled": false,
+          "stroke": "#222",
+          "strokeWidth": 0.7,
+          "clip": true
+        }
+      },
+      {
+        "data": {
+          "name": "borders"
+        },
+        "mark": {
+          "type": "geoshape",
+          "filled": false,
+          "stroke": "#222",
+          "strokeWidth": 1,
+          "clip": true
+        }
+      }
+    ]
+  }
+}

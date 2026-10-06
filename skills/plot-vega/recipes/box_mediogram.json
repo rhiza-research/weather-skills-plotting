@@ -1,0 +1,189 @@
+{
+  "description": "Box/mediogram by lead week: weekly means via aggregate, percentiles via quantile + pivot, drawn with bar (25-75%), rule (10-90%), tick (median) and a climatology dot. Inputs: -i ens=<point ensemble Zarr: number x step, variables t2m and t2m_clim>.",
+  "title": {
+    "text": "Weekly-mean 2 m temperature distribution by lead week",
+    "subtitle": "Boxes: 25–75%, whiskers: 10–90%, line: median; dot: climatology"
+  },
+  "width": 420,
+  "height": 300,
+  "datasets": {
+    "ens": {
+      "zarr": "ens",
+      "fields": {
+        "lead_days": "step",
+        "member": "number",
+        "t2m": "t2m"
+      }
+    },
+    "clim": {
+      "zarr": "ens",
+      "fields": {
+        "lead_days": "step",
+        "t2m": "t2m_clim"
+      }
+    }
+  },
+  "layer": [
+    {
+      "data": {
+        "name": "ens"
+      },
+      "transform": [
+        {
+          "calculate": "'Week ' + ceil(datum.lead_days / 7)",
+          "as": "week"
+        },
+        {
+          "filter": "datum.lead_days <= 42"
+        },
+        {
+          "aggregate": [
+            {
+              "op": "mean",
+              "field": "t2m",
+              "as": "t2m"
+            }
+          ],
+          "groupby": [
+            "member",
+            "week"
+          ]
+        },
+        {
+          "quantile": "t2m",
+          "groupby": [
+            "week"
+          ],
+          "probs": [
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            0.9
+          ]
+        },
+        {
+          "calculate": "'p' + round(datum.prob * 100)",
+          "as": "p"
+        },
+        {
+          "pivot": "p",
+          "value": "value",
+          "groupby": [
+            "week"
+          ]
+        }
+      ],
+      "layer": [
+        {
+          "mark": {
+            "type": "rule",
+            "strokeWidth": 1.2
+          },
+          "encoding": {
+            "x": {
+              "field": "week",
+              "type": "ordinal",
+              "title": null,
+              "axis": {
+                "labelAngle": 0
+              }
+            },
+            "y": {
+              "field": "p10",
+              "type": "quantitative",
+              "title": "Weekly-mean 2 m temperature [°C]",
+              "scale": {
+                "zero": false
+              }
+            },
+            "y2": {
+              "field": "p90"
+            }
+          }
+        },
+        {
+          "mark": {
+            "type": "bar",
+            "size": 34,
+            "color": "#6baed6",
+            "stroke": "#08306b"
+          },
+          "encoding": {
+            "x": {
+              "field": "week",
+              "type": "ordinal"
+            },
+            "y": {
+              "field": "p25",
+              "type": "quantitative"
+            },
+            "y2": {
+              "field": "p75"
+            }
+          }
+        },
+        {
+          "mark": {
+            "type": "tick",
+            "size": 34,
+            "thickness": 2.5,
+            "color": "#08306b"
+          },
+          "encoding": {
+            "x": {
+              "field": "week",
+              "type": "ordinal"
+            },
+            "y": {
+              "field": "p50",
+              "type": "quantitative"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "data": {
+        "name": "clim"
+      },
+      "transform": [
+        {
+          "calculate": "'Week ' + ceil(datum.lead_days / 7)",
+          "as": "week"
+        },
+        {
+          "filter": "datum.lead_days <= 42"
+        },
+        {
+          "aggregate": [
+            {
+              "op": "mean",
+              "field": "t2m",
+              "as": "t2m"
+            }
+          ],
+          "groupby": [
+            "week"
+          ]
+        }
+      ],
+      "mark": {
+        "type": "point",
+        "filled": true,
+        "color": "#d62728",
+        "size": 70
+      },
+      "encoding": {
+        "x": {
+          "field": "week",
+          "type": "ordinal"
+        },
+        "y": {
+          "field": "t2m",
+          "type": "quantitative"
+        }
+      }
+    }
+  ]
+}

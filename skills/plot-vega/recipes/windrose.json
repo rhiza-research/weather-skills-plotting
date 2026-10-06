@@ -1,0 +1,198 @@
+{
+  "description": "Wind rose: arc marks by 16 direction sectors, stacked by speed class, from u/v on a grid (every cell is a sample). Inputs: -i wind=<Zarr: latitude x longitude, variables u10 and v10>.",
+  "title": {
+    "text": "Wind rose, 10 m wind over the domain",
+    "subtitle": "Direction the wind blows from; stacks by speed class"
+  },
+  "width": 360,
+  "height": 360,
+  "datasets": {
+    "wind": {
+      "zarr": "wind",
+      "fields": {
+        "lat": "latitude",
+        "lon": "longitude",
+        "u": "u10",
+        "v": "v10"
+      }
+    }
+  },
+  "data": {
+    "name": "wind"
+  },
+  "transform": [
+    {
+      "calculate": "sqrt(datum.u * datum.u + datum.v * datum.v)",
+      "as": "speed"
+    },
+    {
+      "calculate": "(atan2(-datum.u, -datum.v) * 180 / PI + 360) % 360",
+      "as": "from_deg"
+    },
+    {
+      "calculate": "floor(((datum.from_deg + 11.25) % 360) / 22.5)",
+      "as": "sector"
+    },
+    {
+      "calculate": "datum.speed < 2 ? 0 : datum.speed < 4 ? 1 : datum.speed < 6 ? 2 : datum.speed < 8 ? 3 : 4",
+      "as": "speed_class"
+    },
+    {
+      "calculate": "['0–2', '2–4', '4–6', '6–8', '≥ 8'][datum.speed_class] + ' m/s'",
+      "as": "speed_label"
+    },
+    {
+      "aggregate": [
+        {
+          "op": "count",
+          "as": "n"
+        }
+      ],
+      "groupby": [
+        "sector",
+        "speed_class",
+        "speed_label"
+      ]
+    },
+    {
+      "joinaggregate": [
+        {
+          "op": "sum",
+          "field": "n",
+          "as": "total"
+        }
+      ]
+    },
+    {
+      "calculate": "100 * datum.n / datum.total",
+      "as": "pct"
+    },
+    {
+      "window": [
+        {
+          "op": "sum",
+          "field": "pct",
+          "as": "r1"
+        }
+      ],
+      "groupby": [
+        "sector"
+      ],
+      "sort": [
+        {
+          "field": "speed_class"
+        }
+      ],
+      "frame": [
+        null,
+        0
+      ]
+    },
+    {
+      "calculate": "datum.r1 - datum.pct",
+      "as": "r0"
+    },
+    {
+      "calculate": "(datum.sector * 22.5 - 10) * PI / 180",
+      "as": "t0"
+    },
+    {
+      "calculate": "(datum.sector * 22.5 + 10) * PI / 180",
+      "as": "t1"
+    }
+  ],
+  "layer": [
+    {
+      "mark": {
+        "type": "arc",
+        "stroke": "white",
+        "strokeWidth": 0.5
+      },
+      "encoding": {
+        "theta": {
+          "field": "t0",
+          "type": "quantitative",
+          "scale": null
+        },
+        "theta2": {
+          "field": "t1"
+        },
+        "radius": {
+          "field": "r1",
+          "type": "quantitative",
+          "scale": {
+            "type": "sqrt",
+            "zero": true,
+            "range": [
+              0,
+              170
+            ]
+          }
+        },
+        "radius2": {
+          "field": "r0"
+        },
+        "color": {
+          "field": "speed_label",
+          "type": "ordinal",
+          "title": "Speed",
+          "sort": {
+            "field": "speed_class"
+          },
+          "scale": {
+            "scheme": "yelloworangered"
+          }
+        }
+      }
+    },
+    {
+      "data": {
+        "values": [
+          {
+            "t": 0,
+            "label": "N"
+          },
+          {
+            "t": 90,
+            "label": "E"
+          },
+          {
+            "t": 180,
+            "label": "S"
+          },
+          {
+            "t": 270,
+            "label": "W"
+          }
+        ]
+      },
+      "transform": [
+        {
+          "calculate": "datum.t * PI / 180",
+          "as": "theta"
+        }
+      ],
+      "mark": {
+        "type": "text",
+        "radius": 185,
+        "fontWeight": "bold",
+        "fontSize": 13
+      },
+      "encoding": {
+        "theta": {
+          "field": "theta",
+          "type": "quantitative",
+          "scale": null
+        },
+        "text": {
+          "field": "label"
+        }
+      }
+    }
+  ],
+  "config": {
+    "view": {
+      "stroke": null
+    }
+  }
+}

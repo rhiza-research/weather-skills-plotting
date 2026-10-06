@@ -1,0 +1,43 @@
+{
+  "description": "One weekly series (an area mean from clip-region -> summarize-dim -> aggregate-temporal -> convert-to-totals) as a line with a point per week, plus a dashed line and label at the mean computed in the spec. The y title is the default from the variable. Inputs: -i weekly=<Zarr: time only, one variable (here precipitation_surface)>.",
+  "title": {
+    "text": "Weekly precipitation: area average",
+    "subtitle": "52 weeks; points at week start"
+  },
+  "width": 640,
+  "height": 260,
+  "datasets": {
+    "weekly": {"zarr": "weekly", "fields": {"week": "time", "precip": "precipitation_surface"}}
+  },
+  "layer": [
+    {
+      "data": {"name": "weekly"},
+      "mark": {"type": "line", "color": "#2c7fb8", "point": {"size": 25, "color": "#2c7fb8"}},
+      "encoding": {
+        "x": {"field": "week", "type": "temporal", "title": null, "axis": {"format": "%b %Y"}},
+        "y": {"field": "precip", "type": "quantitative"}
+      }
+    },
+    {
+      "data": {"name": "weekly"},
+      "transform": [
+        {"aggregate": [{"op": "mean", "field": "precip", "as": "mean"}]},
+        {"calculate": "['mean', format(datum.mean, '.1f') + ' mm']", "as": "label"}
+      ],
+      "layer": [
+        {
+          "mark": {"type": "rule", "color": "#555", "strokeDash": [4, 3]},
+          "encoding": {"y": {"field": "mean", "type": "quantitative"}}
+        },
+        {
+          "mark": {"type": "text", "align": "left", "dx": 4, "color": "#555"},
+          "encoding": {
+            "x": {"value": "width"},
+            "y": {"field": "mean", "type": "quantitative"},
+            "text": {"field": "label"}
+          }
+        }
+      ]
+    }
+  ]
+}

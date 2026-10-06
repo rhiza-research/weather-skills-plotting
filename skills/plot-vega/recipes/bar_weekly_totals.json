@@ -1,0 +1,22 @@
+{
+  "description": "Weekly totals as bars that span their own week: the week end is computed in the spec with timeOffset (bins from aggregate-temporal are labelled at their start), and y2 = 0 makes the bar rise from the axis. Inputs: -i weekly=<Zarr: time only, one variable (here precipitation_surface)>.",
+  "title": {"text": "Weekly precipitation: area average", "subtitle": "One bar per 7-day bin"},
+  "width": 640,
+  "height": 260,
+  "datasets": {
+    "weekly": {"zarr": "weekly", "fields": {"week": "time", "precip": "precipitation_surface"}}
+  },
+  "data": {"name": "weekly"},
+  "transform": [{"calculate": "timeOffset('day', datum.week, 7)", "as": "week_end"}],
+  "mark": {"type": "bar", "color": "#2c7fb8", "stroke": "white", "strokeWidth": 0.5},
+  "encoding": {
+    "x": {"field": "week", "type": "temporal", "title": null, "axis": {"format": "%b %Y", "tickCount": "month"}},
+    "x2": {"field": "week_end"},
+    "y": {"field": "precip", "type": "quantitative"},
+    "y2": {"datum": 0},
+    "tooltip": [
+      {"field": "week", "type": "temporal", "title": "Week starting", "format": "%d %b %Y"},
+      {"field": "precip", "type": "quantitative", "title": "Total", "format": ".1f"}
+    ]
+  }
+}
