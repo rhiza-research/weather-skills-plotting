@@ -110,33 +110,23 @@ Set `traces[0].kind` in `--spec`.
 
 ## Precipitation colormaps
 
-Two CHC palettes and the KMSA palette can be named anywhere a colormap goes (`theme.colormap`, `inputs[].colormap`, `subplots[].colormap`, `layers[].colormap`). Names are case-insensitive.
+Two default precipitation palettes can be named anywhere a colormap goes (`theme.colormap`, `inputs[].colormap`, `subplots[].colormap`, `layers[].colormap`). Names are case-insensitive.
 
 | Name | Draws | Window from `aggregation_period` |
 | --- | --- | --- |
-| `chc_precip` | Totals: white/beige below 5 mm, then the CHC `ppt_total` greens and blues | < 2 days 0–50 mm · < 10 days 0–200 · < 40 days 0–400 · longer 0–1000 |
-| `chc_precip_anom` | Anomalies: CHC diverging classes, red/orange/brown (dry) through white near 0 to green, blue, and purple (wet) | ±50 · ±200 · ±300 · ±500 mm |
+| `default_precip` | Totals: white/beige below 5 mm, then greens and blues | < 2 days 0–50 mm · < 10 days 0–200 · < 40 days 0–400 · longer 0–1000 |
+| `default_precip_anom` | Anomalies: diverging classes, red/orange/brown (dry) through white near 0 to green, blue, and purple (wet) | ±50 · ±200 · ±300 · ±500 mm |
 
 With no `aggregation_period`, both use the weekly window. These are the same palettes the heatmap picks automatically for precipitation. Naming one skips that detection, which matters when:
 
 - the anomaly variable lost its precip name or `standard_name` (e.g. after `difference`), so it would get a generic sequential colormap;
 - every value in an anomaly is positive, so it would be drawn as a total;
 - a total has negative values from a bias correction, so it would be drawn as an anomaly;
-- totals and anomalies share one figure and each row needs its own scale, e.g. `{"row": 2, "col": 1, "colormap": "chc_precip_anom", ...}` on the anomaly cells.
+- totals and anomalies share one figure and each row needs its own scale, e.g. `{"row": 2, "col": 1, "colormap": "default_precip_anom", ...}` on the anomaly cells.
 
-### KMSA rainfall classes
+Setting `vmin`/`vmax` with either name keeps the colors and stretches them over your range instead of the fixed classes. To pin one window regardless of `aggregation_period`, name it directly: `ppt_daily`/`ppt_week`/`ppt_month`/`ppt_season` or `ppt_anom_daily`/`ppt_anom_week`/`ppt_anom_month`/`ppt_anom_season`. A `--theme-file` entry named `default_precip` or `default_precip_anom` replaces the built-in one.
 
-`kmsa` (alias `kmsa_precip`) is the Kenya Meteorological Department rainfall-map legend: fixed classes that do not follow `aggregation_period`.
-
-| mm | < 1 | 2–10 | 11–20 | 21–50 | 51–70 | 71–100 | > 100 |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| color | white | pale green | green | light blue | blue | orange | red-orange |
-
-Use it for totals (after `convert-to-totals`) that should look like a KMSA map: `{"theme": {"colormap": "kmsa"}}`. The colorbar extends only at the top. Not for anomalies.
-
-To draw official national or local boundaries instead of the built-in Natural Earth lines, check whether an installed skill provides more specific region GeoJSON for the use case, add each file as `--layer outline:PATH`, and set `"geo": {"overlays": {"admin1": false, "borders": false, "coastline": false}}` so the built-in lines do not draw alongside them.
-
-Setting `vmin`/`vmax` with either name keeps the colors and stretches them over your range instead of the fixed classes. To pin one window regardless of `aggregation_period`, name it directly: `ppt_daily`/`ppt_week`/`ppt_month`/`ppt_season` or `ppt_anom_daily`/`ppt_anom_week`/`ppt_anom_month`/`ppt_anom_season`. A `--theme-file` entry named `chc_precip` or `chc_precip_anom` replaces the built-in one.
+For other named palettes (e.g. an agency's rainfall-map legend), check whether an installed skill provides a theme file for the use case and pass it with `--theme-file`. A theme file cannot set colorbar options; set `layout.colorbar.extend` in `--spec` if the palette needs arrows.
 
 ## When to use
 
@@ -146,7 +136,7 @@ Setting `vmin`/`vmax` with either name keeps the colors and stretches them over 
 - A quick-look map or a time/step profile.
 - One index against another (IOD vs rainfall, or two variables in one Zarr).
 - A wind rose or an S2S-style wind-vector map from u/v.
-- Precipitation only after `aggregate-temporal` and `convert-to-totals`. Fetchers write rates; the figure should show period totals (`mm`). For rainfall anomalies, set `colormap` to `chc_precip_anom` (or leave it unset and let auto-detection pick it).
+- Precipitation only after `aggregate-temporal` and `convert-to-totals`. Fetchers write rates; the figure should show period totals (`mm`). For rainfall anomalies, set `colormap` to `default_precip_anom` (or leave it unset and let auto-detection pick it).
 
 Do not `coarsen` datasets onto one grid just to draw them. A shared lat/lon grid is for `difference` and `verify`. For one obs week versus week-4 through week-1 forecasts with a hits row, use `plot-verify`. For rainy-season onset dates from `indicator --detect first`, use `plot` and do not average `number` first.
 

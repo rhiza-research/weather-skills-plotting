@@ -212,36 +212,19 @@ def default_precip_window(*days: float | None, anomaly: bool = False) -> str:
     return widest_precip_window(*days)
 
 
-# Window-following CHC palettes an agent can name directly. Each picks the
+# Window-following default precip palettes an agent can name directly. Each picks the
 # nested ``ppt_*`` / ``ppt_anom_*`` window from the field's
 # ``aggregation_period``, exactly like the automatic precip default, but
 # skips detection (so an all-positive anomaly still gets the diverging scale).
-CHC_PRECIP_PALETTES = {"chc_precip": False, "chc_precip_anom": True}
+DEFAULT_PRECIP_PALETTES = {"default_precip": False, "default_precip_anom": True}
 
 
-def chc_precip_scale_name(name: str, da=None) -> str:
-    """Nested window behind ``chc_precip`` / ``chc_precip_anom`` for ``da``."""
+def default_precip_scale_name(name: str, da=None) -> str:
+    """Nested window behind ``default_precip`` / ``default_precip_anom`` for ``da``."""
     days = aggregation_days(da) if da is not None else None
-    if CHC_PRECIP_PALETTES[name]:
+    if DEFAULT_PRECIP_PALETTES[name]:
         return precip_anomaly_window_name(days)
     return precip_window_name(days)
-
-
-# Kenya Meteorological Department (KMSA) rainfall-map classes: < 1, 2–10,
-# 11–20, 21–50, 51–70, 71–100 and > 100 mm. Packed under + classes + over;
-# the swatches are the ArcGIS colours on KMSA's published maps.
-KMSA_PRECIP_BOUNDS = [0, 1, 10, 20, 50, 70, 100]
-KMSA_PRECIP_COLORS = [
-    "#ffffff",  # under
-    "#ffffff",  # < 1
-    "#d1ffbe",  # 2–10
-    "#55ff00",  # 11–20
-    "#73dfff",  # 21–50
-    "#00a9e6",  # 51–70
-    "#ffaa00",  # 71–100
-    "#ff5500",  # > 100 (over)
-]
-KMSA_PRECIP_NAMES = frozenset({"kmsa", "kmsa_precip"})
 
 
 def precip_nested_palette(name: str) -> dict:
@@ -432,8 +415,6 @@ def default_theme() -> dict:
             "ppt_poa": {"colors": PRECIP_POA_COLORS, "bounds": PRECIP_POA_BOUNDS},
             "ppt_spp": {"colors": PRECIP_SPP_COLORS, "bounds": PRECIP_SPP_BOUNDS},
             "spi": {"colors": SPI_COLORS, "bounds": SPI_BOUNDS},
-            "kmsa": {"colors": KMSA_PRECIP_COLORS, "bounds": KMSA_PRECIP_BOUNDS},
-            "kmsa_precip": {"colors": KMSA_PRECIP_COLORS, "bounds": KMSA_PRECIP_BOUNDS},
             "rocket": {"cmap": "rocket"},
             "viridis": {"cmap": "viridis"},
         },
@@ -913,15 +894,15 @@ def resolve_colorscale(
             **extras,
         }
     named = parsed.get("name")
-    chc_key = str(named or "").lower()
+    default_key = str(named or "").lower()
     user_names = {str(k).lower() for k in palettes} - {
         str(k).lower() for k in default_theme()["colormaps"]
     }
-    if chc_key in CHC_PRECIP_PALETTES and chc_key not in user_names:
-        window = chc_precip_scale_name(chc_key, da)
+    if default_key in DEFAULT_PRECIP_PALETTES and default_key not in user_names:
+        window = default_precip_scale_name(default_key, da)
         entry = (
             precip_nested_anomaly_palette(window)
-            if CHC_PRECIP_PALETTES[chc_key]
+            if DEFAULT_PRECIP_PALETTES[default_key]
             else precip_nested_palette(window)
         )
         return _scale_with_overrides(

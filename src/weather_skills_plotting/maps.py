@@ -63,7 +63,6 @@ from weather_skills_plotting.spec import (
 from weather_skills_plotting.theme import (
     DEFAULT_FONTSIZE,
     DISCRETE_PRECIP_NAMES,
-    KMSA_PRECIP_NAMES,
     aggregation_days,
     deep_merge,
     mpl_cmap_norm,
@@ -1038,12 +1037,8 @@ def _cbar_boundary_kwargs(norm, cmap=None):
     if not isinstance(norm, BoundaryNorm):
         return {}
     kw = {"spacing": "uniform", "ticks": list(norm.boundaries)}
-    name = getattr(cmap, "name", None)
-    if name in DISCRETE_PRECIP_NAMES:
+    if getattr(cmap, "name", None) in DISCRETE_PRECIP_NAMES:
         kw["extend"] = "both"
-    elif str(name).lower() in KMSA_PRECIP_NAMES:
-        # KMSA classes start at 0 mm; only the > 100 mm class is open-ended.
-        kw["extend"] = "max"
     return kw
 
 
