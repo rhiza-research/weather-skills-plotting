@@ -63,7 +63,7 @@ def main():
     inputs = vlbind.open_inputs(INPUTS)
     for mode in ("projected", "plain"):
         notes = []
-        spec, meta = vlbind.bind_all(copy.deepcopy(SPEC), inputs, None, notes)
+        spec, meta = vlbind.bind_all(copy.deepcopy(SPEC), inputs, notes)
         classed = vlbind.apply_defaults(spec, meta, notes)
         if mode == "plain":
             to_xy(spec, meta["obs"]["extent"])

@@ -109,7 +109,7 @@ sets no colour scale, legend, title, map window or base-map extent.
 ```text
  -i obs=chirps.zarr ─┐                     ┌──────────── spec.json (plain Vega-Lite + data bindings) ────────────┐
  -i st=stations.zarr ┼─► @weather_skill ───┤                                                                     │
- --geojson ...      ─┘   opens + hashes    ▼                                                                     │
+ -i rgn=ken.geojson ─┘   opens + hashes    ▼                                                                     │
                          inputs        1. bind      datasets.<name>: binding → rows; base maps clipped to data   │
                                        2. defaults  fill unset colour scale / title / projection.fit; log each   │
                                        3. lint      every encoding field exists in its dataset                   │
@@ -169,13 +169,13 @@ vconcat, is plain Vega-Lite and needs no dispatch.
 ```bash
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py \
     -i obs=/tmp/chirps_week.zarr -i stations=/tmp/stations_week.zarr \
+    -i region=/tmp/kenya.geojson \
     --spec /tmp/map.json -o /tmp/map.png
 ```
 
 | Flag | Meaning |
 | --- | --- |
-| `-i`, `--input NAME=PATH` | An input Zarr, which can repeat. `NAME` is what a binding's `"zarr"` refers to. A single bare `PATH` is named `data`. Inputs go through the core decorator, so they are opened, contract-checked and hashed into provenance. |
-| `--geojson NAME=PATH` | Extra vector layers, such as a region polygon from `resolve-region`. Bind them with `{"geojson": "NAME"}`. These files are recorded by sha256 in the provenance parameters. |
+| `-i`, `--input NAME=PATH` | An input, which can repeat. A path ending in `.geojson` or `.json` is a GeoJSON file, such as a region polygon from `resolve-region`; anything else is a Zarr. `NAME` is what a binding's `"zarr"` or `"geojson"` refers to, and binding a name with the wrong kind is an error. A single bare `PATH` is named `data`. Zarrs go through the core decorator, so they are opened, contract-checked and hashed into provenance. GeoJSON files are recorded by sha256 in the provenance parameters. |
 | `--spec JSON\|PATH\|-` | The Vega-Lite spec with bindings. It can be inline JSON, a file, or stdin. |
 | `-o`, `--output PATH` | A `.png` file (the default), `.jpg`, or `.html` (self-contained, with the data inlined). These are the formats core's `stamp_figure` accepts. |
 | `--scale N` | The pixel ratio, default `2`. A 640-wide spec gives a 1280-pixel PNG. |
@@ -184,9 +184,10 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py \
 | `--max-rows N` | Raises the row guard (see [Limits](#performance-and-limits)). |
 
 The `zarr_paths()` hook in the decorator means named inputs need no core
-change. The skill wraps the `-i` list in a small holder that exposes
-`zarr_paths()`. The decorator opens and validates the inputs, hashes them and
-attaches `.datasets`, and the skill maps the names back.
+change. The skill wraps the `-i` list in a small holder whose `zarr_paths()`
+returns the Zarr inputs only. The decorator opens and validates those, hashes
+them and attaches `.datasets`, and the skill maps the names back. The skill
+reads the GeoJSON inputs itself.
 
 ## Data bindings
 
@@ -293,9 +294,9 @@ contourpy stops.
 
 ### `geojson`: agent-supplied vectors
 
-`{"geojson": "region"}` loads `--geojson region=/tmp/kenya.geojson` (or a
-path). It accepts `bbox`, which has the same default, and applies the same
-clipping and orientation as `naturalearth`.
+`{"geojson": "region"}` loads the input `-i region=/tmp/kenya.geojson`. It
+accepts `bbox`, which has the same default, and applies the same clipping and
+orientation as `naturalearth`.
 
 ## Defaults
 
@@ -384,8 +385,8 @@ It still gets the classed legend.
   get embedded history plus the circular mark when the provenance chain is
   intact. HTML gets a `<meta name="weather_skills_history">` tag and no mark.
 - Provenance parameters record the **agent's spec before binding**, the
-  input names and paths, and the hashes of any `--geojson` and Natural Earth
-  files. Defaults are deterministic given the spec and the inputs, so they
+  input names and paths, and the hashes of any GeoJSON inputs and Natural
+  Earth files. Defaults are deterministic given the spec and the inputs, so they
   are not recorded separately. The bound rows are not recorded either: they
   are just the inputs again, and they would make the record megabytes long.
 - The stdout QA lines from `qa.py` are kept. `plot hash` is the sha256 of
@@ -617,7 +618,8 @@ time) are missing. The planned fix is a recipe layer of `arc` rings with
 - **Station time series facet**: `facet` by `station_name` on a
   `station_id × time` Zarr.
 - **Scatter with 1:1 line**, forecast against observation.
-- **Region outline**: a `--geojson region=...` layer from `resolve-region`.
+- **Region outline**: an `-i region=....geojson` input from `resolve-region`,
+  bound with `{"geojson": "region"}`.
 
 ## Performance and limits
 
@@ -648,7 +650,7 @@ views, so it stays out of scope until someone needs it.
 
 ```text
 src/weather_skills_plotting/
-  __init__.py       render(spec, inputs, output, *, geojsons=None, scale=2) and the stage functions
+  __init__.py       render(spec, inputs, output, *, scale=2) and the stage functions
   bind.py           zarr / contours / geojson / naturalearth bindings, cell edges, time encoding, extents
   naturalearth.py   pinned download + cache, clip, d3 orientation, offline fallback
   defaults.py       colour scale, palette schemes, titles, projection fit, base-map clip; the defaults log
@@ -729,7 +731,7 @@ default. It is what makes `plot hash` reproducible across CI and laptops.
    stages from `prototypes/vlbind.py` into the package layout above, and add
    unit and defaults tests. Drop matplotlib-backed modules from
    `weather_skills_plotting`.
-2. **Skill CLI.** Add `plot.py` with `-i NAME=PATH`, `--geojson`, `--spec`,
+2. **Skill CLI.** Add `plot.py` with `-i NAME=PATH` (Zarr or GeoJSON), `--spec`,
    `--describe`, `--dump-spec`, `-o png/jpg/html`, the `@weather_skill`
    integration, the row guard, the defaults log and the QA lines.
 3. **Recipes and docs.** Add the recipes, `SKILL.md`, the `references/*.md`

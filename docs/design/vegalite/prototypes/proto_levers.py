@@ -43,7 +43,7 @@ def one(variant, n):
     t0 = time.perf_counter()
     spec_in = spec_for("nostroke" if crisp else "base", n)
     notes = []
-    spec, meta = vlbind.bind_all(spec_in, {"g": ds}, None, notes)
+    spec, meta = vlbind.bind_all(spec_in, {"g": ds}, notes)
     classed = vlbind.apply_defaults(spec, meta, notes)
     spec["$schema"] = "https://vega.github.io/schema/vega-lite/v6.json"
     t1 = time.perf_counter()

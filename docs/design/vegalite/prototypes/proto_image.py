@@ -92,7 +92,7 @@ def main():
     for mode in ("rect", "image"):
         t0 = time.perf_counter()
         notes = []
-        spec, meta = vlbind.bind_all(copy.deepcopy(SPEC), inputs, None, notes)
+        spec, meta = vlbind.bind_all(copy.deepcopy(SPEC), inputs, notes)
         classed = vlbind.apply_defaults(spec, meta, notes)
         if mode == "image":
             to_image(spec, inputs)

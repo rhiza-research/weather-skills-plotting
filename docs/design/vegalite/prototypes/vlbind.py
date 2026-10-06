@@ -136,12 +136,25 @@ def _to_json_values(series: pd.Series):
     return series
 
 
+def _input(inputs: dict, binding: dict, kind: str, loc: str):
+    """The ``-i`` input a binding names, checked to be a Zarr (``zarr``) or a GeoJSON file (``geojson``)."""
+    src = binding[kind]
+    obj = inputs.get(src)
+    if obj is None:
+        raise SpecError(f"{loc}.{kind} {src!r} is not an input (have {sorted(inputs)})")
+    is_geojson = isinstance(obj, dict)
+    if is_geojson != (kind == "geojson"):
+        other = "geojson" if is_geojson else "zarr"
+        raise SpecError(
+            f"{loc}.{kind} {src!r} is a {other} input; bind it with {json.dumps({other: src})}"
+        )
+    return obj
+
+
 def bind_zarr(name: str, binding: dict, inputs: dict) -> tuple[list[dict], dict]:
     """Tidy rows for one ``datasets.<name>`` Zarr binding, plus metadata for the defaults."""
     loc = f"datasets.{name}"
-    ds = inputs.get(binding["zarr"])
-    if ds is None:
-        raise SpecError(f"{loc}.zarr {binding['zarr']!r} is not an input (have {sorted(inputs)})")
+    ds = _input(inputs, binding, "zarr", loc)
     fields = binding.get("fields")
     if not isinstance(fields, dict) or not fields:
         raise SpecError(
@@ -314,10 +327,8 @@ def bind_naturalearth(name: str, binding: dict) -> list[dict]:
     return _orient_for_d3(features)
 
 
-def bind_geojson(name: str, binding: dict, geojsons: dict) -> list[dict]:
-    src = binding["geojson"]
-    path = Path(geojsons.get(src, src))
-    data = json.loads(path.read_text())
+def bind_geojson(name: str, binding: dict, inputs: dict) -> list[dict]:
+    data = _input(inputs, binding, "geojson", f"datasets.{name}")
     features = data["features"] if data.get("type") == "FeatureCollection" else [data]
     if binding.get("bbox"):
         features = _clip_features(features, binding["bbox"])
@@ -335,7 +346,7 @@ def bind_contours(name: str, binding: dict, inputs: dict) -> tuple[list[dict], d
 
     loc = f"datasets.{name}"
     opts = binding["contours"]
-    ds = inputs[binding["zarr"]]
+    ds = _input(inputs, binding, "zarr", loc)
     da = _apply_sel(
         _apply_bbox(ds[opts["variable"]], binding.get("bbox"), loc), binding, loc
     ).squeeze(drop=True)
@@ -389,7 +400,6 @@ def bind_contours(name: str, binding: dict, inputs: dict) -> tuple[list[dict], d
 def bind_all(
     spec: dict,
     inputs: dict,
-    geojsons: dict | None = None,
     notes: list | None = None,
     *,
     defaults: bool = True,
@@ -429,7 +439,7 @@ def bind_all(
             binding = {**binding, "bbox": [round(v, 4) for v in data_extent]}
             notes.append(f"datasets.{name}.bbox <- extent of the bound data {binding['bbox']}")
         if kind == "geojson":
-            rows = bind_geojson(name, binding, geojsons or {})
+            rows = bind_geojson(name, binding, inputs)
         else:
             rows = bind_naturalearth(name, binding)
         meta[name] = {"rows": len(rows), "columns": ["type", "properties", "geometry"]}
@@ -773,14 +783,14 @@ def seal_cells(vega: dict) -> int:
     return count
 
 
-def render(spec_in: dict, inputs: dict, out: Path, *, geojsons=None, scale=2.0) -> dict:
+def render(spec_in: dict, inputs: dict, out: Path, *, scale=2.0) -> dict:
     import vl_convert as vlc
 
     usermeta = spec_in.get("usermeta") or {}
     use_defaults = usermeta.get("defaults", True)
     notes: list[str] = []
     t0 = time.time()
-    spec, meta = bind_all(spec_in, inputs, geojsons, notes, defaults=use_defaults)
+    spec, meta = bind_all(spec_in, inputs, notes, defaults=use_defaults)
     t1 = time.time()
     classed = apply_defaults(spec, meta, notes) if use_defaults else {}
     spec.setdefault("$schema", "https://vega.github.io/schema/vega-lite/v6.json")
@@ -808,5 +818,14 @@ def render(spec_in: dict, inputs: dict, out: Path, *, geojsons=None, scale=2.0) 
     }
 
 
+GEOJSON_SUFFIXES = (".geojson", ".json")
+
+
 def open_inputs(named: dict[str, Path]) -> dict:
-    return {k: xr.open_zarr(v, consolidated=True) for k, v in named.items()}
+    """``-i`` inputs by name: ``.geojson``/``.json`` files as parsed GeoJSON, anything else as a Zarr."""
+    return {
+        k: json.loads(Path(v).read_text())
+        if Path(v).suffix.lower() in GEOJSON_SUFFIXES
+        else xr.open_zarr(v, consolidated=True)
+        for k, v in named.items()
+    }

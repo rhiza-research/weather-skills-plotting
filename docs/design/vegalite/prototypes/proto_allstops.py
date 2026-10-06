@@ -96,7 +96,7 @@ def one(step, n):
     t0 = time.perf_counter()
     spec_in = build(on, n)
     notes = []
-    spec, meta = vlbind.bind_all(spec_in, {"g": ds}, None, notes)
+    spec, meta = vlbind.bind_all(spec_in, {"g": ds}, notes)
     classed = vlbind.apply_defaults(spec, meta, notes)
     spec["$schema"] = "https://vega.github.io/schema/vega-lite/v6.json"
     if "round" in on:

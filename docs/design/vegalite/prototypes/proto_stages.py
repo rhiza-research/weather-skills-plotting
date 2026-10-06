@@ -140,7 +140,7 @@ def one(variant, n):
     else:
         spec_in = spec_for("base" if variant == "padded" else variant, n)
         notes = []
-        spec, meta = vlbind.bind_all(spec_in, {"g": ds}, None, notes)
+        spec, meta = vlbind.bind_all(spec_in, {"g": ds}, notes)
         classed = vlbind.apply_defaults(spec, meta, notes)
         if variant == "padded":
             pad_rows(spec)

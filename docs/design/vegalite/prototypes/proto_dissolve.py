@@ -65,7 +65,7 @@ def one(mode, n):
     ds = grid(n)
     t0 = time.perf_counter()
     notes = []
-    spec, meta = vlbind.bind_all(spec_for("base", n), {"g": ds}, None, notes)
+    spec, meta = vlbind.bind_all(spec_for("base", n), {"g": ds}, notes)
     classed = vlbind.apply_defaults(spec, meta, notes)
     spec["mark"] = {"type": "rect", "aria": False}
     extra = {}
