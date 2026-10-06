@@ -48,7 +48,13 @@ def grid(n):
     )
 
 
-EDGES = {"lon": "longitude.lo", "lon2": "longitude.hi", "lat": "latitude.lo", "lat2": "latitude.hi", "tp": "tp"}
+EDGES = {
+    "lon": "longitude.lo",
+    "lon2": "longitude.hi",
+    "lat": "latitude.lo",
+    "lat2": "latitude.hi",
+    "tp": "tp",
+}
 COLOR = {"field": "tp", "type": "quantitative", "scale": {"scheme": "default_precip"}}
 
 
@@ -112,14 +118,20 @@ def image_spec(ds):
         "height": 600,
         "data": {"values": [{"url": url}]},
         "mark": {"type": "image", "width": 600, "height": 600, "aspect": False, "smooth": False},
-        "encoding": {"url": {"field": "url", "type": "nominal"}, "x": {"value": 300}, "y": {"value": 300}},
+        "encoding": {
+            "url": {"field": "url", "type": "nominal"},
+            "x": {"value": 300},
+            "y": {"value": 300},
+        },
     }
 
 
 def one(variant, n):
     import vl_convert as vlc
 
-    vlc.vegalite_to_png({"mark": "point", "data": {"values": [{"a": 1}]}, "encoding": {"x": {"field": "a"}}})
+    vlc.vegalite_to_png(
+        {"mark": "point", "data": {"values": [{"a": 1}]}, "encoding": {"x": {"field": "a"}}}
+    )
     out = {"variant": variant, "cells": n * n}
     ds = grid(n)
     t = time.perf_counter()
@@ -179,19 +191,37 @@ def one(variant, n):
     (Path(__file__).parent / "out" / f"stages_{variant}_{n}.png").write_bytes(png)
 
     out["peak_rss_gb"] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6
-    print(json.dumps({k: round(v, 2) if isinstance(v, float) else v for k, v in out.items()}), flush=True)
+    print(
+        json.dumps({k: round(v, 2) if isinstance(v, float) else v for k, v in out.items()}),
+        flush=True,
+    )
 
 
-COLS = ["bind_s", "dumps_s", "json_mb", "compile_s", "compile_stub_s", "dataflow_s", "to_svg_s", "svg_mb",
-        "svg_to_png_s", "vega_to_png_s", "peak_rss_gb"]
+COLS = [
+    "bind_s",
+    "dumps_s",
+    "json_mb",
+    "compile_s",
+    "compile_stub_s",
+    "dataflow_s",
+    "to_svg_s",
+    "svg_mb",
+    "svg_to_png_s",
+    "vega_to_png_s",
+    "peak_rss_gb",
+]
 
 
 def sweep(runs):
     print(f"{'variant':9} {'cells':>7} " + " ".join(f"{c:>14}" for c in COLS))
     for variant, n in runs:
-        res = subprocess.run([sys.executable, __file__, "one", variant, str(n)], capture_output=True, text=True)
+        res = subprocess.run(
+            [sys.executable, __file__, "one", variant, str(n)], capture_output=True, text=True
+        )
         if res.returncode:
-            print(f"{variant:9} {n * n:>7} FAILED: {res.stderr.strip().splitlines()[-1:]}", flush=True)
+            print(
+                f"{variant:9} {n * n:>7} FAILED: {res.stderr.strip().splitlines()[-1:]}", flush=True
+            )
             continue
         r = json.loads(res.stdout.strip().splitlines()[-1])
         print(f"{variant:9} {r['cells']:>7} " + " ".join(f"{r[c]:>14}" for c in COLS), flush=True)
@@ -202,4 +232,10 @@ if __name__ == "__main__":
         one(sys.argv[2], int(sys.argv[3]))
     else:
         sizes = [int(a) for a in sys.argv[1:]] or [200, 450]
-        sweep([(v, n) for n in sizes for v in ("base", "nostroke", "noproj", "lean", "padded", "image")])
+        sweep(
+            [
+                (v, n)
+                for n in sizes
+                for v in ("base", "nostroke", "noproj", "lean", "padded", "image")
+            ]
+        )
