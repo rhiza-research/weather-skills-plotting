@@ -92,7 +92,7 @@ Unset `traces[0].kind` stays `heatmap`. Unset `theme.fontsize` stays 16.
 
 Set `traces[0].kind` in `--spec`.
 
-- `heatmap` — lon/lat `pcolormesh` with coastlines, country borders, filled lakes, rivers, and (on country-scale views) admin-1 boundaries. One `-i` is one panel per `step` or `time`. Each extra `-i` adds a panel on that file's own lat/lon; see **Side by side, or one map**. Shared color scale, colorbar on the right for one panel and on the bottom for several. A single file's panel titles are calendar dates (`14 Sept '26`) or inclusive ranges (`4–10 Aug '26`); forecast leads keep `<start> until <end>`. Several files use `subplot_titles`, then `inputs[].label`, then the file name. The colorbar label is the variable and units (`Total precipitation [mm]`), not the date. Default grid is up to 4 columns. Set `layout.facet.rows` and `layout.facet.columns` to override; leftover cells stay blank. Panel spacing (including room for titles between rows) is automatic — see **Panel spacing on map grids** below. Ensemble `number` is averaged. `inputs[0].index` overrides the reduction for any other extra dim. Precipitation totals use a nested absolute-mm palette (same color = same millimetres; the window follows `aggregation_period`). For rainfall anomalies, omit `theme.colormap` so the diverging millimetre classes apply. A single-input heatmap and `--layer heatmap:<path>` draw the same picture.
+- `heatmap` — lon/lat `pcolormesh` with coastlines, country borders, filled lakes, rivers, and (on country-scale views) admin-1 boundaries. One `-i` is one panel per `step` or `time`. Each extra `-i` adds a panel on that file's own lat/lon; see **Side by side, or one map**. Shared color scale, colorbar on the right for one panel and on the bottom for several. A single file's panel titles are calendar dates (`14 Sept '26`) or inclusive ranges (`4–10 Aug '26`); forecast leads keep `<start> until <end>`. Several files use `subplot_titles`, then `inputs[].label`, then the file name. The colorbar label is the variable and units (`Total precipitation [mm]`), not the date. Default grid is up to 4 columns. Set `layout.facet.rows` and `layout.facet.columns` to override; leftover cells stay blank. Panel spacing (including room for titles between rows) is automatic — see **Panel spacing on map grids** below. Ensemble `number` is averaged. `inputs[0].index` overrides the reduction for any other extra dim. Precipitation totals use a nested absolute-mm palette (same color = same millimetres; the window follows `aggregation_period`). Rainfall anomalies (a precip variable with `anomal` in its name or `long_name`, or any negative value) get the diverging millimetre classes. To force either one, name it: see **Precipitation colormaps**. A single-input heatmap and `--layer heatmap:<path>` draw the same picture.
 - `contour` — the same map as `heatmap`, drawn with `contourf` and thin black isolines. Values are interpolated between grid points. Cannot be combined with `--layer`.
 - `timeseries` — one line plus a marker at each time. Leftover non-time dims are not averaged: set `traces[0].reduce` to a list of dim names, or `traces[0].along` to draw one line per value of that dim. A forecast (`step` plus a scalar init `time`) is plotted against valid time (`init + step`). An analysis or obs cube is plotted against its `time` axis. For several series as stacked panels, use `plot-timeseries`.
 - `xy` — scatter one 1D series against another. Pass `--x` and `--y`, or one `-i` with `traces[0].x_variable` and `traces[0].y_variable`. Each series is reduced like `timeseries` (`geo.bbox` / `geo.mask_geojson` subset first when lat/lon remain). `traces[0].pair_on` is `time` (default, inner-join on time or valid time), `year` (calendar year), or `index` (position; lengths must match). Duplicate keys are an error — aggregate or select first. Points are labeled when `pair_on` is `year`, or when it is `time` and there are 25 points or fewer. This is not kind `scatter` (or `--layer scatter`), which draws stations on a map.
@@ -108,6 +108,26 @@ Set `traces[0].kind` in `--spec`.
 
 `--layer` cannot be combined with kind `timeseries`, `xy`, `windrose`, or `contour`.
 
+## Precipitation colormaps
+
+Two default precipitation palettes can be named anywhere a colormap goes (`theme.colormap`, `inputs[].colormap`, `subplots[].colormap`, `layers[].colormap`). Names are case-insensitive.
+
+| Name | Draws | Window from `aggregation_period` |
+| --- | --- | --- |
+| `default_precip` | Totals: white/beige below 5 mm, then greens and blues | < 2 days 0–50 mm · < 10 days 0–200 · < 40 days 0–400 · longer 0–1000 |
+| `default_precip_anom` | Anomalies: diverging classes, red/orange/brown (dry) through white near 0 to green, blue, and purple (wet) | ±50 · ±200 · ±300 · ±500 mm |
+
+With no `aggregation_period`, both use the weekly window. These are the same palettes the heatmap picks automatically for precipitation. Naming one skips that detection, which matters when:
+
+- the anomaly variable lost its precip name or `standard_name` (e.g. after `difference`), so it would get a generic sequential colormap;
+- every value in an anomaly is positive, so it would be drawn as a total;
+- a total has negative values from a bias correction, so it would be drawn as an anomaly;
+- totals and anomalies share one figure and each row needs its own scale, e.g. `{"row": 2, "col": 1, "colormap": "default_precip_anom", ...}` on the anomaly cells.
+
+Setting `vmin`/`vmax` with either name keeps the colors and stretches them over your range instead of the fixed classes. To pin one window regardless of `aggregation_period`, name it directly: `ppt_daily`/`ppt_week`/`ppt_month`/`ppt_season` or `ppt_anom_daily`/`ppt_anom_week`/`ppt_anom_month`/`ppt_anom_season`. A `--theme-file` entry named `default_precip` or `default_precip_anom` replaces the built-in one.
+
+For other named palettes (e.g. an agency's rainfall-map legend), check whether an installed skill provides a theme file for the use case and pass it with `--theme-file`. A theme file cannot set colorbar options; set `layout.colorbar.extend` in `--spec` if the palette needs arrows.
+
 ## When to use
 
 - CHIRPS next to a forecast, each at its own resolution, in one PNG. Two heatmap traces. Do not coarsen the forecast onto the obs grid for this.
@@ -116,7 +136,7 @@ Set `traces[0].kind` in `--spec`.
 - A quick-look map or a time/step profile.
 - One index against another (IOD vs rainfall, or two variables in one Zarr).
 - A wind rose or an S2S-style wind-vector map from u/v.
-- Precipitation only after `aggregate-temporal` and `convert-to-totals`. Fetchers write rates; the figure should show period totals (`mm`). For rainfall anomalies, omit `theme.colormap`.
+- Precipitation only after `aggregate-temporal` and `convert-to-totals`. Fetchers write rates; the figure should show period totals (`mm`). For rainfall anomalies, set `colormap` to `default_precip_anom` (or leave it unset and let auto-detection pick it).
 
 Do not `coarsen` datasets onto one grid just to draw them. A shared lat/lon grid is for `difference` and `verify`. For one obs week versus week-4 through week-1 forecasts with a hits row, use `plot-verify`. For rainy-season onset dates from `indicator --detect first`, use `plot` and do not average `number` first.
 

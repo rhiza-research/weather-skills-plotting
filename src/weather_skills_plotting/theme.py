@@ -212,6 +212,21 @@ def default_precip_window(*days: float | None, anomaly: bool = False) -> str:
     return widest_precip_window(*days)
 
 
+# Window-following default precip palettes an agent can name directly. Each picks the
+# nested ``ppt_*`` / ``ppt_anom_*`` window from the field's
+# ``aggregation_period``, exactly like the automatic precip default, but
+# skips detection (so an all-positive anomaly still gets the diverging scale).
+DEFAULT_PRECIP_PALETTES = {"default_precip": False, "default_precip_anom": True}
+
+
+def default_precip_scale_name(name: str, da=None) -> str:
+    """Nested window behind ``default_precip`` / ``default_precip_anom`` for ``da``."""
+    days = aggregation_days(da) if da is not None else None
+    if DEFAULT_PRECIP_PALETTES[name]:
+        return precip_anomaly_window_name(days)
+    return precip_window_name(days)
+
+
 def precip_nested_palette(name: str) -> dict:
     """Packed under + master prefix + next-class over for a window name."""
     if name not in PRECIP_WINDOW_VMAX:
@@ -879,6 +894,20 @@ def resolve_colorscale(
             **extras,
         }
     named = parsed.get("name")
+    default_key = str(named or "").lower()
+    user_names = {str(k).lower() for k in palettes} - {
+        str(k).lower() for k in default_theme()["colormaps"]
+    }
+    if default_key in DEFAULT_PRECIP_PALETTES and default_key not in user_names:
+        window = default_precip_scale_name(default_key, da)
+        entry = (
+            precip_nested_anomaly_palette(window)
+            if DEFAULT_PRECIP_PALETTES[default_key]
+            else precip_nested_palette(window)
+        )
+        return _scale_with_overrides(
+            _discrete_scale(window, entry, stretch=stretch), parsed, stretch=stretch
+        )
     entry, named = _palette_entry(palettes, named)
     if entry and entry.get("colors") and entry.get("bounds"):
         return _scale_with_overrides(

@@ -131,7 +131,7 @@ _DESCRIPTIONS = {
     "colorbar.format": "tick number format",
     # theme
     "theme.fontsize": "base font size; scales titles, labels, ticks, legend together",
-    "theme.colormap": "colormap name, or {colors, bounds} for classes",
+    "theme.colormap": "colormap name (default_precip / default_precip_anom for rainfall totals / anomalies), or {colors, bounds} for classes",
     "theme.template": "weather_skills or colorblind",
     "theme.rc": "matplotlib rcParams, e.g. {'axes.titlesize': 20, 'figure.titlesize': 24}",
     # geo

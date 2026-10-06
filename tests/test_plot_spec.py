@@ -2043,7 +2043,12 @@ def test_compile_scatter_layer_rejects_conflicting_size_and_s():
     ds = make_station()
     spec = {
         "layers": [
-            {"kind": "scatter", "input": "a", "path": "stations.zarr", "scatter": {"size": 70, "s": 30}}
+            {
+                "kind": "scatter",
+                "input": "a",
+                "path": "stations.zarr",
+                "scatter": {"size": 70, "s": 30},
+            }
         ]
     }
     with pytest.raises(UsageError, match="both 'size' and 's'"):

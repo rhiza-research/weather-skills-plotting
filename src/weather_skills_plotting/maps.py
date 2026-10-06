@@ -1615,11 +1615,30 @@ def _prep_quiver_layer(spec, bbox_nwse, region_polygon, extent):
     }
 
 
+def _outline_geoms(path):
+    """One shapely geometry per GeoJSON feature, so shared edges stay drawn.
+
+    ``polygon_from_geojson`` unions the features, which would erase the
+    internal lines of an admin-unit file (e.g. county boundaries).
+    """
+    from shapely.geometry import shape
+
+    union = polygon_from_geojson(path, flag="--layer outline")  # validates the file
+    data = json.loads(Path(path).read_text())
+    if data.get("type") != "FeatureCollection":
+        return [union]
+    try:
+        geoms = [shape(f["geometry"]) for f in data["features"] if f.get("geometry")]
+    except Exception:  # noqa: BLE001
+        return [union]
+    return [g for g in geoms if not g.is_empty] or [union]
+
+
 def _prep_outline_layer(spec):
     return {
         "kind": "outline",
         "spec": spec,
-        "polygon": polygon_from_geojson(spec.path, flag="--layer outline"),
+        "polygons": _outline_geoms(spec.path),
         "style": outline_style(spec.options.get("line")),
         "panel_dim": None,
         "zorder": _KIND_ZORDER["outline"],
@@ -1831,7 +1850,7 @@ def outline_style(line: dict | None, *, loc: str = "layers[].line") -> dict:
 
 def _draw_outline_on_ax(ax, prepared, crs):
     style = {"zorder": prepared["zorder"], **prepared["style"]}
-    ax.add_geometries([prepared["polygon"]], crs, facecolor="none", **style)
+    ax.add_geometries(prepared["polygons"], crs, facecolor="none", **style)
 
 
 def _limit_token(value):
