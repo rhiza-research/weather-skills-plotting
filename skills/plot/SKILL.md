@@ -134,7 +134,7 @@ With no `aggregation_period`, both use the weekly window. These are the same pal
 
 Use it for totals (after `convert-to-totals`) that should look like a KMSA map: `{"theme": {"colormap": "kmsa"}}`. The colorbar extends only at the top. Not for anomalies.
 
-For KMSA-style Kenya maps with the official KNSDI boundaries, get them from `resolve-kenya-regions` (CHC skills): `Kenya --geojson kenya.json --counties-geojson counties.json`, plus `"Tana basin" --geojson tana.json` if needed. Add each as `--layer outline:PATH` and set `"geo": {"overlays": {"admin1": false, "borders": false, "coastline": false}}` so the built-in Natural Earth lines do not draw alongside them.
+To draw official national or local boundaries instead of the built-in Natural Earth lines, check whether an installed skill provides more specific region GeoJSON for the use case, add each file as `--layer outline:PATH`, and set `"geo": {"overlays": {"admin1": false, "borders": false, "coastline": false}}` so the built-in lines do not draw alongside them.
 
 Setting `vmin`/`vmax` with either name keeps the colors and stretches them over your range instead of the fixed classes. To pin one window regardless of `aggregation_period`, name it directly: `ppt_daily`/`ppt_week`/`ppt_month`/`ppt_season` or `ppt_anom_daily`/`ppt_anom_week`/`ppt_anom_month`/`ppt_anom_season`. A `--theme-file` entry named `chc_precip` or `chc_precip_anom` replaces the built-in one.
 
