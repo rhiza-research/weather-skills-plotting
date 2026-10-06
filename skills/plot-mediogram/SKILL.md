@@ -55,7 +55,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot_mediogram.py \
 
 - `geo.lat`, `geo.lon` — point, nearest-neighbor.
 - `inputs[]` — `variable` per input (`forecast`, `mclimate`); an input that omits it uses `inputs[0].variable` (the forecast input), then auto-detects. The two archives may name the field differently — set each one's own `variable`.
-- `title`, `xlabel`, `ylabel`.
+- `title`, `xlabel`, `ylabel`. Keep the title to a few words (`Nairobi`).
 - `theme.fontsize` (default 16), `layout.figsize` as `[W, H]` (default about 10×5).
 
 ### Output
