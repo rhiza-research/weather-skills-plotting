@@ -18,6 +18,12 @@ for dataset loading, the CLI decorator, and a handful of shared utilities.
 The full `--spec` schema shared by all four skills is documented in
 [`docs/plotting.md`](docs/plotting.md).
 
+Prefer short titles and colorbar labels. A title names the subject in a few
+words (`CHIRPS weekly totals`, `Week 1`), not the whole pipeline; put
+methods, sources and caveats in the caption or report text. A colorbar label
+is the quantity and its units (`Rain [mm]`), not a sentence. Long text wraps
+onto extra lines and crowds multi-panel grids and their colorbars.
+
 ## Quick start
 
 ```bash

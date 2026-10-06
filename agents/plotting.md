@@ -49,3 +49,9 @@ and transforms when those are available (for example a fetch skill,
   narrows to one panel. Panel and figure-title spacing on a map grid is
   automatic — you should not need `layout.facet.wspace`/`hspace` or
   `layout.suptitle.y` for the common case.
+- **Keep titles and colorbar labels short.** A `title` or `subplots[].title`
+  names the subject in a few words (`CHIRPS weekly totals`, `Week 1`), not
+  the pipeline that made it; methods, sources and caveats go in your reply
+  or the report text. A `cbar_label` is the quantity and units
+  (`Rain [mm]`), not a sentence. Long text wraps onto extra lines and crowds
+  multi-panel grids and their colorbars.

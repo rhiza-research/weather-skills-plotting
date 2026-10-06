@@ -47,6 +47,8 @@ Every figure — map or chart, one panel or many — is laid out by matplotlib's
 
 A figure `title` that is wider than the figure itself wraps onto more lines automatically — a centered figure title does not grow the canvas to fit itself, so without wrapping it would get cut off at the left and right edges instead. Panel titles already wrapped the same way; nothing to set for either case.
 
+Wrapping is a fallback, not a goal: keep titles and colorbar labels short. A `title` or `subplots[].title` names the subject in a few words (`CHIRPS weekly totals`), and a `cbar_label` is the quantity and units (`Rain [mm]`). Methods, sources and caveats go in your reply, not the figure.
+
 ## Figure-wide vs per-panel settings
 
 One rule covers every knob that can vary panel by panel: a figure-level setting is the default that applies to **every** panel; a panel-specific key narrows or overrides it for just that panel.

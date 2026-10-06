@@ -90,7 +90,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py -i <a.zarr> --dump-spec -
 
 One internal trace per input, kind `timeseries`, mark `line`. `layout.bar_mode` defaults to `grouped`. `along`, `along_color`, `align`, `band`, and `time_dim` are read from `traces[0]` and apply to every series. `traces[].reduce` is per series; a trace that omits it uses `traces[0].reduce`. `inputs[].variable` is per input; an input that omits it uses `inputs[0].variable`. Per-series `line`, `bar`, and `mark` stay on that trace.
 
-- `inputs[].variable`, `inputs[].label`, `title`, `xlabel`, `ylabel`.
+- `inputs[].variable`, `inputs[].label`, `title`, `xlabel`, `ylabel`. Keep them short: a few words for `title`, the quantity and units for an axis label (`Rain [mm]`). Methods and sources go in your reply.
 - `traces[].reduce` — dims to average. Required for leftover non-time dims unless that dim is `along`.
 - `traces[0].along` — fan one leftover dim into lines (`number`). `along_color` is `same` or `cycle`.
 - `traces[].mark` — `line` or `bar`. `layout.bar_mode` — `grouped`, `stacked`, or `overlay`.
