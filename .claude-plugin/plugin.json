@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "rhiza-plotting",
   "displayName": "Plotting Skills",
-  "description": "General-purpose weather and climate data plotting: heatmaps, contours, timeseries, wind roses, mediograms, and lead-week verification grids from weather-skills standard dataset Zarrs.",
+  "description": "General-purpose weather and climate data plotting: heatmaps, contours, timeseries, wind roses, mediograms, lead-week verification grids, and any Vega-Lite chart or map, from weather-skills standard dataset Zarrs.",
   "author": {
     "name": "Rhiza Research",
     "url": "https://github.com/rhiza-research"
@@ -16,6 +16,8 @@
     "plotting",
     "matplotlib",
     "cartopy",
+    "vega-lite",
+    "altair",
     "geospatial",
     "zarr",
     "xarray"

@@ -14,9 +14,12 @@ for dataset loading, the CLI decorator, and a handful of shared utilities.
 | [`plot-timeseries`](skills/plot-timeseries/) | One 1D trace per input Zarr overlaid on a shared time axis |
 | [`plot-verify`](skills/plot-verify/) | Lead-week event-verification grid of maps for one observation week |
 | [`plot-mediogram`](skills/plot-mediogram/) | ECMWF-style mediogram comparing a forecast ensemble against an m-climate ensemble |
+| [`plot-vega`](skills/plot-vega/) | Any chart or map from a plain Vega-Lite 6 spec, with Zarrs, GeoJSON and Natural Earth layers bound in as datasets; PNG, JPEG or HTML |
 
-The full `--spec` schema shared by all four skills is documented in
-[`docs/plotting.md`](docs/plotting.md).
+The `--spec` schema shared by the four matplotlib skills is documented in
+[`docs/plotting.md`](docs/plotting.md). `plot-vega` takes standard
+[Vega-Lite](https://vega.github.io/vega-lite/docs/) instead; its additions
+are in [`skills/plot-vega/SKILL.md`](skills/plot-vega/SKILL.md).
 
 ## Quick start
 
@@ -40,6 +43,11 @@ uv run skills/plot-verify/scripts/plot_verify.py \
 # A mediogram
 uv run skills/plot-mediogram/scripts/plot_mediogram.py \
   -i /tmp/forecast.zarr -i /tmp/mclimate.zarr -o /tmp/medio.png
+
+# A Vega-Lite map from a recipe
+uv run skills/plot-vega/scripts/plot_vega.py -i obs=/tmp/chirps_week.zarr \
+  -i stations=/tmp/tahmo_week.zarr \
+  --spec skills/plot-vega/recipes/map_heatmap_stations.json -o /tmp/map.png
 ```
 
 ## Install as a Claude plugin

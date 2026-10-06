@@ -82,6 +82,7 @@ and this report.
 | [`plot-timeseries`](../skills/plot-timeseries/SKILL.md) | Several 1D series | repeatable `-i` | overlay or `layout.facet.per_trace`; `traces[].along` spaghetti |
 | [`plot-verify`](../skills/plot-verify/SKILL.md) | Lead-week obs / fc / metric | `--obs` + `--forecast` + verify Zarrs | 2-row metric grid; data must already be one time |
 | [`plot-mediogram`](../skills/plot-mediogram/SKILL.md) | Ensemble vs m-climate at a point | forecast + m-climate Zarrs + `geo.lat` / `geo.lon` | grouped boxplots + mean line |
+| [`plot-vega`](../skills/plot-vega/SKILL.md) | Any chart or map, as plain Vega-Lite 6 | repeatable `-i NAME=PATH` (Zarr or GeoJSON) | whatever the Vega-Lite spec says; this page's `--spec` schema does not apply |
 
 **Decision rule.** `plot-timeseries` is many 1D traces. `plot-verify` and
 `plot-mediogram` are specialized recipes. Inside `plot`, pick the layout
