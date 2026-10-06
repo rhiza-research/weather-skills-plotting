@@ -101,7 +101,6 @@ class Bound:
     axis_titles: dict = field(default_factory=dict)
     title: str | None = None
     layout: dict = field(default_factory=dict)
-    x_is_date: bool = False
     x_tickformat: str | None = None
 
 
@@ -404,7 +403,7 @@ def bind_arrows(trace, meta, ctx, loc):
             "y": ys,
             "hoverinfo": "skip",
             "showlegend": False,
-            "line": {"color": "black", "width": 1},
+            "line": {"color": "black"},
         }
         key_trace = {
             "type": "scatter",
@@ -415,8 +414,7 @@ def bind_arrows(trace, meta, ctx, loc):
             "textposition": "middle left",
             "hoverinfo": "skip",
             "showlegend": False,
-            "line": {"color": "black", "width": 1.5},
-            "textfont": {"size": 13},
+            "line": {"color": "black"},
             "uid_suffix": "key",
         }
         panels.append(Panel([arrows, key_trace], ptitle, key))
@@ -473,11 +471,8 @@ def bind_points(trace, meta, ctx, loc):
                         "y": lat,
                         "text": names,
                         "customdata": vals,
-                        "marker": {
-                            "color": vals,
-                            "size": 11,
-                            "line": {"color": "black", "width": 0.6},
-                        },
+                        # An outline keeps a station visible when its class is white.
+                        "marker": {"color": vals, "line": {"width": 1}},
                         "hovertemplate": "%{text}: %{customdata:.4g}<extra></extra>",
                         "showlegend": False,
                     }
@@ -533,7 +528,7 @@ def bind_geojson(trace, meta, ctx, loc):
         "y": ys,
         "hoverinfo": "skip",
         "showlegend": False,
-        "line": {"color": "black", "width": 1.6},
+        "line": {"color": "black"},
     }
     return Bound([Panel([line])], is_map=True, static=True, extent=[w, e, s, n])
 
@@ -631,7 +626,7 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
                     "x": xs,
                     "y": np.nanmean(y, axis=1),
                     "mode": "lines",
-                    "line": {"color": col, "width": 2},
+                    "line": {"color": col},
                 },
             ]
         elif meta.get("along_color") == "cycle":
@@ -661,15 +656,15 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
                     "x": gx,
                     "y": gy,
                     "mode": "lines",
+                    # Translucent so overlapping members read as density.
                     "opacity": 0.45,
-                    "line": {"width": 1, "color": _color_name(trace, color)},
+                    "line": {"color": _color_name(trace, color)},
                 }
             )
     titles = {"x": "" if is_date else axis_label(xname), "y": variable_label_for_display(da)}
     return Bound(
         [Panel(traces)],
         axis_titles=titles,
-        x_is_date=is_date,
         x_tickformat=SEASONAL_TICKFORMAT if aligned else None,
     )
 
@@ -723,14 +718,12 @@ def bind_pair(trace, meta, ctx, loc):
         "mode": "markers+text" if labelled else "markers",
         "x": xv,
         "y": yv,
-        "marker": {"size": 10},
         "showlegend": False,
     }
     if labelled:
         out.update(
             text=[format_plot_date(k) if pair_on == "time" else str(k) for k in keys],
             textposition="top right",
-            textfont={"size": 11},
         )
     x_qty = variable_label_for_display(x_da, include_units=False)
     y_qty = variable_label_for_display(y_da, include_units=False)
@@ -817,7 +810,7 @@ def bind_windrose(trace, meta, ctx, loc):
             "theta": theta,
             "name": f"{label} {units}",
             "uid_suffix": f"bin{i}",
-            "marker": {"color": colors[i], "line": {"color": "white", "width": 0.6}},
+            "marker": {"color": colors[i]},
         }
         for i, label in enumerate(speed_bin_labels(edges))
     ]

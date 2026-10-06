@@ -35,7 +35,9 @@ def test_heatmap_panels_each_time_with_one_discrete_colorbar():
     assert {t["coloraxis"] for t in heat} == {"coloraxis"}
     layout = _layout(fig)
     bar = layout["coloraxis"]["colorbar"]
-    assert bar["orientation"] == "h"  # several panels: shared bar underneath
+    # Plotly's grid places the panels; one colorbar keeps Plotly's default spot.
+    assert layout["grid"] == {"rows": 2, "columns": 2, "pattern": "independent"}
+    assert not {"x", "y", "len", "orientation"} & set(bar)
     assert bar["ticktext"][:3] == ["0", "1", "2"]
     titles = [
         a["text"] for a in layout["annotations"] if a.get("name", "").startswith("panel-title")
@@ -238,7 +240,7 @@ def test_series_needs_reduce_or_along():
         )
 
 
-def test_series_forecast_plots_valid_time_with_date_ticks():
+def test_series_forecast_plots_valid_time():
     ds = make_forecast(n_number=0, n_step=3)
     fig = compile(
         {
@@ -254,7 +256,7 @@ def test_series_forecast_plots_valid_time_with_date_ticks():
         {"a": ds},
     )
     assert _data(fig)[0]["x"][0].startswith("2026-01-01")
-    assert _layout(fig)["xaxis"]["tickformat"] == "%-d %b '%y"
+    assert "tickformat" not in _layout(fig)["xaxis"]  # Plotly's own date ticks
 
 
 def test_pair_on_year_labels_points():
@@ -374,9 +376,10 @@ def test_two_scales_on_one_panel_do_not_overlap():
     stations["precip"].attrs["units"] = "mm"  # different label → its own colorbar
     spec = {"data": [_trace("a"), _trace("b", type="scatter", meta={"bind": "points"})]}
     layout = _layout(compile(spec, {"a": grid, "b": stations}))
-    x1, x2 = layout["coloraxis"]["colorbar"]["x"], layout["coloraxis2"]["colorbar"]["x"]
-    assert x2 > x1 + 0.05
-    assert layout["margin"]["r"] > 150  # room reserved for both bars
+    bar1, bar2 = layout["coloraxis"]["colorbar"], layout["coloraxis2"]["colorbar"]
+    # Two bars split the right edge: one above the other, no overlap.
+    assert (bar1["len"], bar2["len"]) == (0.5, 0.5)
+    assert (bar1["y"], bar2["y"]) == (0.75, 0.25)
 
 
 def test_align_dayofyear_lines_up_leap_and_non_leap_years():

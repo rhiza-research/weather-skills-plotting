@@ -73,4 +73,4 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py -i /tmp/obs.zarr -i /tmp/c
 
 ## Output
 
-The figure at `--output`, 1000×600 px by default (2× pixels in PNG), legend below. The y-axis label is the variable's `long_name` plus short units. PNG/JPG print a pixel `plot hash` and `data: not null` / `NULL` (`NULL` means all-NaN input; run `inspect-zarr`). Look at the image rather than comparing hashes. Provenance is embedded in the PNG metadata or the HTML `<meta>` tag.
+The figure at `--output`, at Plotly's default size and legend position unless `layout` sets them. The y-axis label is the variable's `long_name` plus short units. PNG/JPG print a pixel `plot hash` and `data: not null` / `NULL` (`NULL` means all-NaN input; run `inspect-zarr`). Look at the image rather than comparing hashes. Provenance is embedded in the PNG metadata or the HTML `<meta>` tag.

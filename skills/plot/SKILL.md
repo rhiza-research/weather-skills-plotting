@@ -40,10 +40,10 @@ What the command builds from each file:
 | --- | --- |
 | Two datasets side by side, each on its own grid | Repeat `-i`. Trace `a` sits on axes `x`/`y`, trace `b` on `x2`/`y2`, and so on. Each panel keeps its own lat/lon spacing and gets its own colorbar. Each input must already be one map: select or aggregate the time first. |
 | Datasets drawn on top of each other | `--layer heatmap:a.zarr --layer scatter:stations.zarr --layer outline:kenya.geojson`. Every trace on the same axes stacks on one map. Same-variable layers share a colorbar. |
-| Several times or steps of one dataset | One `-i`. The trace panels its `time` / `step` dim. `layout.grid.rows` / `columns` shape the grid (default up to 4 columns). |
+| Several times or steps of one dataset | One `-i`. The trace panels its `time` / `step` dim. `layout.grid.rows` / `columns` shape the grid (default: as near square as the panel count allows). |
 | One colorbar for side-by-side maps | Point both traces at the same axis: `"coloraxis": "coloraxis"`. |
 
-Panel titles are annotations named `panel-title-1`, `panel-title-2`, …. Rename one with `{"layout": {"annotations": [{"name": "panel-title-2", "text": "ECMWF"}]}}`. Panel and colorbar spacing is computed for you. `layout.grid.xgap` / `ygap` add extra space, as a fraction of a panel. `layout.width` / `height` set the canvas size.
+Panel titles are annotations named `panel-title-1`, `panel-title-2`, …. Rename one with `{"layout": {"annotations": [{"name": "panel-title-2", "text": "ECMWF"}]}}`. Panels sit in Plotly's `layout.grid`, so its own keys apply: `xgap` / `ygap` set the space between panels, as a fraction of a cell. Fonts, margins and gaps are Plotly's defaults. The canvas is Plotly's default width (wider for more than two columns), and its height follows the map's shape. `layout.width` / `height` override both. One colorbar keeps Plotly's default place on the right; several split the right edge, top to bottom in panel order.
 
 Do not `coarsen` or `downscale` just to draw a figure. Only `difference` and `verify` need a shared grid.
 
@@ -70,7 +70,7 @@ Do not `coarsen` or `downscale` just to draw a figure. Only `difference` and `ve
 | `geo.mask_geojson` | Blank map cells outside a polygon (does not draw it; add a `geojson` trace for the edge). |
 | `geo.point` | `{lat, lon}` for `samples` traces. |
 | `overlays` | Base map: `true` (default), `false`, or per layer, e.g. `{"rivers": false, "admin1": true, "borders": {"line": {"width": 2}}}`. Layers: `coastline`, `borders`, `lakes`, `rivers`, `admin1` (Natural Earth; scale follows the map span). |
-| `export.scale` | PNG/JPG pixel multiplier (default 2). |
+| `export.scale` | PNG/JPG pixel multiplier (Plotly's default 1; 2 doubles the pixels). |
 
 ## Colors
 

@@ -57,7 +57,7 @@ _LAYOUT_META = {
     "geo.point": '{"lat": …, "lon": …} for samples traces (plot-mediogram); nearest cell',
     "overlays": "true, false, or {coastline|borders|lakes|rivers|admin1: false or a scatter "
     'style such as {"line": {"width": 2}}}',
-    "export.scale": "PNG/JPG pixel multiplier (default 2)",
+    "export.scale": "PNG/JPG pixel multiplier (Plotly's default 1)",
     "version / skill": "leave as dumped",
 }
 
@@ -74,7 +74,7 @@ _RECIPES = [
         '{"layout": {"coloraxis": {"colorbar": {"title": {"text": "Rain [mm]"}, "len": 0.5}}}}',
     ),
     (
-        "Grid shape and extra gaps (fractions of a panel)",
+        "Grid shape and gaps (Plotly layout.grid; gaps are fractions of a cell)",
         '{"layout": {"grid": {"rows": 2, "columns": 3, "xgap": 0.3, "ygap": 0.2}}}',
     ),
     ("Rename panel 2", '{"layout": {"annotations": [{"name": "panel-title-2", "text": "ECMWF"}]}}'),

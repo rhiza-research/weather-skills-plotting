@@ -46,4 +46,4 @@ and transforms when those are available (for example a fetch skill,
 - Side-by-side maps are traces on separate axes (`x`, `x2`, …), each on its
   own grid; traces on the same axes are layers. Point traces at the same
   `coloraxis` to share a colorbar. Panel titles are annotations named
-  `panel-title-N`. Panel and colorbar spacing is automatic.
+  `panel-title-N`. Spacing, fonts and margins are Plotly's defaults; change them with plain `layout` keys.

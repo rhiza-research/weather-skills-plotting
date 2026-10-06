@@ -30,7 +30,7 @@ from weather_skills_core.units import format_units_for_display, units_equal, var
 from weather_skills_plotting import parse_spec_arg
 from weather_skills_plotting.cli import run, skeleton, warn
 from weather_skills_plotting.labels import format_plot_date_range
-from weather_skills_plotting.layout import axis_suffix
+from weather_skills_plotting.layout import axis_suffix, panel_title
 from weather_skills_plotting.palettes import aggregation_days, is_precip, widest_precip_window
 from weather_skills_plotting.reference import install_spec_help
 from weather_skills_plotting.spec import DUMP_SPEC_HELP, SPEC_ARGUMENT_HELP, merge_spec
@@ -247,20 +247,7 @@ def plot_verify(
     obs_label = dataset_display_label(obs, "Observation")
     fc_label = combine_display_labels([dataset_display_label(f, "Forecast") for f in forecasts])
     titles = [obs_label] + [f"{i}-week lead" for i in range(1, n + 1)]
-    annotations = [
-        {
-            "name": f"panel-title-{p + 1}",
-            "text": t,
-            "xref": f"x{axis_suffix(p)} domain",
-            "yref": f"y{axis_suffix(p)} domain",
-            "x": 0.5,
-            "y": 1,
-            "yanchor": "bottom",
-            "yshift": 3,
-            "showarrow": False,
-        }
-        for p, t in enumerate(titles)
-    ]
+    annotations = [panel_title(p, t) for p, t in enumerate(titles)]
     # Verify cells sit under their forecast column title; no date of their own.
     annotations += [{"name": f"panel-title-{cols + i + 1}", "text": ""} for i in range(1, n + 1)]
     units = format_units_for_display(variable_units(obs_da))
@@ -276,7 +263,6 @@ def plot_verify(
             "x": 0.5,
             "y": 0.5,
             "showarrow": False,
-            "font": {"size": 18},
         }
     )
     if metric == "hits":

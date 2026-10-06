@@ -48,4 +48,4 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot_mediogram.py -i /tmp/ecmwf_forecast.zarr
 
 ## Output
 
-A 1000×520 px figure (2× pixels in PNG). The default title names the variable and the snapped grid point. The legend sits below the boxes. PNG/JPG print a pixel `plot hash` and `data: not null` / `NULL`. Look at the image; a hash only shows that pixels changed. Provenance is embedded in the PNG metadata or the HTML `<meta>` tag.
+The figure uses Plotly's default size and legend position unless `layout` sets them. The default title names the variable and the snapped grid point. PNG/JPG print a pixel `plot hash` and `data: not null` / `NULL`. Look at the image; a hash only shows that pixels changed. Provenance is embedded in the PNG metadata or the HTML `<meta>` tag.

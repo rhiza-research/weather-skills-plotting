@@ -83,10 +83,12 @@ as before. Nothing is averaged silently: a dim left over after
 - **Map axes.** Map axes are equal-degree lon/lat axes (`scaleanchor`), which
   is the PlateCarree projection the cartopy version used. Plotly's geo
   subplots cannot hold a heatmap, so they are not used.
-- **Layout.** Plotly has no constrained-layout engine, so `layout.py` sizes
-  the canvas from the map aspect and computes panel domains, title room and
-  colorbar positions: one bar right of a single panel, a shared bar under a
-  grid, or a bar beside the panels it covers.
+- **Layout.** Plotly's defaults do the layout: panels sit in `layout.grid`,
+  and fonts, margins, gaps and legend placement come from the template. The
+  code adds only what Plotly cannot infer: equal-degree axes, a canvas
+  height that follows the map's shape (from Plotly's default width), panel
+  titles, and, when there is more than one colorbar, an even split of the
+  right edge so they do not overlap.
 - **Color axes.** Each color-scaled source trace gets a `coloraxis`. Traces
   that name the same `coloraxis` share it, and same-variable layers on one
   map share automatically. Trace-level `colorscale`, `zmin`/`zmax`
@@ -107,7 +109,7 @@ as before. Nothing is averaged silently: a dim left over after
 ## Output
 
 The `-o` suffix chooses the format: `.png`, `.jpg` (kaleido and headless
-Chrome, rendered at 2×; `layout.meta.export.scale` changes it), or `.html`
+Chrome, at Plotly's default scale; `layout.meta.export.scale` changes it), or `.html`
 (self-contained, interactive, works offline). Images print a pixel
 `plot hash` and a `data: not null | NULL` line. Provenance is embedded by the
 core decorator, in PNG `tEXt` chunks or an HTML `<meta>` tag.

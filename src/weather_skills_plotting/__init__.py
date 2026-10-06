@@ -36,7 +36,6 @@ __all__ = [
 ]
 
 OUTPUT_SUFFIXES = (".png", ".jpg", ".jpeg", ".html", ".htm")
-DEFAULT_EXPORT_SCALE = 2
 
 
 class SpecArg:
@@ -101,7 +100,7 @@ def export(fig, output, *, datasets=None, scale=None):
     if suffix in (".html", ".htm"):
         fig.write_html(output, include_plotlyjs=True, full_html=True)
         return output
-    fig.write_image(output, scale=scale or DEFAULT_EXPORT_SCALE)
+    fig.write_image(output, scale=scale)
     from weather_skills_plotting.qa import report_figure
 
     report_figure(output, datasets)

@@ -27,17 +27,14 @@ from weather_skills_plotting.geodata import (
     overlay_settings,
 )
 from weather_skills_plotting.layout import (
-    CHART_SIZE,
-    DEFAULT_FONTSIZE,
     DEFAULT_TEMPLATE,
     axis_suffix,
-    colorbar_bottom,
-    colorbar_right_of,
     grid_shape,
     map_axes,
-    map_grid,
+    map_size,
     panel_title,
     register_templates,
+    stacked_colorbars,
 )
 from weather_skills_plotting.palettes import (
     COLORBLIND,
@@ -84,7 +81,6 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
     )
     template = user_layout.get("template", DEFAULT_TEMPLATE)
     colorway = COLORBLIND if template == "colorblind" else DEEP
-    font = float(((user_layout.get("font") or {}).get("size")) or DEFAULT_FONTSIZE)
 
     items = []
     n_colored = 0
@@ -98,9 +94,9 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
         raise UsageError("plot spec has no traces to draw")
 
     if any(b is not None and b.is_map for _, _, b in items):
-        data, layout = _assemble_map(items, user_layout, lmeta, ctx, font)
+        data, layout = _assemble_map(items, user_layout, lmeta, ctx)
     else:
-        data, layout = _assemble_chart(items, user_layout, font)
+        data, layout = _assemble_chart(items, user_layout)
     layout.setdefault("template", DEFAULT_TEMPLATE)
     out_layout = merge_spec({"layout": layout}, {"layout": user_layout})["layout"]
     try:
@@ -243,7 +239,7 @@ def _input_label(ctx, trace):
     return Path(path).stem if path else None
 
 
-def _assemble_map(items, user_layout, lmeta, ctx, font):
+def _assemble_map(items, user_layout, lmeta, ctx):
     groups: dict[int, list] = {}
     for item in items:
         groups.setdefault(_anchor(item[1]), []).append(item)
@@ -281,7 +277,7 @@ def _assemble_map(items, user_layout, lmeta, ctx, font):
     else:
         panels = [(0, k) for k in plan[0]]
     n = len(panels)
-    grid_in = user_layout.pop("grid", None) or {}
+    grid_in = user_layout.get("grid") or {}
     rows, cols = grid_shape(n, grid_in.get("rows"), grid_in.get("columns"))
 
     # Bind results per panel.
@@ -369,98 +365,54 @@ def _assemble_map(items, user_layout, lmeta, ctx, font):
                 members.append((spec_trace, bound, [tr]))
             else:
                 entry[2].append(tr)
-    # Which panels each axis covers, for colorbar placement.
-    covers = {
-        name: sorted(
-            {p for p in range(n) for _, tr, st, _ in panel_traces[p] if axis_of.get(id(st)) == name}
+
+    # A lone colorbar keeps Plotly's place; several share the right edge, in
+    # the order of the first panel each one colors (so a row's bar sits by it).
+    def first_panel(name):
+        return min(
+            p for p in range(n) for _, _, st, _ in panel_traces[p] if axis_of.get(id(st)) == name
         )
-        for name in axis_members
-    }
-    right_bars = [0] * n
-    bottom = []
-    placement = {}
-    for name in axis_members:
-        if (user_layout.get(name) or {}).get("showscale") is False:
-            continue
-        ps = covers[name]
-        # One panel: every colorbar stacks outward on its right. Several panels:
-        # a scale shared by all of them goes underneath, the rest beside their panel.
-        if len(ps) == n and n > 1:
-            placement[name] = ("bottom", len(bottom))
-            bottom.append(name)
-        else:
-            last = ps[-1]
-            placement[name] = ("right", last, right_bars[last])
-            right_bars[last] += 1
-    xgap, ygap = grid_in.get("xgap"), grid_in.get("ygap")
-    has_title = bool(
-        ((user_layout.get("title") or {}).get("text"))
-        if isinstance(user_layout.get("title"), dict)
-        else user_layout.get("title")
+
+    shown = sorted(
+        (
+            name
+            for name in axis_members
+            if (user_layout.get(name) or {}).get("showscale") is not False
+        ),
+        key=first_panel,
     )
-    user_titles = [
-        a
-        for a in (user_layout.get("annotations") or [])
-        if str(a.get("name", "")).startswith("panel-title-")
-    ]
+    slots = dict(zip(shown, stacked_colorbars(len(shown)), strict=True))
     aspect = float(np.median([(e[1] - e[0]) / max(e[3] - e[2], 1e-6) for e in extents if e]))
-    grid = map_grid(
-        n,
-        rows,
-        cols,
-        aspect,
-        font=font,
-        has_title=has_title,
-        has_panel_titles=any(panel_titles) or bool(user_titles),
-        right_bars=right_bars,
-        bottom_bars=len(bottom),
-        width=user_layout.get("width"),
-        height=user_layout.get("height"),
-        xgap=xgap,
-        ygap=ygap,
+    width, height = map_size(
+        rows, cols, aspect, user_layout.get("width"), user_layout.get("height")
     )
     layout = {
-        "width": grid["width"],
-        "height": grid["height"],
-        "margin": grid["margin"],
-        "showlegend": False,
+        "width": width,
+        "height": height,
+        "grid": {"rows": rows, "columns": cols, "pattern": "independent"},
         "annotations": [],
     }
     for p in range(n):
         s = axis_suffix(p)
         if extents[p] is None:
-            xd, yd = grid["domains"][p]
-            # An empty cell keeps a bare axis so annotations can still target it.
-            bare = {
-                "showline": False,
-                "showgrid": False,
-                "zeroline": False,
-                "showticklabels": False,
-                "ticks": "",
-                "fixedrange": True,
-            }
-            layout[f"xaxis{s}"] = {**bare, "domain": xd, "anchor": f"y{s}"}
-            layout[f"yaxis{s}"] = {**bare, "domain": yd, "anchor": f"x{s}"}
+            # An empty cell keeps a hidden axis so annotations can still target it.
+            layout[f"xaxis{s}"] = {"visible": False}
+            layout[f"yaxis{s}"] = {"visible": False}
             continue
-        layout[f"xaxis{s}"], layout[f"yaxis{s}"] = map_axes(grid, p, extents[p])
+        layout[f"xaxis{s}"], layout[f"yaxis{s}"] = map_axes(p, extents[p])
         if panel_titles[p]:
-            layout["annotations"].append(panel_title(p, panel_titles[p], font))
+            layout["annotations"].append(panel_title(p, panel_titles[p]))
     for name, members in axis_members.items():
         contours = [tr for _, b, trs in members for tr in trs if tr.get("type") == "contour"]
         for tr in contours:
-            fill_defaults(
-                tr, {"contours": {"coloring": "fill"}, "line": {"color": "black", "width": 0.5}}
-            )
+            fill_defaults(tr, {"contours": {"coloring": "fill"}})
         axis = _resolve_coloraxis(
             name, members, user_layout.get(name), ctx, contour_traces=contours
         )
-        where = placement.get(name)
-        if where is None:
-            axis["showscale"] = False
-        elif where[0] == "bottom":
-            fill_defaults(axis["colorbar"], colorbar_bottom(grid, where[1]))
+        if name in slots:
+            fill_defaults(axis["colorbar"], slots[name])
         else:
-            fill_defaults(axis["colorbar"], colorbar_right_of(grid, where[1], where[2]))
+            axis["showscale"] = False
         lifted = {}
         for spec_trace, bound, _ in members:
             lifted = deep_merge(lifted, _lift_color(spec_trace, bound.color_key))
@@ -522,15 +474,14 @@ def _key(value):
 # ----------------------------------------------------------------- chart figure
 
 
-def _assemble_chart(items, user_layout, font):
+def _assemble_chart(items, user_layout):
     grid = user_layout.get("grid") or {}
     cells = (grid.get("rows") or 1) * (grid.get("columns") or 1)
     explicit = any(t.get("xaxis") or t.get("yaxis") for _, t, _ in items)
     coupled = grid.get("pattern") == "coupled"
     data = []
-    layout = {"width": CHART_SIZE[0], "height": CHART_SIZE[1]}
+    layout = {}
     axis_titles: dict[str, dict] = {}
-    n_legend = 0
     for k, (i, spec_trace, bound) in enumerate(items):
         uid = spec_trace.get("uid") or f"trace{i}"
         xa, ya = spec_trace.get("xaxis") or "x", spec_trace.get("yaxis") or "y"
@@ -546,8 +497,6 @@ def _assemble_chart(items, user_layout, font):
             tr = _concrete(spec_trace, gen, uid if j == 0 else f"{uid}-{j}")
             if tr.get("type") != "barpolar":
                 tr["xaxis"], tr["yaxis"] = xa, ya
-            if tr.get("showlegend") is not False:
-                n_legend += 1
             data.append(tr)
         layout = deep_merge(layout, bound.layout)
         xs, ys = xa[1:], ya[1:]
@@ -555,24 +504,12 @@ def _assemble_chart(items, user_layout, font):
             axis_titles.setdefault(f"xaxis{xs}", {"title": {"text": bound.axis_titles["x"]}})
         if bound.axis_titles.get("y") is not None:
             axis_titles.setdefault(f"yaxis{ys}", {"title": {"text": bound.axis_titles["y"]}})
-        if bound.x_is_date:
-            fmt = bound.x_tickformat or "%-d %b '%y"
+        if bound.x_tickformat:
+            # Seasonal overlays sit on a stand-in year; show day and month only.
             axis = axis_titles.setdefault(f"xaxis{xs}", {})
-            axis.setdefault("tickformat", fmt)
-            axis.setdefault("hoverformat", fmt)
+            axis.setdefault("tickformat", bound.x_tickformat)
+            axis.setdefault("hoverformat", bound.x_tickformat)
         if bound.title:
             layout.setdefault("title", {"text": bound.title})
     layout.update(axis_titles)
-    if cells > 1 and grid.get("rows", 1) > 1:
-        layout["height"] = max(CHART_SIZE[1], 300 * grid["rows"])
-    if n_legend > 1 and "polar" not in layout:
-        layout["legend"] = {
-            "orientation": "h",
-            "x": 0.5,
-            "xanchor": "center",
-            "y": -0.15,
-            "yanchor": "top",
-        }
-    if "polar" in layout:
-        layout["width"], layout["height"] = 850, 700
     return data, layout

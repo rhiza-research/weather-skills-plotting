@@ -39,8 +39,8 @@ def _box(uid, name, color, source):
         "type": "box",
         "name": name,
         "fillcolor": color,
-        "line": {"color": "black", "width": 1},
-        "marker": {"color": "black", "size": 4},
+        "line": {"color": "black"},
+        "marker": {"color": "black"},
         "meta": {"bind": "samples", "source": source},
     }
 
@@ -105,7 +105,7 @@ def plot_mediogram(ds, output, spec=None, theme_file=None, dump_spec=None, **kwa
             "uid": "forecast-mean",
             "type": "scatter",
             "name": "forecast mean",
-            "line": {"color": "black", "width": 2},
+            "line": {"color": "black"},
             "marker": {"color": "black"},
             "meta": {"bind": "samples", "source": fc},
         },
@@ -118,10 +118,7 @@ def plot_mediogram(ds, output, spec=None, theme_file=None, dump_spec=None, **kwa
     layout = {
         "title": {"text": title},
         "boxmode": "group",
-        "width": 1000,
-        "height": 520,
         "xaxis": {"title": {"text": "Forecast step"}},
-        "legend": {"orientation": "h", "x": 0.5, "xanchor": "center", "y": -0.2, "yanchor": "top"},
     }
     base = skeleton("plot-mediogram", datasets, data, layout)
     return run(merge_spec(base, user), None, datasets, output, dump_spec, theme_file=theme_file)
