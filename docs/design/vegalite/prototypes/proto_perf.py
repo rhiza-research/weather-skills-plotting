@@ -49,19 +49,13 @@ spec = {
         }
     },
     "data": {"name": "g"},
-    "mark": {"type": "rect", "strokeWidth": 0.5},
+    "mark": "rect",
     "encoding": {
         "longitude": {"field": "lon", "type": "quantitative"},
         "latitude": {"field": "lat", "type": "quantitative"},
         "longitude2": {"field": "lon2"},
         "latitude2": {"field": "lat2"},
         "color": {"field": "tp", "type": "quantitative", "scale": {"scheme": "default_precip"}},
-        "stroke": {
-            "field": "tp",
-            "type": "quantitative",
-            "legend": None,
-            "scale": {"scheme": "default_precip"},
-        },
     },
 }
 proc = psutil.Process()
