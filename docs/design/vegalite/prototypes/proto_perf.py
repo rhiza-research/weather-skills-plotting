@@ -35,7 +35,7 @@ def grid(n):
 spec = {
     "width": 600,
     "height": 600,
-    "projection": {"type": "equirectangular", "fit": {"$bbox": [10, 30, -10, 50]}},
+    "projection": {"type": "equirectangular"},
     "datasets": {
         "g": {
             "zarr": "g",
@@ -55,16 +55,12 @@ spec = {
         "latitude": {"field": "lat", "type": "quantitative"},
         "longitude2": {"field": "lon2"},
         "latitude2": {"field": "lat2"},
-        "color": {
-            "field": "tp",
-            "type": "quantitative",
-            "scale": {"$palette": "default_precip", "data": "g.tp"},
-        },
+        "color": {"field": "tp", "type": "quantitative", "scale": {"scheme": "default_precip"}},
         "stroke": {
             "field": "tp",
             "type": "quantitative",
             "legend": None,
-            "scale": {"$palette": "default_precip", "data": "g.tp"},
+            "scale": {"scheme": "default_precip"},
         },
     },
 }

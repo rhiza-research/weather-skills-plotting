@@ -1,10 +1,11 @@
-"""Prototype engine: bind Zarr data into a Vega-Lite spec, expand placeholders, render.
+"""Prototype engine: bind Zarr data into a Vega-Lite spec, fill defaults, render.
 
 This is the design prototype, not the shipped library. It exists to prove the
 API in ``../DESIGN.md``: a spec is plain Vega-Lite; ``datasets.<name>`` may be a
-*binding* object instead of an array of rows; a few ``$``-prefixed placeholder
-objects expand to concrete Vega-Lite values; Altair validates and dispatches
-the top-level chart type; vl-convert renders.
+*binding* object instead of an array of rows; anything the agent leaves unset
+(colour scale, title, projection fit, base-map clip box) gets a default derived
+from the bound data; our palette names work as ``scale.scheme``; Altair
+validates and dispatches the top-level chart type; vl-convert renders.
 """
 
 from __future__ import annotations
@@ -136,7 +137,7 @@ def _to_json_values(series: pd.Series):
 
 
 def bind_zarr(name: str, binding: dict, inputs: dict) -> tuple[list[dict], dict]:
-    """Tidy rows for one ``datasets.<name>`` Zarr binding, plus metadata for placeholders."""
+    """Tidy rows for one ``datasets.<name>`` Zarr binding, plus metadata for the defaults."""
     loc = f"datasets.{name}"
     ds = inputs.get(binding["zarr"])
     if ds is None:
@@ -210,8 +211,46 @@ def bind_zarr(name: str, binding: dict, inputs: dict) -> tuple[list[dict], dict]
         else:
             out[col] = _to_json_values(df[src])
     rows = json.loads(out.to_json(orient="records", date_format="iso"))
-    meta = {"columns": list(fields), "fields": fields, "ds": sub, "rows": len(rows)}
+    meta = {
+        "columns": list(fields),
+        "var_cols": {col: src for col, src in fields.items() if src in sub.data_vars},
+        "ds": sub,
+        "rows": len(rows),
+        # Cell edges only when the agent asked for them (rect cells); points otherwise.
+        "extent": _extent(sub, edges=any(sfx in ("lo", "hi") for _, sfx in derived.values())),
+    }
     return rows, meta
+
+
+def _extent(obj, *, edges: bool) -> list[float] | None:
+    """``[N, W, S, E]`` of the bound data: cell edges for grids, points for stations."""
+    lat = next((d for d in ("latitude", "lat") if d in obj.coords), None)
+    lon = next((d for d in ("longitude", "lon") if d in obj.coords), None)
+    if lat is None or lon is None:
+        return None
+    if edges and lat in obj.dims and lon in obj.dims:
+        lat_lo, lat_hi = _cell_edges(obj[lat].values)
+        lon_lo, lon_hi = _cell_edges(obj[lon].values)
+        return [
+            float(lat_hi.max()),
+            float(lon_lo.min()),
+            float(lat_lo.min()),
+            float(lon_hi.max()),
+        ]
+    la, lo = np.asarray(obj[lat].values, float), np.asarray(obj[lon].values, float)
+    return [float(np.nanmax(la)), float(np.nanmin(lo)), float(np.nanmin(la)), float(np.nanmax(lo))]
+
+
+def _union(extents) -> list[float] | None:
+    extents = [e for e in extents if e]
+    if not extents:
+        return None
+    return [
+        max(e[0] for e in extents),
+        min(e[1] for e in extents),
+        min(e[2] for e in extents),
+        max(e[3] for e in extents),
+    ]
 
 
 def _clip_features(features, bbox, pad=1.0):
@@ -334,19 +373,36 @@ def bind_contours(name: str, binding: dict, inputs: dict) -> tuple[list[dict], d
                     }
                 )
     features = _orient_for_d3(features)
+    var = opts["variable"]
     meta = {
         "rows": len(features),
         "columns": ["type", "properties", "geometry"],
-        "ds": da.to_dataset(name=opts["variable"]),
-        "fields": {opts["variable"]: opts["variable"]},
+        "ds": da.to_dataset(name=var),
+        # Band and line values are in the variable's units, so they get its defaults.
+        "var_cols": {f"properties.{k}": var for k in ("lo", "hi", "mid", "level")},
+        # Contours stop at the outermost cell centres, not the cell edges.
+        "extent": _extent(da, edges=False),
     }
     return features, meta
 
 
-def bind_all(spec: dict, inputs: dict, geojsons: dict | None = None):
-    """Replace every binding object under ``datasets`` with rows. Returns (spec, meta)."""
+def bind_all(
+    spec: dict,
+    inputs: dict,
+    geojsons: dict | None = None,
+    notes: list | None = None,
+    *,
+    defaults: bool = True,
+):
+    """Replace every binding object under ``datasets`` with rows. Returns (spec, meta).
+
+    Zarr bindings go first so vector layers without a ``bbox`` can be clipped to
+    the extent of the plotted data.
+    """
     spec = copy.deepcopy(spec)
+    notes = [] if notes is None else notes
     meta = {}
+    vectors = []
     for name, binding in list((spec.get("datasets") or {}).items()):
         if isinstance(binding, list):
             meta[name] = {
@@ -359,33 +415,35 @@ def bind_all(spec: dict, inputs: dict, geojsons: dict | None = None):
         kinds = [k for k in ("zarr", "geojson", "naturalearth") if k in binding]
         if len(kinds) != 1:
             raise SpecError(f"datasets.{name} needs exactly one of zarr, geojson, naturalearth")
-        if kinds[0] == "zarr" and "contours" in binding:
+        if kinds[0] != "zarr":
+            vectors.append((name, kinds[0], binding))
+            continue
+        if "contours" in binding:
             rows, meta[name] = bind_contours(name, binding, inputs)
-        elif kinds[0] == "zarr":
+        else:
             rows, meta[name] = bind_zarr(name, binding, inputs)
-        elif kinds[0] == "geojson":
+        spec["datasets"][name] = rows
+    data_extent = _union(m.get("extent") for m in meta.values())
+    for name, kind, binding in vectors:
+        if defaults and "bbox" not in binding and data_extent:
+            binding = {**binding, "bbox": [round(v, 4) for v in data_extent]}
+            notes.append(f"datasets.{name}.bbox <- extent of the bound data {binding['bbox']}")
+        if kind == "geojson":
             rows = bind_geojson(name, binding, geojsons or {})
-            meta[name] = {"rows": len(rows), "columns": ["type", "properties", "geometry"]}
         else:
             rows = bind_naturalearth(name, binding)
-            meta[name] = {"rows": len(rows), "columns": ["type", "properties", "geometry"]}
+        meta[name] = {"rows": len(rows), "columns": ["type", "properties", "geometry"]}
         spec["datasets"][name] = rows
     return spec, meta
 
 
-# --------------------------------------------------------------------------- placeholders
+# --------------------------------------------------------------------------- defaults
 
-
-def _var_da(ref: str, meta: dict, loc: str):
-    """``"fcst.tp"`` -> the bound DataArray (after sel/bbox)."""
-    data, _, column = ref.partition(".")
-    if data not in meta or "ds" not in meta[data]:
-        raise SpecError(f"{loc}: {data!r} is not a Zarr binding (have {sorted(meta)})")
-    src = meta[data]["fields"].get(column, column)
-    ds = meta[data]["ds"]
-    if src not in ds.data_vars:
-        raise SpecError(f"{loc}: {column!r} is not a variable column of {data!r}")
-    return ds[src]
+COLOR_CHANNELS = ("color", "fill", "stroke")
+TITLE_CHANNELS = ("x", "y", "color", "fill", "stroke", "size", "opacity", "theta", "radius")
+# Any of these in a colour scale means the agent chose the scale; the skill leaves it alone.
+SCALE_CHOICE_KEYS = ("type", "scheme", "range", "domain", "domainMid", "domainMin", "domainMax")
+FIT_KEYS = ("fit", "scale", "translate")
 
 
 def _label(da) -> str:
@@ -396,196 +454,233 @@ def _label(da) -> str:
     return f"{name} [{format_units_for_display(units)}]" if units else str(name)
 
 
-def _palette_scale(value: dict, meta: dict, loc: str) -> dict:
-    """``{"$palette": name|{colors,bounds,under,over}, "data": "fcst.tp"}`` -> threshold scale."""
-    pal = value["$palette"]
-    da = _var_da(value["data"], meta, loc) if value.get("data") else None
-    if isinstance(pal, str):
-        key = pal.lower()
-        if key in THEME.DEFAULT_PRECIP_PALETTES:
-            window = THEME.default_precip_scale_name(key, da)
-            entry = (
-                THEME.precip_nested_anomaly_palette
-                if THEME.DEFAULT_PRECIP_PALETTES[key]
-                else THEME.precip_nested_palette
-            )(window)
-        else:
-            entry, _ = THEME._palette_entry(THEME.default_theme()["colormaps"], pal)
-            if not entry or not entry.get("bounds"):
-                raise SpecError(
-                    f"{loc}.$palette {pal!r} is not a class palette; use a Vega scheme instead"
-                )
-    else:
-        entry = THEME._validate_colormap_object(pal, loc=f"{loc}.$palette")
+def _palette_names() -> frozenset[str]:
+    named = [k for k, v in THEME.default_theme()["colormaps"].items() if v.get("bounds")]
+    return frozenset(k.lower() for k in (*THEME.DEFAULT_PRECIP_PALETTES, *named))
+
+
+PALETTE_NAMES = _palette_names()
+
+
+def _threshold(entry: dict) -> tuple[list, list]:
+    """Vega threshold ``(domain, range)``: range is under + one colour per class + over."""
     colors, bounds = list(entry["colors"]), list(entry["bounds"])
     n_bins = len(bounds) - 1
     if len(colors) == n_bins:
         colors = [entry.get("under", colors[0]), *colors, entry.get("over", colors[-1])]
-    elif entry.get("under") or entry.get("over"):
-        colors = [entry.get("under", colors[0]), *colors, entry.get("over", colors[-1])]
-    scale = {"type": "threshold", "domain": bounds, "range": colors}
-    return {**scale, **{k: v for k, v in value.items() if k not in ("$palette", "data")}}
+    elif len(colors) > n_bins + 2:
+        # Dev's packing rule: first is under, last is over, classes follow the under.
+        colors = [colors[0], *colors[1 : 1 + n_bins], colors[-1]]
+    elif len(colors) != n_bins + 2:
+        raise SpecError(f"palette has {len(colors)} colours for {n_bins} classes")
+    return bounds, colors
 
 
-def _fmt(b: float) -> str:
-    return f"{b:g}"
-
-
-def _colorbar(value: dict, meta: dict, loc: str) -> dict:
-    """``{"$colorbar": palette, "data": "fcst.tp", ...}`` -> a unit chart drawing equal-width classes.
-
-    Vega legends size threshold classes by value, so a 0–1 mm class next to a
-    200–400 mm class is invisible. Classed weather colorbars give every class the
-    same width, labelled at the class edges, with under/over triangles.
-    """
-    scale = _palette_scale({"$palette": value["$colorbar"], "data": value.get("data")}, meta, loc)
-    bounds, colors = scale["domain"], scale["range"]
-    under, classes, over = colors[0], colors[1:-1], colors[-1]
-    n = len(classes)
-    extend = value.get("extend", "both")
-    lo_ext = 0.8 if extend in ("both", "min") else 0.0
-    hi_ext = 0.8 if extend in ("both", "max") else 0.0
-    horizontal = value.get("orient", "horizontal") == "horizontal"
-    length = value.get("length", 400)
-    thick = value.get("thickness", 14)
-    title = value.get("title")
-    if title is None and value.get("data"):
-        title = _label(_var_da(value["data"], meta, loc))
-    pos, pos2, other = ("x", "x2", "y") if horizontal else ("y", "y2", "x")
-    labels = json.dumps([_fmt(b) for b in bounds])
-    rows = [{"i": k, "i2": k + 1, "color": c} for k, c in enumerate(classes)]
-    tri = []
-    if lo_ext:
-        tri.append(
-            {
-                "i": -lo_ext / 2,
-                "color": under,
-                "shape": "triangle-left" if horizontal else "triangle-down",
-            }
+def palette_scale(name: str, da=None) -> tuple[str, list, list]:
+    """``(resolved name, bounds, colours)`` for one of our palette names."""
+    key = name.lower()
+    if key in THEME.DEFAULT_PRECIP_PALETTES:
+        window = THEME.default_precip_scale_name(key, da)
+        build = (
+            THEME.precip_nested_anomaly_palette
+            if THEME.DEFAULT_PRECIP_PALETTES[key]
+            else THEME.precip_nested_palette
         )
-    if hi_ext:
-        tri.append(
-            {
-                "i": n + hi_ext / 2,
-                "color": over,
-                "shape": "triangle-right" if horizontal else "triangle-up",
-            }
-        )
-    axis = {
-        "values": list(range(n + 1)),
-        # Vega thins explicit `values` down to tickCount, which VL derives from the length.
-        "tickCount": n + 1,
-        "labelExpr": f"{labels}[datum.value]",
-        "title": title,
-        "grid": False,
-        "domain": False,
-        "ticks": True,
-        "labelFlush": False,
-        "labelOverlap": False,
-        "labelFontSize": value.get("label_size", 10),
-        "orient": "bottom" if horizontal else "right",
-    }
-    pos_scale = {"domain": [-lo_ext, n + hi_ext], "nice": False, "zero": False}
-    size = {"width": length, "height": thick} if horizontal else {"width": thick, "height": length}
-    layers = [
-        {
-            "data": {"values": rows},
-            "mark": {"type": "rect", "stroke": "#333", "strokeWidth": 0.5},
-            "encoding": {
-                pos: {"field": "i", "type": "quantitative", "scale": pos_scale, "axis": axis},
-                pos2: {"field": "i2"},
-                "color": {"field": "color", "type": "nominal", "scale": None, "legend": None},
-            },
-        }
-    ]
-    if tri:
-        layers.append(
-            {
-                "data": {"values": tri},
-                "mark": {
-                    "type": "point",
-                    "filled": True,
-                    "opacity": 1,
-                    "stroke": "#333",
-                    "strokeWidth": 0.5,
-                    "size": (thick * 1.25) ** 2,
-                },
-                "encoding": {
-                    pos: {"field": "i", "type": "quantitative", "scale": pos_scale},
-                    other: {"value": thick / 2},
-                    "shape": {"field": "shape", "type": "nominal", "scale": None, "legend": None},
-                    "color": {"field": "color", "type": "nominal", "scale": None, "legend": None},
-                },
-            }
-        )
-    return {
-        **size,
-        "layer": layers,
-        "resolve": {"scale": {"color": "independent"}},
-        "view": {"stroke": None},
-    }
+        return (window, *_threshold(build(window)))
+    entry, _ = THEME._palette_entry(THEME.default_theme()["colormaps"], key)
+    return (key, *_threshold(entry))
 
 
-def _bbox_feature(value, meta, loc):
-    bbox = value["$bbox"]
-    if isinstance(bbox, str):
-        da = meta[bbox]["ds"]
-        lat = da["latitude"].values
-        lon = da["longitude"].values
-        bbox = [
-            float(np.nanmax(lat)),
-            float(np.nanmin(lon)),
-            float(np.nanmin(lat)),
-            float(np.nanmax(lon)),
-        ]
-    n, w, s, e = bbox
-    return {
+def _detected_palette(da):
+    """Dev's automatic choice: precip totals / anomalies by window, SPI, percent of normal."""
+    if not (THEME.is_precip(da) or THEME.is_spi(da) or THEME.is_precip_poa(da)):
+        return None
+    name, colors, bounds = THEME.named_precip_scale(da)
+    return (name, *_threshold({"colors": colors, "bounds": bounds}))
+
+
+def _derived_names(transforms) -> set[str]:
+    """Columns that transforms create or overwrite (no longer the raw bound variable)."""
+    out = set()
+    for t in transforms or []:
+        if not isinstance(t, dict):
+            continue
+        v = t.get("as")
+        if isinstance(v, str):
+            out.add(v)
+        elif isinstance(v, list):
+            out.update(x for x in v if isinstance(x, str))
+        for key in ("aggregate", "window", "joinaggregate"):
+            for item in t.get(key) or []:
+                if isinstance(item, dict) and item.get("as"):
+                    out.add(item["as"])
+        if "lookup" in t:
+            out.update((t.get("from") or {}).get("fields") or [])
+        if "pivot" in t:
+            out.add("*pivot*")
+        if "fold" in t and "as" not in t:
+            out.update(["key", "value"])
+        if "quantile" in t and "as" not in t:
+            out.update(["prob", "value"])
+    return out
+
+
+def _units(node, data_name=None, derived=frozenset(), path="spec"):
+    """Yield ``(view, data name, derived columns, JSON path)`` for every view, with inheritance."""
+    if not isinstance(node, dict):
+        return
+    data = node.get("data")
+    if isinstance(data, dict) and "name" in data:
+        data_name = data["name"]
+    elif isinstance(data, dict) and data:
+        data_name = None
+    derived = derived | _derived_names(node.get("transform"))
+    yield node, data_name, derived, path
+    for key in ("layer", "hconcat", "vconcat", "concat"):
+        for i, child in enumerate(node.get(key) or []):
+            yield from _units(child, data_name, derived, f"{path}.{key}[{i}]")
+    yield from _units(node.get("spec"), data_name, derived, f"{path}.spec")
+
+
+def _data_names(node) -> set[str]:
+    out = set()
+    if isinstance(node, dict):
+        data = node.get("data")
+        if isinstance(data, dict) and "name" in data:
+            out.add(data["name"])
+        for key, value in node.items():
+            if key != "datasets":
+                out |= _data_names(value)
+    elif isinstance(node, list):
+        for value in node:
+            out |= _data_names(value)
+    return out
+
+
+def _fit_default(node, data_name, meta, path, notes):
+    proj = node.get("projection")
+    if not isinstance(proj, dict) or any(k in proj for k in FIT_KEYS):
+        return
+    names = ({data_name} if data_name else set()) | _data_names(node)
+    extent = _union(meta.get(n, {}).get("extent") for n in sorted(names))
+    if not extent:
+        return
+    n, w, s, e = (round(v, 4) for v in extent)
+    # Two corner points: no ring, so no d3 winding to get wrong.
+    proj["fit"] = {
         "type": "Feature",
         "properties": {},
         "geometry": {"type": "MultiPoint", "coordinates": [[w, s], [e, n]]},
     }
+    notes.append(f"{path}.projection.fit <- extent of the bound data [{n}, {w}, {s}, {e}]")
 
 
-def _extent(value, meta, loc):
-    da = _var_da(value["$extent"], meta, loc)
-    vals = np.asarray(da.values, dtype=float)
-    lo, hi = float(np.nanmin(vals)), float(np.nanmax(vals))
-    if value.get("symmetric"):
-        m = max(abs(lo), abs(hi))
-        lo, hi = -m, m
-    return [lo, hi]
+def _color_default(enc, da, loc, notes, classed):
+    if enc.get("type") != "quantitative" or enc.get("scale", {}) is None:
+        return
+    scale = enc.get("scale") or {}
+    scheme = scale.get("scheme")
+    if isinstance(scheme, str) and scheme.lower() in PALETTE_NAMES:
+        name, bounds, colors = palette_scale(scheme, da)
+        how = f"scheme {scheme!r}"
+    elif da is None or any(k in scale for k in SCALE_CHOICE_KEYS):
+        return
+    else:
+        found = _detected_palette(da)
+        if not found:
+            return
+        name, bounds, colors = found
+        how = "default for this variable"
+    rest = {k: v for k, v in scale.items() if k != "scheme"}
+    enc["scale"] = {**rest, "type": "threshold", "domain": bounds, "range": colors}
+    values = np.asarray(da.values, dtype=float) if da is not None else np.array([])
+    finite = values[np.isfinite(values)]
+    below = finite.size == 0 or bool(finite.min() < bounds[0])
+    classed[tuple(bounds)] = classed.get(tuple(bounds), False) or below
+    notes.append(f"{loc}.scale <- {name} ({how}; {len(bounds) - 1} classes)")
 
 
-PLACEHOLDERS = {
-    "$palette": _palette_scale,
-    "$colorbar": _colorbar,
-    "$bbox": _bbox_feature,
-    "$label": lambda v, meta, loc: _label(_var_da(v["$label"], meta, loc)),
-    "$attr": lambda v, meta, loc: str(
-        _var_da(v["$attr"].rsplit(".", 1)[0], meta, loc).attrs.get(v["$attr"].rsplit(".", 1)[1], "")
-    ),
-    "$extent": _extent,
-}
+def apply_defaults(spec: dict, meta: dict, notes: list) -> dict:
+    """Fill what the agent left unset from the bound data. Mutates and returns ``spec``.
+
+    Only encodings whose field is a bound variable column (not created by a
+    transform) get title and colour-scale defaults; a value computed in the
+    spec has no attributes to go on. Returns ``{bounds: show_under_entry}`` for
+    the classed legend patch.
+    """
+    classed: dict[tuple, bool] = {}
+    titles = {}  # id(encoding) -> (encoding, loc, label)
+    for node, data_name, derived, path in _units(spec):
+        _fit_default(node, data_name, meta, path, notes)
+        var_cols = (meta.get(data_name) or {}).get("var_cols", {})
+        for ch, enc in (node.get("encoding") or {}).items():
+            if not isinstance(enc, dict):
+                continue
+            field = enc.get("field")
+            src = var_cols.get(field) if isinstance(field, str) and field not in derived else None
+            da = meta[data_name]["ds"][src] if src else None
+            loc = f"{path}.encoding.{ch}"
+            if da is not None and ch in TITLE_CHANNELS and "title" not in enc:
+                titles[id(enc)] = (enc, loc, _label(da))
+            if ch in COLOR_CHANNELS:
+                _color_default(enc, da, loc, notes, classed)
+    # Layers share axes and legends, and Vega-Lite joins differing layer titles with
+    # commas. Only the first layer that has a title for a channel keeps it.
+    for node, *_ in _units(spec):
+        for ch in TITLE_CHANNELS:
+            encs = [
+                child["encoding"][ch]
+                for child in node.get("layer") or []
+                if isinstance((child.get("encoding") or {}).get(ch), dict)
+            ]
+            owners = [e for e in encs if "title" in e or id(e) in titles]
+            for enc in owners[1:]:
+                titles.pop(id(enc), None)
+    for enc, loc, label in titles.values():
+        enc["title"] = label
+        notes.append(f"{loc}.title <- {label!r}")
+    return classed
 
 
-def expand(node, meta, loc="spec"):
-    if isinstance(node, dict):
-        keys = [k for k in node if k.startswith("$") and k != "$schema"]
-        if keys:
-            if len(keys) > 1:
-                raise SpecError(f"{loc}: one placeholder per object, got {keys}")
-            fn = PLACEHOLDERS.get(keys[0])
-            if fn is None:
-                raise SpecError(
-                    f"{loc}: unknown placeholder {keys[0]!r}; known: {sorted(PLACEHOLDERS)}"
-                )
-            return fn(node, meta, loc)
-        return {
-            k: (v if k == "datasets" else expand(v, meta, f"{loc}.{k}")) for k, v in node.items()
-        }
-    if isinstance(node, list):
-        return [expand(v, meta, f"{loc}[{i}]") for i, v in enumerate(node)]
-    return node
+def classed_legends(vega: dict, classed: dict) -> int:
+    """Turn threshold-scale legends into one equal-size swatch per class.
+
+    Vega-Lite draws a threshold legend as a gradient sized by value, so narrow
+    classes (0–1 mm beside 200–400 mm) vanish, and it ignores ``legend.type``
+    for these scales. The compiled Vega legend accepts ``type: symbol``, which
+    labels each class with its range. The under entry (``< 0``) is dropped when
+    no plotted value falls below the first bound.
+    """
+    count = 0
+
+    def walk(node, scales):
+        nonlocal count
+        scales = {**scales, **{s["name"]: s for s in node.get("scales") or []}}
+        for lg in node.get("legends") or []:
+            sc = scales.get(lg.get("fill") or lg.get("stroke"))
+            if not sc or sc.get("type") != "threshold":
+                continue
+            for key in ("gradientLength", "gradientThickness", "gradientStrokeWidth"):
+                lg.pop(key, None)
+            lg["type"] = "symbol"
+            lg["symbolType"] = "square"
+            lg.setdefault("symbolSize", 196)
+            lg.setdefault("symbolStrokeColor", "#888")
+            lg.setdefault("symbolStrokeWidth", 0.5)
+            domain = sc.get("domain")
+            if (
+                "values" not in lg
+                and isinstance(domain, list)
+                and not classed.get(tuple(domain), True)
+            ):
+                lg["values"] = domain
+            count += 1
+        for mark in node.get("marks") or []:
+            if mark.get("type") == "group":
+                walk(mark, scales)
+
+    walk(vega, {})
+    return count
 
 
 # --------------------------------------------------------------------------- dispatch / lint / render
@@ -623,56 +718,22 @@ def validate(spec: dict):
     return cls.from_dict(stub)
 
 
-def _walk_units(node, data_name=None, path="spec"):
-    """Yield (data_name, path, field, derived_names) for every encoding field in every unit spec."""
-    if isinstance(node, dict):
-        data = node.get("data", {})
-        if isinstance(data, dict) and "name" in data:
-            data_name = data["name"]
-        elif isinstance(data, dict) and data:
-            data_name = None
-        derived = set()
-        for t in node.get("transform", []) or []:
-            for key in ("as",):
-                v = t.get(key)
-                if isinstance(v, str):
-                    derived.add(v)
-                elif isinstance(v, list):
-                    derived.update(x for x in v if isinstance(x, str))
-            for agg in t.get("aggregate", []) or []:
-                derived.add(agg.get("as"))
-            for agg in t.get("window", []) or []:
-                derived.add(agg.get("as"))
-            if "pivot" in t:
-                derived.add("*pivot*")
-            if "fold" in t:
-                derived.update(t.get("as", ["key", "value"]))
-            if "quantile" in t:
-                derived.update(t.get("as", ["prob", "value"]))
-        for ch, enc in (node.get("encoding") or {}).items():
-            if isinstance(enc, dict) and isinstance(enc.get("field"), str):
-                yield data_name, f"{path}.encoding.{ch}", enc["field"], derived
-        for key in ("layer", "hconcat", "vconcat", "concat"):
-            for i, child in enumerate(node.get(key, []) or []):
-                for item in _walk_units(child, data_name, f"{path}.{key}[{i}]"):
-                    yield item[0], item[1], item[2], item[3] | derived
-        if isinstance(node.get("spec"), dict):
-            for item in _walk_units(node["spec"], data_name, f"{path}.spec"):
-                yield item[0], item[1], item[2], item[3] | derived
-
-
 def lint_fields(spec: dict, meta: dict) -> list[str]:
     """Encoding fields that are not a column of their dataset (Vega-Lite would draw nothing)."""
     problems = []
-    for data_name, path, field, derived in _walk_units(spec):
+    for node, data_name, derived, path in _units(spec):
         if data_name not in meta or "*pivot*" in derived:
             continue
         cols = set(meta[data_name]["columns"]) | derived
-        top = field.split(".")[0]
-        if field not in cols and top not in cols:
-            problems.append(
-                f"{path}.field {field!r} is not a column of {data_name!r} (columns: {sorted(cols)})"
-            )
+        for ch, enc in (node.get("encoding") or {}).items():
+            field = enc.get("field") if isinstance(enc, dict) else None
+            if not isinstance(field, str):
+                continue
+            if field not in cols and field.split(".")[0] not in cols:
+                problems.append(
+                    f"{path}.encoding.{ch}.field {field!r} is not a column of {data_name!r} "
+                    f"(columns: {sorted(cols)})"
+                )
     return problems
 
 
@@ -715,10 +776,13 @@ def seal_cells(vega: dict) -> int:
 def render(spec_in: dict, inputs: dict, out: Path, *, geojsons=None, scale=2.0) -> dict:
     import vl_convert as vlc
 
+    usermeta = spec_in.get("usermeta") or {}
+    use_defaults = usermeta.get("defaults", True)
+    notes: list[str] = []
     t0 = time.time()
-    bound, meta = bind_all(spec_in, inputs, geojsons)
+    spec, meta = bind_all(spec_in, inputs, geojsons, notes, defaults=use_defaults)
     t1 = time.time()
-    spec = expand(bound, meta)
+    classed = apply_defaults(spec, meta, notes) if use_defaults else {}
     spec.setdefault("$schema", "https://vega.github.io/schema/vega-lite/v6.json")
     problems = lint_fields(spec, meta)
     if problems:
@@ -727,18 +791,20 @@ def render(spec_in: dict, inputs: dict, out: Path, *, geojsons=None, scale=2.0) 
     t2 = time.time()
     vega = vlc.vegalite_to_vega(spec, vl_version="6.4")
     vega = json.loads(vega) if isinstance(vega, str) else vega
-    if (spec.get("usermeta") or {}).get("seal_cells", True):
+    if usermeta.get("seal_cells", True):
         seal_cells(vega)
+    if use_defaults and usermeta.get("classed_legend", True):
+        classed_legends(vega, classed)
     png = vlc.vega_to_png(vega, scale=scale)
     out.write_bytes(png)
     t3 = time.time()
-    rows = {k: m["rows"] for k, m in meta.items()}
     return {
-        "rows": rows,
+        "rows": {k: m["rows"] for k, m in meta.items()},
         "bind_s": round(t1 - t0, 2),
         "validate_s": round(t2 - t1, 2),
         "render_s": round(t3 - t2, 2),
         "json_mb": round(len(json.dumps(spec)) / 1e6, 2),
+        "defaults": notes,
     }
 
 

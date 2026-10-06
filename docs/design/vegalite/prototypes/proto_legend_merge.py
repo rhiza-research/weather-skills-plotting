@@ -24,7 +24,8 @@ inputs = vlbind.open_inputs({"wind": HERE / "data/wind_10m.zarr"})
 
 def legends(spec):
     bound, meta = vlbind.bind_all(spec, inputs)
-    vg = vlc.vegalite_to_vega(vlbind.expand(bound, meta), vl_version="6.4")
+    vlbind.apply_defaults(bound, meta, [])
+    vg = vlc.vegalite_to_vega(bound, vl_version="6.4")
     vg = json.loads(vg) if isinstance(vg, str) else vg
     return [
         {k: lg.get(k) for k in ("fill", "size", "stroke", "shape", "type")}

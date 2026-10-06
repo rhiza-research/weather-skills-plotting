@@ -31,7 +31,6 @@ OUT.mkdir(exist_ok=True)
 INPUTS = {
     "map_heatmap_stations": {"obs": "obs_chirps_week", "stations": "stations_week"},
     "map_forecast_leads_facet": {"fcst": "fcst_weekly_mean"},
-    "map_forecast_leads_colorbar": {"fcst": "fcst_weekly_mean"},
     "map_anomaly_diverging": {"anom": "fcst_weekly_anom"},
     "map_side_by_side_grids": {"obs": "obs_chirps_week", "fcst": "fcst_weekly_mean"},
     "map_quiver_wind": {"wind": "wind_10m"},
@@ -50,7 +49,10 @@ for name in names:
     inputs = vlbind.open_inputs({k: DATA / f"{v}.zarr" for k, v in INPUTS.get(name, {}).items()})
     try:
         stats = vlbind.render(spec, inputs, OUT / f"{name}.png")
+        notes = stats.pop("defaults")
         print(f"ok   {name}: {stats}")
+        for note in notes:
+            print(f"       default {note}")
     except Exception as exc:  # noqa: BLE001
         failed += 1
         print(f"FAIL {name}: {type(exc).__name__}: {str(exc)[:1500]}")

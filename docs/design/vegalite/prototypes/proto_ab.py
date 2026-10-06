@@ -30,7 +30,12 @@ def variant(fn, name):
     spec = copy.deepcopy(base)
     spec["width"], spec["height"] = 300, 300
     spec["title"] = name
-    spec["projection"]["fit"] = {"$bbox": BOX}
+    n, w, s, e = BOX
+    spec["projection"]["fit"] = {
+        "type": "Feature",
+        "properties": {},
+        "geometry": {"type": "MultiPoint", "coordinates": [[w, s], [e, n]]},
+    }
     fn(spec)
     path = OUT / f"ab_{name}.png"
     print(name, vlbind.render(spec, inputs, path, scale=1.5))
@@ -89,12 +94,6 @@ def shared_resolve(s):
     s["resolve"] = {"scale": {"color": "shared"}}
 
 
-def shared_same_scale(s):
-    s["layer"][4]["encoding"]["color"]["scale"] = copy.deepcopy(
-        s["layer"][0]["encoding"]["color"]["scale"]
-    )
-
-
 paths = [
     variant(seams_none, "seams_none"),
     variant(seams_stroke, "seams_stroke"),
@@ -102,7 +101,6 @@ paths = [
     variant(legend_symbol, "legend_symbol"),
     variant(legend_bottom, "legend_bottom"),
     variant(shared_resolve, "shared_resolve"),
-    variant(shared_same_scale, "shared_same_scale"),
 ]
 ims = [Image.open(p).convert("RGB") for p in paths]
 cols = 4
