@@ -87,8 +87,8 @@ as before. Nothing is averaged silently: a dim left over after
   and fonts, margins, gaps and legend placement come from the template. The
   code adds only what Plotly cannot infer: equal-degree axes, a canvas
   height that follows the map's shape (from Plotly's default width), panel
-  titles, and, when there is more than one colorbar, an even split of the
-  right edge so they do not overlap.
+  titles, and, when there is more than one colorbar, horizontal bars side by
+  side along the bottom, each in an equal slice of the width.
 - **Color axes.** Each color-scaled source trace gets a `coloraxis`. Traces
   that name the same `coloraxis` share it, and same-variable layers on one
   map share automatically. Trace-level `colorscale`, `zmin`/`zmax`

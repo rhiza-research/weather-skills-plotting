@@ -43,7 +43,7 @@ What the command builds from each file:
 | Several times or steps of one dataset | One `-i`. The trace panels its `time` / `step` dim. `layout.grid.rows` / `columns` shape the grid (default: as near square as the panel count allows). |
 | One colorbar for side-by-side maps | Point both traces at the same axis: `"coloraxis": "coloraxis"`. |
 
-Panel titles are annotations named `panel-title-1`, `panel-title-2`, …. Rename one with `{"layout": {"annotations": [{"name": "panel-title-2", "text": "ECMWF"}]}}`. Panels sit in Plotly's `layout.grid`, so its own keys apply: `xgap` / `ygap` set the space between panels, as a fraction of a cell. Fonts, margins and gaps are Plotly's defaults. The canvas is Plotly's default width (wider for more than two columns), and its height follows the map's shape. `layout.width` / `height` override both. One colorbar keeps Plotly's default place on the right; several split the right edge, top to bottom in panel order.
+Panel titles are annotations named `panel-title-1`, `panel-title-2`, …. Rename one with `{"layout": {"annotations": [{"name": "panel-title-2", "text": "ECMWF"}]}}`. Panels sit in Plotly's `layout.grid`, so its own keys apply: `xgap` / `ygap` set the space between panels, as a fraction of a cell. Fonts, margins and gaps are Plotly's defaults. The canvas is Plotly's default width (wider for more than two columns), and its height follows the map's shape. `layout.width` / `height` override both. One colorbar keeps Plotly's default place on the right; several lie side by side along the bottom, in panel order.
 
 Do not `coarsen` or `downscale` just to draw a figure. Only `difference` and `verify` need a shared grid.
 
@@ -95,7 +95,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i <in.zarr> --dump-spec -
 - `--layer KIND:PATH` — `heatmap`, `contour`, `scatter` (stations), `quiver` (u/v: speed plus arrows), `outline` (GeoJSON edge), `mask` (GeoJSON mask).
 - `--spec` — inline JSON or a file path.
 - `--dump-spec [PATH]` — print or write the merged spec and skip drawing.
-- `--theme-file` — JSON/TOML `{"template": <Plotly template>, "palettes": {name: {colors, bounds}}}`. `layout.template` also accepts `weather_skills` (default), `colorblind`, or any Plotly template name.
+- `--theme-file` — JSON/TOML `{"template": <Plotly template>, "palettes": {name: {colors, bounds}}}`. `layout.template` also accepts `weather_skills` (the default: Plotly's `seaborn` look with seaborn's colour cycle), `colorblind` (the same with seaborn's colourblind-safe cycle), or any Plotly template name, e.g. `plotly_white` or `simple_white`.
 
 `--help` prints the full `meta` reference and copy-paste recipes.
 

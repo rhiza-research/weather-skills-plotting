@@ -132,3 +132,8 @@ def test_plotly_validates_everything_else():
         "layout": {"meta": {"version": 3}, "title": {"text": "ok"}},
     }
     assert validate(good) is good
+
+
+@pytest.mark.parametrize("name", ["weather_skills", "colorblind", "plotly_white+presentation"])
+def test_named_templates_validate(name):
+    assert validate({"layout": {"template": name}})

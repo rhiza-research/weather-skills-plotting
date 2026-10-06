@@ -2,9 +2,9 @@
 
 Layout is left to Plotly wherever it has a default: map panels sit in
 Plotly's ``layout.grid``, a lone colorbar keeps Plotly's position, and fonts,
-margins and gaps are the template's. This module only adds what Plotly cannot
+margins and gaps come from Plotly's ``seaborn`` template. This module only adds what Plotly cannot
 know: equal-degree lon/lat axes, a canvas shaped like the map, panel titles,
-and where several colorbars go so they do not overlap.
+and where several colorbars go (side by side along the bottom).
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ DEFAULT_TEMPLATE = "weather_skills"
 
 
 def register_templates(user_template: dict | None = None) -> None:
-    """``weather_skills`` and ``colorblind``: Plotly's ``simple_white`` with a colorway.
+    """``weather_skills`` and ``colorblind``: Plotly's ``seaborn`` template with a colorway.
 
     A theme file's ``template`` is layered on top of both.
     """
@@ -28,7 +28,7 @@ def register_templates(user_template: dict | None = None) -> None:
     import plotly.io as pio
 
     for name, colorway in (("weather_skills", DEEP), ("colorblind", COLORBLIND)):
-        base = copy.deepcopy(pio.templates["simple_white"])
+        base = copy.deepcopy(pio.templates["seaborn"])
         base.layout.colorway = colorway
         if user_template:
             try:
@@ -99,13 +99,27 @@ def map_axes(p: int, extent) -> tuple[dict, dict]:
 
 
 def stacked_colorbars(k: int) -> list[dict]:
-    """Positions for ``k`` colorbars sharing the right edge, top to bottom.
+    """Positions for ``k`` colorbars: one keeps Plotly's place, several sit side by side.
 
-    One colorbar keeps Plotly's default place; several split the height evenly.
+    Several bars turn horizontal and share the bottom edge of the figure, each
+    taking an equal slice of the width; Plotly's automatic margins make room.
     """
     if k <= 1:
         return [{}] * k
-    return [{"len": 1 / k, "y": 1 - (i + 0.5) / k, "yanchor": "middle"} for i in range(k)]
+    return [
+        {
+            "orientation": "h",
+            "len": 1 / k,
+            "x": (i + 0.5) / k,
+            "xanchor": "center",
+            "y": 0,
+            "yref": "container",
+            "yanchor": "bottom",
+            # Below the bar: beside it squeezes the bar, above it overlaps it.
+            "title": {"side": "bottom"},
+        }
+        for i in range(k)
+    ]
 
 
 def panel_title(p: int, text: str) -> dict:

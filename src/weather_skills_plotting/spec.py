@@ -398,9 +398,15 @@ def plotly_error(exc: Exception, loc: str = "") -> UsageError:
 def validate(spec: dict) -> dict:
     """Check the meta blocks, then let Plotly validate everything else."""
     import plotly.graph_objects as go
+    import plotly.io as pio
+
+    from weather_skills_plotting.layout import register_templates
 
     check_shape(spec)
     check_meta(spec)
+    # Our template names must exist before Plotly checks layout.template.
+    if "weather_skills" not in pio.templates:
+        register_templates()
     try:
         go.Figure(spec)
     except ValueError as exc:

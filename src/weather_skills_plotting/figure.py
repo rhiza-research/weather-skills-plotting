@@ -218,6 +218,23 @@ def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
 # ------------------------------------------------------------------- map figure
 
 
+def _page_color(user_layout: dict) -> str:
+    """The figure's background colour: the user's, else the template's, else Plotly's white."""
+    import plotly.io as pio
+
+    if user_layout.get("paper_bgcolor"):
+        return user_layout["paper_bgcolor"]
+    template = user_layout.get("template", DEFAULT_TEMPLATE)
+    if isinstance(template, str):
+        try:
+            color = pio.templates[template].layout.paper_bgcolor
+        except (KeyError, ValueError):
+            color = None
+    else:
+        color = ((template or {}).get("layout") or {}).get("paper_bgcolor")
+    return color or "white"
+
+
 def _anchor(trace: dict) -> int:
     raw = trace.get("xaxis") or "x"
     try:
@@ -395,9 +412,26 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     for p in range(n):
         s = axis_suffix(p)
         if extents[p] is None:
-            # An empty cell keeps a hidden axis so annotations can still target it.
+            # An empty cell keeps a hidden axis so annotations can still target it,
+            # painted with the page colour so the template's panel background
+            # does not show as a blank box.
             layout[f"xaxis{s}"] = {"visible": False}
             layout[f"yaxis{s}"] = {"visible": False}
+            layout.setdefault("shapes", []).append(
+                {
+                    "type": "rect",
+                    "xref": f"x{s} domain",
+                    "yref": f"y{s} domain",
+                    "x0": 0,
+                    "x1": 1,
+                    "y0": 0,
+                    "y1": 1,
+                    "fillcolor": _page_color(user_layout),
+                    "opacity": 1,
+                    "line": {"width": 0},
+                    "layer": "above",
+                }
+            )
             continue
         layout[f"xaxis{s}"], layout[f"yaxis{s}"] = map_axes(p, extents[p])
         if panel_titles[p]:

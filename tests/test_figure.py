@@ -377,9 +377,10 @@ def test_two_scales_on_one_panel_do_not_overlap():
     spec = {"data": [_trace("a"), _trace("b", type="scatter", meta={"bind": "points"})]}
     layout = _layout(compile(spec, {"a": grid, "b": stations}))
     bar1, bar2 = layout["coloraxis"]["colorbar"], layout["coloraxis2"]["colorbar"]
-    # Two bars split the right edge: one above the other, no overlap.
+    # Two bars sit side by side along the bottom, each in its own half.
+    assert bar1["orientation"] == bar2["orientation"] == "h"
     assert (bar1["len"], bar2["len"]) == (0.5, 0.5)
-    assert (bar1["y"], bar2["y"]) == (0.75, 0.25)
+    assert (bar1["x"], bar2["x"]) == (0.25, 0.75)
 
 
 def test_align_dayofyear_lines_up_leap_and_non_leap_years():
