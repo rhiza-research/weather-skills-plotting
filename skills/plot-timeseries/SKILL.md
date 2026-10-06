@@ -37,6 +37,8 @@ A leftover dim is an error that names the fix; nothing is averaged silently. For
 | Seasonal overlay of years | `{"data": [{"uid": "a", "meta": {"align": "dayofyear"}}]}` |
 | Title, labels, size | `{"layout": {"title": {"text": "…"}, "yaxis": {"title": {"text": "mm"}}, "width": 1200, "font": {"size": 18}}}` |
 
+`align: "dayofyear"` puts every year on one calendar (labelled `1 Oct`, `15 Nov`, …), so dates line up across leap and non-leap years; 29 Feb folds onto 28 Feb. A season that crosses New Year (e.g. DJF) splits at 1 Jan.
+
 Series on one y-axis in different units print a warning and still render; give them separate panels or a second axis.
 
 ## Command line

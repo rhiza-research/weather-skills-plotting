@@ -102,6 +102,7 @@ class Bound:
     title: str | None = None
     layout: dict = field(default_factory=dict)
     x_is_date: bool = False
+    x_tickformat: str | None = None
 
 
 @dataclass
@@ -583,12 +584,9 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
         )
     x, xname = timeseries_axis(da, sdim)
     x = np.asarray(x)
-    if meta.get("align") == "dayofyear":
-        try:
-            x = da[sdim].dt.dayofyear.values
-        except (TypeError, AttributeError):
-            raise UsageError(f"{loc}.align dayofyear needs a calendar-date time axis") from None
-        xname = "Calendar day"
+    aligned = meta.get("align") == "dayofyear"
+    if aligned:
+        x = seasonal_dates(da[sdim], loc)
     if x.dtype.kind == "m":
         x = x / np.timedelta64(1, "D")
         xname = "Lead (days)"
@@ -668,7 +666,29 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
                 }
             )
     titles = {"x": "" if is_date else axis_label(xname), "y": variable_label_for_display(da)}
-    return Bound([Panel(traces)], axis_titles=titles, x_is_date=is_date)
+    return Bound(
+        [Panel(traces)],
+        axis_titles=titles,
+        x_is_date=is_date,
+        x_tickformat=SEASONAL_TICKFORMAT if aligned else None,
+    )
+
+
+# align "dayofyear" puts every year on this non-leap year, so 1 Oct lines up
+# whether or not the data year was a leap year.
+SEASONAL_YEAR = 2001
+SEASONAL_TICKFORMAT = "%-d %b"
+
+
+def seasonal_dates(coord, loc):
+    """Each date moved to ``SEASONAL_YEAR`` (29 Feb folds onto 28 Feb), as datetime64."""
+    try:
+        month, day = coord.dt.month.values, coord.dt.day.values
+    except (TypeError, AttributeError):
+        raise UsageError(f"{loc}.align dayofyear needs a calendar-date time axis") from None
+    day = np.where((month == 2) & (day == 29), 28, day)
+    text = [f"{SEASONAL_YEAR}-{m:02d}-{d:02d}" for m, d in zip(month, day, strict=True)]
+    return np.array(text, dtype="datetime64[D]").astype("datetime64[ns]")
 
 
 def _xy_series(ctx, source, loc):

@@ -556,7 +556,10 @@ def _assemble_chart(items, user_layout, font):
         if bound.axis_titles.get("y") is not None:
             axis_titles.setdefault(f"yaxis{ys}", {"title": {"text": bound.axis_titles["y"]}})
         if bound.x_is_date:
-            axis_titles.setdefault(f"xaxis{xs}", {}).setdefault("tickformat", "%-d %b '%y")
+            fmt = bound.x_tickformat or "%-d %b '%y"
+            axis = axis_titles.setdefault(f"xaxis{xs}", {})
+            axis.setdefault("tickformat", fmt)
+            axis.setdefault("hoverformat", fmt)
         if bound.title:
             layout.setdefault("title", {"text": bound.title})
     layout.update(axis_titles)

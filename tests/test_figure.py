@@ -377,3 +377,42 @@ def test_two_scales_on_one_panel_do_not_overlap():
     x1, x2 = layout["coloraxis"]["colorbar"]["x"], layout["coloraxis2"]["colorbar"]["x"]
     assert x2 > x1 + 0.05
     assert layout["margin"]["r"] > 150  # room reserved for both bars
+
+
+def test_align_dayofyear_lines_up_leap_and_non_leap_years():
+    def ond(year):
+        times = np.arange(np.datetime64(f"{year}-09-30"), np.datetime64(f"{year}-10-03"))
+        return xr.Dataset(
+            {"precip": (("time",), [1.0, 2.0, 3.0])},
+            coords={"time": times.astype("datetime64[ns]")},
+        )
+
+    spec = {
+        "data": [
+            {
+                "uid": "a",
+                "type": "scatter",
+                "meta": {"bind": "series", "align": "dayofyear", "source": {"input": "a"}},
+            },
+            {
+                "uid": "b",
+                "type": "scatter",
+                "meta": {"bind": "series", "align": "dayofyear", "source": {"input": "b"}},
+            },
+        ]
+    }
+    fig = compile(spec, {"a": ond(2024), "b": ond(2025)})
+    xa, xb = (list(t["x"]) for t in _data(fig))
+    assert xa == xb  # 1 Oct is day 275 in 2024 and 274 in 2025; both land on 1 Oct
+    assert xa[1].startswith("2001-10-01")
+    assert _layout(fig)["xaxis"]["tickformat"] == "%-d %b"
+
+
+def test_align_dayofyear_folds_29_february():
+    times = np.array(["2024-02-28", "2024-02-29", "2024-03-01"], dtype="datetime64[ns]")
+    ds = xr.Dataset({"precip": (("time",), [1.0, 2.0, 3.0])}, coords={"time": times})
+    spec = {
+        "data": [{"uid": "a", "type": "scatter", "meta": {"bind": "series", "align": "dayofyear"}}]
+    }
+    x = list(_data(compile(spec, {"a": ds}))[0]["x"])
+    assert [v[:10] for v in x] == ["2001-02-28", "2001-02-28", "2001-03-01"]
