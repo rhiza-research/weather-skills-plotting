@@ -1,7 +1,7 @@
 {
   "description": "Ensemble members as thin lines, a 10-90% quantile band, the ensemble mean, and a dashed climatology, with one legend built from color datum values. Inputs: -i ens=<point ensemble Zarr: number x step (+ scalar init time), variables t2m and t2m_clim>.",
   "title": {
-    "text": "2 m temperature, 51-member ensemble",
+    "text": "2 m temperature ensemble at one point",
     "subtitle": "Init 1 Oct 2026 · members, 10–90% band, ensemble mean, climatology"
   },
   "width": 640,
