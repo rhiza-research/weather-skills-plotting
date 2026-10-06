@@ -607,6 +607,47 @@ def test_precip_anomaly_colormap_is_nested_week_window():
     assert isinstance(norm_named, BoundaryNorm)
 
 
+def test_chc_precip_named_colormaps_follow_aggregation_window():
+    from matplotlib.colors import BoundaryNorm
+
+    from weather_skills_plotting.theme import precip_nested_anomaly_palette
+
+    # All-positive, unnamed field: auto-detection would call it a total.
+    da = make_gridded(name="diff", fill=12.0)["diff"]
+    da.attrs.update(units="mm", aggregation_period="30 day")
+    cmap, norm = plot_maps._heatmap_scale(da, "chc_precip_anom")
+    month = precip_nested_anomaly_palette("ppt_anom_month")
+    assert cmap.name == "ppt_anom_month"
+    assert isinstance(norm, BoundaryNorm)
+    assert list(norm.boundaries) == pytest.approx(month["bounds"])
+
+    # Negative values would auto-pick the anomaly scale; chc_precip forces totals.
+    neg = make_gridded(fill=-5.0)["precip"]
+    neg.attrs.update(units="mm", aggregation_period="1 day")
+    cmap_tot, _ = plot_maps._heatmap_scale(neg, "CHC_PRECIP")
+    assert cmap_tot.name == "ppt_daily"
+
+    stretched, norm_s = plot_maps._heatmap_scale(da, "chc_precip_anom", stretch=True)
+    assert norm_s is None
+    assert stretched.name == "ppt_anom_month"
+
+
+def test_kmsa_colormap_uses_kmsa_classes():
+    from matplotlib.colors import BoundaryNorm, to_hex
+
+    da = make_gridded(fill=30.0)["precip"]
+    da.attrs.update(units="mm", aggregation_period="30 day")
+    cmap, norm = plot_maps._heatmap_scale(da, "KMSA")
+    assert isinstance(norm, BoundaryNorm)
+    # Fixed classes: the window does not follow aggregation_period.
+    assert list(norm.boundaries) == [0, 1, 10, 20, 50, 70, 100]
+    assert to_hex(cmap(norm(30.0))) == "#73dfff"
+    assert to_hex(cmap.get_over()) == "#ff5500"
+    assert plot_maps._cbar_boundary_kwargs(norm, cmap)["extend"] == "max"
+    alias, _ = plot_maps._heatmap_scale(da, "kmsa_precip")
+    assert alias.name == "kmsa_precip"
+
+
 def test_non_precip_default_colormap_is_rocket():
     da = make_gridded(name="t2m")["t2m"]
     da.attrs.update(units="degree_Celsius", standard_name="air_temperature")
@@ -1422,6 +1463,29 @@ def test_layer_heatmap_and_outline(tmp_path, plot_fn):
     run_skill(plot_fn, "--layer", f"heatmap:{src}", "--layer", f"outline:{geo}", "-o", str(out))
     assert Path(out).exists()
     assert out.stat().st_size > 0
+
+
+def test_outline_keeps_shared_edges_between_features(tmp_path):
+    import json
+
+    def square(w, e):
+        return {"type": "Polygon", "coordinates": [[[w, 0], [e, 0], [e, 1], [w, 1], [w, 0]]]}
+
+    path = tmp_path / "counties.geojson"
+    path.write_text(
+        json.dumps(
+            {
+                "type": "FeatureCollection",
+                "features": [
+                    {"type": "Feature", "properties": {}, "geometry": square(0, 1)},
+                    {"type": "Feature", "properties": {}, "geometry": square(1, 2)},
+                ],
+            }
+        )
+    )
+    # Two features, not their union: the shared county edge at lon 1 is drawn.
+    geoms = plot_maps._outline_geoms(path)
+    assert len(geoms) == 2
 
 
 def test_layer_outline_line_style(tmp_path, plot_fn):
