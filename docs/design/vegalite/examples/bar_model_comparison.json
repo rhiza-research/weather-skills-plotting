@@ -1,0 +1,34 @@
+{
+  "title": {"text": "Weekly precipitation RMSE by lead", "subtitle": "Lower is better; climatology is the reference"},
+  "width": 520,
+  "height": 300,
+  "datasets": {
+    "scores": {"zarr": "scores", "fields": {"model": "model", "lead": "lead", "rmse": "rmse"}}
+  },
+  "data": {"name": "scores"},
+  "layer": [
+    {
+      "mark": {"type": "bar", "cornerRadiusEnd": 2},
+      "encoding": {
+        "x": {"field": "lead", "type": "nominal", "title": null, "axis": {"labelAngle": 0}},
+        "xOffset": {"field": "model", "sort": ["ECMWF", "UKMO", "NCEP", "Climatology"]},
+        "y": {"field": "rmse", "type": "quantitative", "title": {"$label": "scores.rmse"}},
+        "color": {
+          "field": "model", "type": "nominal", "title": null,
+          "sort": ["ECMWF", "UKMO", "NCEP", "Climatology"],
+          "scale": {"range": ["#1b9e77", "#d95f02", "#7570b3", "#bdbdbd"]}
+        }
+      }
+    },
+    {
+      "mark": {"type": "text", "dy": -6, "fontSize": 10},
+      "encoding": {
+        "x": {"field": "lead", "type": "nominal"},
+        "xOffset": {"field": "model", "sort": ["ECMWF", "UKMO", "NCEP", "Climatology"]},
+        "y": {"field": "rmse", "type": "quantitative"},
+        "text": {"field": "rmse", "format": ".1f"}
+      }
+    }
+  ],
+  "config": {"legend": {"orient": "top"}}
+}

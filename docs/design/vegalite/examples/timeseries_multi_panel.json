@@ -1,0 +1,50 @@
+{
+  "title": "Point forecast, init 1 Oct 2026",
+  "datasets": {
+    "ens": {"zarr": "ens", "fields": {"valid": "valid_time", "member": "number", "t2m": "t2m"}},
+    "clim": {"zarr": "ens", "fields": {"valid": "valid_time", "clim": "t2m_clim"}}
+  },
+  "vconcat": [
+    {
+      "title": "Ensemble members and mean",
+      "width": 640, "height": 220,
+      "data": {"name": "ens"},
+      "layer": [
+        {
+          "mark": {"type": "line", "strokeWidth": 0.6, "opacity": 0.3, "color": "#7f7f7f"},
+          "encoding": {
+            "x": {"field": "valid", "type": "temporal", "title": null, "axis": {"format": "%d %b"}},
+            "y": {"field": "t2m", "type": "quantitative", "title": {"$label": "ens.t2m"}, "scale": {"zero": false}},
+            "detail": {"field": "member"}
+          }
+        },
+        {
+          "mark": {"type": "line", "strokeWidth": 2.5, "color": "#08306b"},
+          "encoding": {
+            "x": {"field": "valid", "type": "temporal"},
+            "y": {"field": "t2m", "type": "quantitative", "aggregate": "mean"}
+          }
+        }
+      ]
+    },
+    {
+      "title": "Ensemble-mean anomaly against climatology",
+      "width": 640, "height": 140,
+      "data": {"name": "ens"},
+      "transform": [
+        {"aggregate": [{"op": "mean", "field": "t2m", "as": "mean"}], "groupby": ["valid"]},
+        {"lookup": "valid", "from": {"data": {"name": "clim"}, "key": "valid", "fields": ["clim"]}},
+        {"calculate": "datum.mean - datum.clim", "as": "anomaly"}
+      ],
+      "mark": "bar",
+      "encoding": {
+        "x": {"field": "valid", "type": "temporal", "title": null, "axis": {"format": "%d %b"}},
+        "y": {"field": "anomaly", "type": "quantitative", "title": "Anomaly [°C]"},
+        "color": {
+          "condition": {"test": "datum.anomaly >= 0", "value": "#d6604d"},
+          "value": "#4393c3"
+        }
+      }
+    }
+  ]
+}

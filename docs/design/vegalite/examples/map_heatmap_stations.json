@@ -1,0 +1,199 @@
+{
+  "title": {
+    "text": "CHIRPS weekly total with station observations",
+    "subtitle": "Week ending 1 Oct 2026"
+  },
+  "width": 440,
+  "height": 520,
+  "projection": {
+    "type": "equirectangular",
+    "fit": {
+      "$bbox": [
+        5,
+        33.5,
+        -5,
+        42
+      ]
+    }
+  },
+  "datasets": {
+    "obs": {
+      "zarr": "obs",
+      "fields": {
+        "lon": "longitude.lo",
+        "lon2": "longitude.hi",
+        "lat": "latitude.lo",
+        "lat2": "latitude.hi",
+        "precip": "precip"
+      }
+    },
+    "stations": {
+      "zarr": "stations",
+      "fields": {
+        "lon": "longitude",
+        "lat": "latitude",
+        "name": "station_name",
+        "precip": "precip"
+      }
+    },
+    "lakes": {
+      "naturalearth": "lakes",
+      "scale": "10m",
+      "bbox": [
+        5,
+        33.5,
+        -5,
+        42
+      ]
+    },
+    "coast": {
+      "naturalearth": "coastline",
+      "scale": "10m",
+      "bbox": [
+        5,
+        33.5,
+        -5,
+        42
+      ]
+    },
+    "borders": {
+      "naturalearth": "borders",
+      "scale": "10m",
+      "bbox": [
+        5,
+        33.5,
+        -5,
+        42
+      ]
+    }
+  },
+  "layer": [
+    {
+      "data": {
+        "name": "obs"
+      },
+      "mark": {
+        "type": "rect",
+        "clip": true
+      },
+      "encoding": {
+        "longitude": {
+          "field": "lon",
+          "type": "quantitative"
+        },
+        "latitude": {
+          "field": "lat",
+          "type": "quantitative"
+        },
+        "longitude2": {
+          "field": "lon2"
+        },
+        "latitude2": {
+          "field": "lat2"
+        },
+        "color": {
+          "field": "precip",
+          "type": "quantitative",
+          "title": {
+            "$label": "obs.precip"
+          },
+          "scale": {
+            "$palette": "default_precip",
+            "data": "obs.precip"
+          }
+        }
+      }
+    },
+    {
+      "data": {
+        "name": "lakes"
+      },
+      "mark": {
+        "type": "geoshape",
+        "fill": "#cfe8f3",
+        "stroke": "#4a7fa5",
+        "strokeWidth": 0.5,
+        "clip": true
+      }
+    },
+    {
+      "data": {
+        "name": "coast"
+      },
+      "mark": {
+        "type": "geoshape",
+        "filled": false,
+        "stroke": "#222",
+        "strokeWidth": 0.8,
+        "clip": true
+      }
+    },
+    {
+      "data": {
+        "name": "borders"
+      },
+      "mark": {
+        "type": "geoshape",
+        "filled": false,
+        "stroke": "#222",
+        "strokeWidth": 1.2,
+        "clip": true
+      }
+    },
+    {
+      "data": {
+        "name": "stations"
+      },
+      "mark": {
+        "type": "circle",
+        "size": 140,
+        "stroke": "black",
+        "strokeWidth": 1.2,
+        "opacity": 1,
+        "clip": true
+      },
+      "encoding": {
+        "longitude": {
+          "field": "lon",
+          "type": "quantitative"
+        },
+        "latitude": {
+          "field": "lat",
+          "type": "quantitative"
+        },
+        "color": {
+          "field": "precip",
+          "type": "quantitative",
+          "scale": {
+            "$palette": "default_precip",
+            "data": "obs.precip"
+          }
+        }
+      }
+    },
+    {
+      "data": {
+        "name": "stations"
+      },
+      "mark": {
+        "type": "text",
+        "dy": -12,
+        "fontSize": 10,
+        "clip": true
+      },
+      "encoding": {
+        "longitude": {
+          "field": "lon",
+          "type": "quantitative"
+        },
+        "latitude": {
+          "field": "lat",
+          "type": "quantitative"
+        },
+        "text": {
+          "field": "name"
+        }
+      }
+    }
+  ]
+}

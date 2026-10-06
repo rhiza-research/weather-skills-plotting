@@ -1,0 +1,73 @@
+{
+  "title": "Week 2 ensemble-mean precipitation anomaly",
+  "datasets": {
+    "anom": {
+      "zarr": "anom",
+      "sel": {"step": "14D"},
+      "fields": {"lon": "longitude.lo", "lon2": "longitude.hi", "lat": "latitude.lo", "lat2": "latitude.hi", "tp": "tp"}
+    },
+    "borders": {"naturalearth": "borders", "scale": "50m", "bbox": [6, 33, -5.5, 42.5]},
+    "coast": {"naturalearth": "coastline", "scale": "50m", "bbox": [6, 33, -5.5, 42.5]}
+  },
+  "hconcat": [
+    {
+      "vconcat": [
+        {
+          "title": "Classed: default_precip_anom",
+          "width": 280,
+          "height": 340,
+          "projection": {"type": "equirectangular", "fit": {"$bbox": [6, 33, -5.5, 42.5]}},
+          "layer": [
+            {
+              "data": {"name": "anom"},
+              "mark": {"type": "rect", "clip": true},
+              "encoding": {
+                "longitude": {"field": "lon", "type": "quantitative"},
+                "latitude": {"field": "lat", "type": "quantitative"},
+                "longitude2": {"field": "lon2"},
+                "latitude2": {"field": "lat2"},
+                "color": {
+                  "field": "tp",
+                  "type": "quantitative",
+                  "legend": null,
+                  "scale": {"$palette": "default_precip_anom", "data": "anom.tp"}
+                }
+              }
+            },
+            {"data": {"name": "coast"}, "mark": {"type": "geoshape", "filled": false, "stroke": "#222", "clip": true}},
+            {"data": {"name": "borders"}, "mark": {"type": "geoshape", "filled": false, "stroke": "#222", "clip": true}}
+          ]
+        },
+        {"$colorbar": "default_precip_anom", "data": "anom.tp", "length": 250, "thickness": 12, "label_size": 9}
+      ]
+    },
+    {
+      "title": "Continuous: Vega scheme, symmetric data extent",
+      "width": 280,
+      "height": 340,
+      "projection": {"type": "equirectangular", "fit": {"$bbox": [6, 33, -5.5, 42.5]}},
+      "layer": [
+        {
+          "data": {"name": "anom"},
+          "mark": {"type": "rect", "clip": true},
+          "encoding": {
+            "longitude": {"field": "lon", "type": "quantitative"},
+            "latitude": {"field": "lat", "type": "quantitative"},
+            "longitude2": {"field": "lon2"},
+            "latitude2": {"field": "lat2"},
+            "color": {
+              "field": "tp",
+              "type": "quantitative",
+              "title": {"$label": "anom.tp"},
+              "scale": {"scheme": "brownbluegreen", "domain": {"$extent": "anom.tp", "symmetric": true}},
+              "legend": {"orient": "bottom", "direction": "horizontal", "gradientLength": 260}
+            }
+          }
+        },
+        {"data": {"name": "coast"}, "mark": {"type": "geoshape", "filled": false, "stroke": "#222", "clip": true}},
+        {"data": {"name": "borders"}, "mark": {"type": "geoshape", "filled": false, "stroke": "#222", "clip": true}}
+      ]
+    }
+  ],
+  "resolve": {"scale": {"color": "independent"}}
+}
