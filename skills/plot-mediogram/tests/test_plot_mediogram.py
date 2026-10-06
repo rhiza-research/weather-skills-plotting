@@ -1,157 +1,55 @@
-"""Correctness tests for plot-mediogram."""
+"""End-to-end tests for plot-mediogram."""
 
 import json
-from pathlib import Path
 
 import pytest
 from skill_conftest import load_skill, make_forecast, run_skill, write_zarr
-from weather_skills_core.provenance import load_figure_history
+
+mod = load_skill("plot-mediogram", "plot_mediogram")
+POINT = {"layout": {"meta": {"geo": {"point": {"lat": 1.2, "lon": 10.9}}}}}
 
 
 @pytest.fixture(scope="module")
-def plot_mediogram():
-    return load_skill("plot-mediogram", "plot_mediogram").plot_mediogram
+def med_fn():
+    return mod.plot_mediogram
 
 
-def _ensemble_rate_forecast(**kwargs):
-    """Forecast cube with rate units so to_standard_units can normalize both inputs."""
-    ds = make_forecast(name="precip", **kwargs)
-    ds["precip"].attrs.update(
-        units="mm day-1", standard_name="lwe_precipitation_rate", long_name="Precipitation rate"
-    )
-    return ds
+@pytest.fixture
+def inputs(tmp_path):
+    fc = write_zarr(make_forecast(n_step=8, members=5, fill=3.0), tmp_path / "fc.zarr")
+    mc = write_zarr(make_forecast(n_step=8, members=9, fill=1.0), tmp_path / "mc.zarr")
+    return str(fc), str(mc)
 
 
-def test_ensemble_forecast_vs_mclimate(tmp_path, plot_mediogram):
-    fc = write_zarr(_ensemble_rate_forecast(members=5, n_step=4), tmp_path / "fc.zarr")
-    mc = write_zarr(_ensemble_rate_forecast(members=5, n_step=4, fill=0.5), tmp_path / "mc.zarr")
-    out = tmp_path / "medio.png"
+def test_spec_has_two_boxes_and_a_mean_line(inputs, med_fn, capsys):
     run_skill(
-        plot_mediogram,
-        "-i",
-        str(fc),
-        "-i",
-        str(mc),
-        "-o",
-        str(out),
-        "--spec",
-        '{"geo":{"lat":1.0,"lon":10.0}}',
+        med_fn, "-i", inputs[0], "-i", inputs[1], "--spec", json.dumps(POINT), "--dump-spec", "-"
     )
-    assert Path(out).exists()
-    assert out.stat().st_size > 0
+    spec = json.loads(capsys.readouterr().out)
+    assert [(t["uid"], t["type"]) for t in spec["data"]] == [
+        ("forecast", "box"),
+        ("mclimate", "box"),
+        ("forecast-mean", "scatter"),
+    ]
+    assert spec["data"][0]["meta"]["source"]["isel"] == {"step": list(range(6))}
+    assert spec["layout"]["title"]["text"] == "Mediogram: Total precipitation at lat=1, lon=11"
+    assert spec["layout"]["boxmode"] == "group"
 
 
-def test_mclimate_variable_name_can_differ_from_forecast(tmp_path, plot_mediogram):
-    """inputs[].variable is per-input; the forecast's name must not leak onto mclimate."""
-    fc = write_zarr(_ensemble_rate_forecast(members=5, n_step=4), tmp_path / "fc.zarr")
-    mc = write_zarr(
-        make_forecast(name="precipitation_amount", members=5, n_step=4, fill=0.5),
-        tmp_path / "mc.zarr",
-    )
-    out = tmp_path / "medio.png"
-    run_skill(
-        plot_mediogram,
-        "-i",
-        str(fc),
-        "-i",
-        str(mc),
-        "-o",
-        str(out),
-        "--spec",
-        json.dumps(
-            {
-                "geo": {"lat": 1.0, "lon": 10.0},
-                "inputs": [
-                    {"id": "forecast", "variable": "precip"},
-                    {"id": "mclimate", "variable": "precipitation_amount"},
-                ],
-            }
-        ),
-    )
-    assert Path(out).exists()
-    assert out.stat().st_size > 0
+def test_renders(inputs, med_fn, tmp_path):
+    out = tmp_path / "m.png"
+    run_skill(med_fn, "-i", inputs[0], "-i", inputs[1], "--spec", json.dumps(POINT), "-o", str(out))
+    assert out.is_file()
 
 
-def test_parse_figsize():
-    import argparse
-
-    plot_mod = load_skill("plot-mediogram", "plot_mediogram")
-    assert plot_mod.parse_figsize("12,6") == (12.0, 6.0)
-    with pytest.raises(argparse.ArgumentTypeError, match="W,H"):
-        plot_mod.parse_figsize("wide")
+def test_point_required(inputs, med_fn, capsys):
+    with pytest.raises(SystemExit):
+        run_skill(med_fn, "-i", inputs[0], "-i", inputs[1], "-o", "x.png")
+    assert "geo" in capsys.readouterr().err
 
 
-def test_figsize_writes_png(tmp_path, plot_mediogram):
-    fc = write_zarr(_ensemble_rate_forecast(members=5, n_step=4), tmp_path / "fc.zarr")
-    mc = write_zarr(_ensemble_rate_forecast(members=5, n_step=4, fill=0.5), tmp_path / "mc.zarr")
-    out = tmp_path / "medio.png"
-    run_skill(
-        plot_mediogram,
-        "-i",
-        str(fc),
-        "-i",
-        str(mc),
-        "-o",
-        str(out),
-        "--spec",
-        '{"geo":{"lat":1.0,"lon":10.0},"layout":{"figsize":[8.0,4.0]}}',
-    )
-    assert Path(out).exists()
-    import matplotlib.image as mpimg
-
-    img = mpimg.imread(out)
-    assert img.shape[1] == 8 * 150
-    assert img.shape[0] == 4 * 150
-    history = load_figure_history(out)
-    assert history[-1]["args"]["spec"]["layout"]["figsize"] == [8.0, 4.0]
-
-
-def test_replot_from_spec(tmp_path, plot_mediogram):
-    fc = write_zarr(_ensemble_rate_forecast(members=5, n_step=4), tmp_path / "fc.zarr")
-    mc = write_zarr(_ensemble_rate_forecast(members=5, n_step=4, fill=0.5), tmp_path / "mc.zarr")
-    first = tmp_path / "medio.png"
-    run_skill(
-        plot_mediogram,
-        "-i",
-        str(fc),
-        "-i",
-        str(mc),
-        "--dump-spec",
-        str(tmp_path / "medio.plot.json"),
-        "--spec",
-        '{"geo":{"lat":1.0,"lon":10.0},"title":"Original"}',
-    )
-    spec_path = tmp_path / "medio.plot.json"
-    data = json.loads(spec_path.read_text())
-    assert data["geo"]["lat"] == pytest.approx(1.0)
-    data["title"] = "Edited"
-    spec_path.write_text(json.dumps(data))
-    assert not first.exists()
-    second = tmp_path / "medio2.png"
-    run_skill(plot_mediogram, "--spec", str(spec_path), "-o", str(second))
-    assert second.is_file() and second.stat().st_size > 0
-    history = load_figure_history(second)
-    assert history[-1]["skill"] == "plot-mediogram"
-    basenames = [item["basename"] for item in history[-1]["input"]]
-    assert "fc.zarr" in basenames and "mc.zarr" in basenames
-
-
-def test_patch_flag_merges_into_spec(tmp_path, plot_mediogram):
-    fc = write_zarr(_ensemble_rate_forecast(members=5, n_step=4), tmp_path / "fc.zarr")
-    mc = write_zarr(_ensemble_rate_forecast(members=5, n_step=4, fill=0.5), tmp_path / "mc.zarr")
-    out = tmp_path / "medio.png"
-    run_skill(
-        plot_mediogram,
-        "-i",
-        str(fc),
-        "-i",
-        str(mc),
-        "--dump-spec",
-        str(tmp_path / "medio.plot.json"),
-        "--spec",
-        '{"geo":{"lat":1.0,"lon":10.0},"title":"Patched"}',
-    )
-    spec = json.loads((tmp_path / "medio.plot.json").read_text())
-    assert spec["title"] == "Patched"
-    assert "patch" not in spec
-    assert not out.exists()
+def test_needs_number_and_step(tmp_path, med_fn, capsys):
+    fc = write_zarr(make_forecast(n_step=3), tmp_path / "fc.zarr")
+    with pytest.raises(SystemExit):
+        run_skill(med_fn, "-i", str(fc), "-i", str(fc), "--spec", json.dumps(POINT), "-o", "x.png")
+    assert "'number' and 'step'" in capsys.readouterr().err

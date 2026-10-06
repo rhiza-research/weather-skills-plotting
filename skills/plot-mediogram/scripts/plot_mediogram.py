@@ -14,205 +14,120 @@
 # [tool.uv.sources]
 # weather-skills-plotting = { path = "../../..", editable = true }
 # ///
-"""ECMWF-style mediogram: forecast vs m-climate ensemble distributions at a point."""
+"""ECMWF-style mediogram: forecast vs m-climate ensemble boxes at one point, as PNG or HTML."""
 
-from weather_skills_core import DataError, Dataset, UsageError, weather_skill
-from weather_skills_core.cf import cf_dim, resolve_input_variable
-from weather_skills_core.units import (
-    precip_for_display,
-    to_standard_units,
-    variable_label_for_display,
-)
+from weather_skills_core import Dataset, UsageError, weather_skill
+from weather_skills_core.cf import auto_variable, cf_dim
+from weather_skills_core.units import variable_label_for_display
 
-from weather_skills_plotting import export
-from weather_skills_plotting.charts import compile_mediogram
-from weather_skills_plotting.figure import (
-    DEFAULT_FONTSIZE,
-    parse_figsize,  # noqa: F401 — tests call this via the skill module
-    resolve_axis_label,
-)
+from weather_skills_plotting import parse_spec_arg
+from weather_skills_plotting.cli import run, skeleton
 from weather_skills_plotting.reference import install_spec_help
-from weather_skills_plotting.spec import (
-    DUMP_SPEC_ARGUMENT_HELP,
-    SPEC_ARGUMENT_HELP,
-    SPEC_VERSION,
-    datasets_from_cli_or_spec,
-    maybe_emit_spec,
-    normalize_spec,
-    overlay_spec,
-    params_from_spec,
-    parse_plot_spec,
-    spec_inputs_from_datasets,
-)
+from weather_skills_plotting.spec import DUMP_SPEC_HELP, SPEC_ARGUMENT_HELP, merge_spec
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
 _SKILL_VERSION = "0.0.2"
 
-_resolve_axis_label = resolve_axis_label
+MAX_STEPS = 6
+FORECAST_COLOR = "cyan"
+MCLIMATE_COLOR = "red"
 
 
-def _select_point(da, lat, lon):
-    lat_dim = cf_dim(da, "latitude")
-    lon_dim = cf_dim(da, "longitude")
-    if lat_dim is None or lon_dim is None:
-        raise UsageError(f"Could not identify latitude/longitude in dims {list(da.dims)}.")
-    return da.sel({lat_dim: lat, lon_dim: lon}, method="nearest")
+def _box(uid, name, color, source):
+    return {
+        "uid": uid,
+        "type": "box",
+        "name": name,
+        "fillcolor": color,
+        "line": {"color": "black", "width": 1},
+        "marker": {"color": "black", "size": 4},
+        "meta": {"bind": "samples", "source": source},
+    }
 
 
-@weather_skill(
-    name="plot-mediogram",
-    version=_SKILL_VERSION,
-)
-@weather_skill.argument("-i", "--input", type=Dataset("any"), action="append", required=False)
+def _variable(ds, user, uid):
+    trace = next((t for t in user.get("data") or [] if t.get("uid") == uid), {})
+    return ((trace.get("meta") or {}).get("source") or {}).get("variable") or auto_variable(ds)
+
+
+@weather_skill(name="plot-mediogram", version=_SKILL_VERSION)
 @weather_skill.argument(
-    "--spec",
+    "-i",
+    "--input",
+    type=Dataset("any"),
+    action="append",
+    required=False,
+    help="Pass twice: the forecast Zarr, then the m-climate Zarr (input ids forecast, mclimate).",
+)
+@weather_skill.argument("--spec", default=None, type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
+@weather_skill.argument(
+    "--theme-file",
     default=None,
-    type=parse_plot_spec,
-    help=SPEC_ARGUMENT_HELP,
+    help="Theme JSON/TOML: {template: <Plotly template>, palettes: {…}}.",
 )
 @weather_skill.argument(
-    "--dump-spec",
-    nargs="?",
-    const="-",
-    default=None,
-    probe=True,
-    help=DUMP_SPEC_ARGUMENT_HELP,
+    "--dump-spec", nargs="?", const="-", default=None, probe=True, help=DUMP_SPEC_HELP
 )
-def plot_mediogram(
-    ds,
-    output,
-    spec=None,
-    dump_spec=None,
-    **kwargs,
-):
+def plot_mediogram(ds, output, spec=None, theme_file=None, dump_spec=None, **kwargs):
     """ECMWF-style mediogram: forecast vs m-climate ensemble distributions at a point."""
-    ds_fc, ds_mc = datasets_from_cli_or_spec(ds, spec, exactly=2)
-    user = spec.to_dict() if spec is not None else {}
-    named = {"forecast": ds_fc, "mclimate": ds_mc}
-    internal = {
-        "version": SPEC_VERSION,
-        "skill": "plot-mediogram",
-        "inputs": spec_inputs_from_datasets(named),
-        "traces": [{"kind": "mediogram", "input": "forecast"}],
-        "theme": {"template": "weather_skills"},
-        "layout": {},
-        "geo": {},
-    }
-    spec_data = normalize_spec(overlay_spec(internal, user))
-    params = params_from_spec(spec_data)
-    title, xlabel, ylabel = params["title"], params["xlabel"], params["ylabel"]
-    lat, lon = params["lat"], params["lon"]
-    figsize = tuple(params["figsize"]) if params["figsize"] else None
-    fontsize = (spec_data.get("theme") or {}).get("fontsize") or DEFAULT_FONTSIZE
-    if lat is None or lon is None:
-        raise UsageError("pass geo.lat and geo.lon in --spec")
-    lat = float(lat)
-    lon = float(lon)
-
-    if maybe_emit_spec(spec_data, dump_spec, datasets=named):
-        return None
-    if output is None:
-        raise UsageError("--output is required unless --dump-spec is set")
-    import cf_xarray  # noqa: F401 — registers the .cf accessor
-    import numpy as np
-
-    inputs_spec = spec_data.get("inputs")
-    fc_variable = resolve_input_variable(inputs_spec, ds_fc, id="forecast")
-    mc_variable = resolve_input_variable(inputs_spec, ds_mc, id="mclimate")
-    if fc_variable is None or fc_variable not in ds_fc:
+    files = [d for d in (ds or []) if d is not None]
+    if not files and spec is not None:
+        opened = spec.opened()
+        files = [opened.get("forecast"), opened.get("mclimate")]
+    if len(files) != 2 or any(f is None for f in files):
         raise UsageError(
-            f"variable {fc_variable!r} missing from forecast. Available: {list(ds_fc.data_vars)}"
+            "pass -i twice (forecast, then m-climate), or a --spec whose layout.meta.inputs "
+            "names forecast and mclimate"
         )
-    if mc_variable is None or mc_variable not in ds_mc:
+    datasets = {"forecast": files[0], "mclimate": files[1]}
+    user = spec.data if spec is not None else {}
+    point = (((user.get("layout") or {}).get("meta") or {}).get("geo") or {}).get("point")
+    if point is None:
         raise UsageError(
-            f"variable {mc_variable!r} missing from mclimate. Available: {list(ds_mc.data_vars)}"
+            'set the point in --spec: {"layout": {"meta": {"geo": {"point": {"lat": -1.3, "lon": 36.8}}}}}'
         )
-
-    ds_fc = precip_for_display(to_standard_units(ds_fc, variables=[fc_variable]), fc_variable)
-    ds_mc = precip_for_display(to_standard_units(ds_mc, variables=[mc_variable]), mc_variable)
-    da_fc = ds_fc[fc_variable]
-    da_mc = ds_mc[mc_variable]
-
-    for label, da in (("forecast", da_fc), ("mclimate", da_mc)):
+    das = {}
+    for key, d in datasets.items():
+        var = _variable(d, user, key)
+        if var not in d:
+            raise UsageError(f"{key} has no variable {var!r}; available: {', '.join(d.data_vars)}")
+        da = d[var]
         if "number" not in da.dims or "step" not in da.dims:
-            raise UsageError(
-                f"{label} input requires 'number' and 'step' dims; got {list(da.dims)}."
-            )
-
-    pt_fc = _select_point(da_fc, lat, lon)
-    pt_mc = _select_point(da_mc, lat, lon)
-
-    n_steps = min(pt_fc.sizes["step"], pt_mc.sizes["step"], 6)
-    if n_steps < 1:
-        raise DataError("no overlapping steps to plot.")
-
-    pt_fc = pt_fc.isel(step=slice(0, n_steps)).transpose("number", "step")
-    pt_mc = pt_mc.isel(step=slice(0, n_steps)).transpose("number", "step")
-    fc = pt_fc.values
-    mc = pt_mc.values
-
-    lat_dim = cf_dim(pt_fc, "latitude")
-    lon_dim = cf_dim(pt_fc, "longitude")
-    snapped_lat = float(pt_fc[lat_dim].values) if lat_dim else lat
-    snapped_lon = float(pt_fc[lon_dim].values) if lon_dim else lon
-
-    step_vals = np.asarray(pt_fc["step"].values)
-    tick_labels = []
-    for value in step_vals:
-        arr = np.asarray(value)
-        if arr.dtype.kind == "m":
-            tick_labels.append(f"+{int(arr.astype('timedelta64[D]').astype(int))}d")
-        elif arr.dtype.kind == "M" or hasattr(value, "year"):
-            if hasattr(value, "year") and hasattr(value, "month") and hasattr(value, "day"):
-                tick_labels.append(
-                    f"{int(value.year):04d}-{int(value.month):02d}-{int(value.day):02d}"
-                )
-            else:
-                tick_labels.append(
-                    str(np.datetime_as_string(arr.astype("datetime64[D]"), unit="D"))
-                )
-        else:
-            tick_labels.append(str(value))
-    qty = variable_label_for_display(pt_fc, fallback=fc_variable, include_units=False)
-    compiled = compile_mediogram(
-        fc,
-        mc,
-        tick_labels,
-        title=title or f"Mediogram: {qty} at lat={snapped_lat:g}, lon={snapped_lon:g}",
-        xlabel=_resolve_axis_label(xlabel, "Forecast step"),
-        ylabel=_resolve_axis_label(ylabel, variable_label_for_display(pt_fc, fallback=fc_variable)),
-        fontsize=fontsize,
-        figsize=figsize,
-        spec=spec_data,
-    )
-    named = {"forecast": ds_fc, "mclimate": ds_mc}
-    inputs = spec_inputs_from_datasets(named)
-    name_by_id = {"forecast": fc_variable, "mclimate": mc_variable}
-    for item in inputs:
-        resolved_name = name_by_id.get(str(item.get("id")))
-        if resolved_name:
-            item["variable"] = resolved_name
-    compiled.spec = {
-        "version": SPEC_VERSION,
-        "skill": "plot-mediogram",
-        "inputs": inputs,
-        "traces": [{"kind": "mediogram"}],
-        "theme": {"template": "weather_skills", "fontsize": fontsize},
-        "layout": {"figsize": list(figsize) if figsize else None},
-        "geo": {"lat": snapped_lat, "lon": snapped_lon},
-        "title": title,
-        "xlabel": xlabel,
-        "ylabel": ylabel,
+            raise UsageError(f"{key} input needs 'number' and 'step' dims; got {list(da.dims)}")
+        das[key] = da
+    n_steps = min(das["forecast"].sizes["step"], das["mclimate"].sizes["step"], MAX_STEPS)
+    steps = {"step": list(range(n_steps))}
+    fc = {"input": "forecast", "isel": steps}
+    data = [
+        _box("forecast", "forecast", FORECAST_COLOR, fc),
+        _box("mclimate", "m-climate", MCLIMATE_COLOR, {"input": "mclimate", "isel": steps}),
+        {
+            "uid": "forecast-mean",
+            "type": "scatter",
+            "name": "forecast mean",
+            "line": {"color": "black", "width": 2},
+            "marker": {"color": "black"},
+            "meta": {"bind": "samples", "source": fc},
+        },
+    ]
+    da = das["forecast"]
+    lat, lon = cf_dim(da, "latitude"), cf_dim(da, "longitude")
+    snapped = da.sel({lat: point["lat"], lon: point["lon"]}, method="nearest")
+    qty = variable_label_for_display(da, include_units=False)
+    title = f"Mediogram: {qty} at lat={float(snapped[lat]):g}, lon={float(snapped[lon]):g}"
+    layout = {
+        "title": {"text": title},
+        "boxmode": "group",
+        "width": 1000,
+        "height": 520,
+        "xaxis": {"title": {"text": "Forecast step"}},
+        "legend": {"orientation": "h", "x": 0.5, "xanchor": "center", "y": -0.2, "yanchor": "top"},
     }
-    return export(
-        compiled,
-        output,
-        datasets=named,
-        spec=spec_data,
-    )
+    base = skeleton("plot-mediogram", datasets, data, layout)
+    return run(merge_spec(base, user), None, datasets, output, dump_spec, theme_file=theme_file)
 
 
-install_spec_help(plot_mediogram, kinds=False)
+install_spec_help(plot_mediogram)
 
 if __name__ == "__main__":
     plot_mediogram()

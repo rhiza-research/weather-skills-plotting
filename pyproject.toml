@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "weather-skills-plotting"
 version = "0.1.0"
-description = "Plot spec, matplotlib/Cartopy compiler, and figure helpers for weather-skills standard dataset Zarrs."
+description = "Plotly figures from weather-skills standard dataset Zarrs; the plot spec is a standard Plotly figure."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -18,13 +18,13 @@ dependencies = [
     "xarray>=2026.7",
     "zarr>=3.2",
     "pint-xarray>=0.6",
-    # cartopy carries the map axes and the Natural Earth overlays. matplotlib<3.10
-    # because the cartopy gridliner crashes on newer releases.
-    "matplotlib>=3.8,<3.10",
-    "seaborn>=0.13",
+    # cartopy only downloads and caches the Natural Earth overlay shapefiles.
     "cartopy",
     "shapely>=2.1.2",
-    "nc-time-axis",
+    "plotly>=7.1",
+    # PNG/JPG export drives a headless Chrome. kaleido uses an installed Chrome,
+    # or run `plotly_get_chrome -y` once to fetch one.
+    "kaleido>=1.5",
 ]
 
 [dependency-groups]
@@ -42,6 +42,7 @@ packages = ["src/weather_skills_plotting"]
 [tool.pytest.ini_options]
 testpaths = ["tests", "skills"]
 pythonpath = ["tests"]
+markers = ["overlays: draw real Natural Earth overlays (downloads on first use)"]
 filterwarnings = [
     # zarr-python warns on every consolidated write; consolidated=True is part
     # of the standard dataset contract, so the warning is expected noise in tests.

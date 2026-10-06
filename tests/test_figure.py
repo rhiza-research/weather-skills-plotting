@@ -1,265 +1,430 @@
-"""Tests for weather_skills_plotting.figure."""
+"""Figure assembly: binds, panels, color axes, overlays, chart defaults."""
 
-import argparse
+import json
 
+import numpy as np
 import pytest
+import xarray as xr
+from weather_skills_core.errors import UsageError
 
-from weather_skills_plotting.figure import (
-    DEFAULT_FONTSIZE,
-    add_shared_colorbar,
-    apply_style,
-    axis_label,
-    format_plot_date,
-    format_plot_date_range,
-    parse_figsize,
-    parse_panel_spacing,
-    resolve_axis_label,
-    resolve_figsize,
-    resolve_time_axis_label,
-    save_figure,
-)
+from conftest import make_forecast, make_gridded, make_station
+from weather_skills_plotting import compile
 
 
-def test_parse_figsize():
-    assert parse_figsize("10,6") == (10.0, 6.0)
-    assert parse_figsize("8x5") == (8.0, 5.0)
-    assert parse_figsize(None) is None
-    with pytest.raises(argparse.ArgumentTypeError, match="W,H"):
-        parse_figsize("wide")
-    with pytest.raises(argparse.ArgumentTypeError, match="positive"):
-        parse_figsize("0,4")
+def _trace(uid, **kw):
+    meta = kw.pop("meta", {})
+    source = {"input": kw.pop("input", uid), **kw.pop("source", {})}
+    return {"uid": uid, "type": kw.pop("type", "heatmap"), "meta": {"source": source, **meta}, **kw}
 
 
-def test_parse_panel_spacing():
-    assert parse_panel_spacing("0.25") == (0.25, 0.25)
-    assert parse_panel_spacing("0.4,0.2") == (0.4, 0.2)
-    assert parse_panel_spacing("0.4x0.2") == (0.4, 0.2)
-    assert parse_panel_spacing(None) is None
-    with pytest.raises(argparse.ArgumentTypeError, match="W or W,H"):
-        parse_panel_spacing("wide")
-    with pytest.raises(argparse.ArgumentTypeError, match=">= 0"):
-        parse_panel_spacing("-0.1")
+def _layout(fig):
+    return fig.to_plotly_json()["layout"]
 
 
-def test_resolve_figsize():
-    assert resolve_figsize(None, (10, 6)) == (10, 6)
-    assert resolve_figsize((8.0, 4.0), (10, 6)) == (8.0, 4.0)
+def _data(fig, kind=None):
+    """Traces as Plotly objects (arrays stay numpy; JSON would base64 them)."""
+    return [t for t in fig.data if kind is None or t["type"] == kind]
 
 
-def test_axis_label_capitalizes():
-    assert axis_label("lon") == "Longitude"
-    assert axis_label("valid time") == "Valid time"
-    assert axis_label("total precipitation [mm]") == "Total precipitation [mm]"
-    assert axis_label("Latitude") == "Latitude"
+def test_heatmap_panels_each_time_with_one_discrete_colorbar():
+    ds = make_gridded(n_time=3)
+    fig = compile({"data": [_trace("a")]}, {"a": ds})
+    heat = _data(fig, "heatmap")
+    assert len(heat) == 3
+    assert [t["xaxis"] for t in heat] == ["x", "x2", "x3"]
+    assert {t["coloraxis"] for t in heat} == {"coloraxis"}
+    layout = _layout(fig)
+    bar = layout["coloraxis"]["colorbar"]
+    assert bar["orientation"] == "h"  # several panels: shared bar underneath
+    assert bar["ticktext"][:3] == ["0", "1", "2"]
+    titles = [
+        a["text"] for a in layout["annotations"] if a.get("name", "").startswith("panel-title")
+    ]
+    assert titles == ["1 Jan '26", "2 Jan '26", "3 Jan '26"]
+    # z holds class slots; the raw mm stay in customdata for hover.
+    assert np.allclose(np.asarray(heat[0]["customdata"], dtype=float), 1.0)
+    assert layout["yaxis"]["scaleanchor"] == "x"
 
 
-def test_resolve_axis_label_override_is_verbatim():
-    import numpy as np
+def test_user_trace_keys_lift_to_coloraxis_and_win():
+    ds = make_gridded(n_time=1)
+    spec = {
+        "data": [
+            _trace("a", zmin=0, zmax=20, colorscale="Blues", colorbar={"title": {"text": "Rain"}})
+        ]
+    }
+    axis = _layout(compile(spec, {"a": ds}))["coloraxis"]
+    assert (axis["cmin"], axis["cmax"]) == (0, 20)
+    assert axis["colorbar"]["title"]["text"] == "Rain"
+    assert axis["colorscale"][0][1].lower() in ("rgb(247,251,255)", "#f7fbff")
 
-    assert resolve_axis_label("lon (E)", "Longitude") == "lon (E)"
-    assert resolve_axis_label(None, "lon") == "Longitude"
-    assert resolve_axis_label("", "Latitude") == "Latitude"
-    times = np.array(["2026-01-01", "2026-01-02"], dtype="datetime64[ns]")
-    assert resolve_time_axis_label(None, "Valid time", times) == ""
-    assert resolve_time_axis_label("Lead time", "Valid time", times) == "Lead time"
-    assert resolve_time_axis_label(None, "step", np.array([1, 2, 3])) == "Step"
+
+def test_layout_coloraxis_override_wins():
+    ds = make_gridded(n_time=1)
+    spec = {"data": [_trace("a")], "layout": {"coloraxis": {"colorbar": {"len": 0.3}}}}
+    assert _layout(compile(spec, {"a": ds}))["coloraxis"]["colorbar"]["len"] == 0.3
 
 
-def test_format_plot_date():
-    import datetime as dt
+def test_side_by_side_inputs_get_their_own_grid_and_scale():
+    a = make_gridded(n_time=1)
+    b = make_gridded(n_time=1, name="tp", lats=(1.5, 2.5), lons=(10.5, 12.5), fill=3.0)
+    spec = {"data": [_trace("a"), _trace("b", xaxis="x2", yaxis="y2", name="ECMWF")]}
+    fig = compile(spec, {"a": a, "b": b})
+    heat = _data(fig, "heatmap")
+    assert [t["coloraxis"] for t in heat] == ["coloraxis", "coloraxis2"]
+    assert list(heat[1]["x"]) == [10.5, 12.5]
+    titles = [a["text"] for a in _layout(fig)["annotations"]]
+    assert "ECMWF" in titles
 
-    import numpy as np
 
-    assert format_plot_date(dt.date(2026, 9, 14)) == "14 Sept '26"
-    assert format_plot_date(np.datetime64("2026-01-01")) == "1 Jan '26"
-    assert format_plot_date(dt.date(2026, 10, 1), year=False) == "1 Oct"
-    assert format_plot_date_range(dt.date(2026, 8, 4), dt.date(2026, 8, 10)) == "4–10 Aug '26"
-    assert format_plot_date_range(dt.date(2026, 8, 28), dt.date(2026, 9, 3)) == (
-        "28 Aug–3 Sept '26"
+def test_shared_coloraxis_on_request():
+    a = make_gridded(n_time=1)
+    b = make_gridded(n_time=1, fill=5.0)
+    spec = {
+        "data": [
+            _trace("a", coloraxis="coloraxis"),
+            _trace("b", xaxis="x2", yaxis="y2", coloraxis="coloraxis"),
+        ]
+    }
+    fig = compile(spec, {"a": a, "b": b})
+    assert {t["coloraxis"] for t in _data(fig, "heatmap")} == {"coloraxis"}
+    assert "coloraxis2" not in _layout(fig)
+
+
+def test_faceted_side_by_side_is_an_error():
+    a = make_gridded(n_time=2)
+    with pytest.raises(UsageError, match="single map"):
+        compile({"data": [_trace("a"), _trace("b", input="a", xaxis="x2")]}, {"a": a})
+
+
+def test_leftover_dim_is_an_error_with_hint():
+    ds = make_forecast(n_step=2)  # tests/conftest: number × step × lat × lon
+    ds = ds.expand_dims(level=[850, 500])
+    with pytest.raises(UsageError, match="dimension 'level' remains.*isel"):
+        compile({"data": [_trace("a")]}, {"a": ds})
+
+
+def test_ensemble_mean_and_step_panels_for_forecast():
+    fig = compile({"data": [_trace("a")]}, {"a": make_forecast(n_number=3, n_step=4)})
+    assert len(_data(fig, "heatmap")) == 4
+
+
+def test_isel_and_bbox_subset():
+    ds = make_gridded(n_time=3)
+    spec = {
+        "data": [_trace("a", source={"isel": {"time": 1}})],
+        "layout": {"meta": {"geo": {"bbox": [3, 11, 1, 12]}}},
+    }
+    fig = compile(spec, {"a": ds})
+    heat = _data(fig, "heatmap")
+    assert len(heat) == 1
+    assert list(heat[0]["x"]) == [11.0, 12.0]
+    assert _layout(fig)["xaxis"]["range"] == [11.0, 12.0]
+
+
+def test_contour_uses_class_edges_as_levels():
+    spec = {"data": [_trace("a", type="contour")]}
+    tr = _data(compile(spec, {"a": make_gridded(n_time=1)}), "contour")[0]
+    assert tr["contours"]["coloring"] == "fill"
+    assert tr["contours"]["size"] == 1
+    assert tr["autocontour"] is False
+
+
+def test_non_precip_gets_continuous_scale_symmetric_when_diverging():
+    ds = make_gridded(n_time=1, name="t2m", units="degree_Celsius")
+    ds["t2m"].values[:] = np.linspace(-2, 4, 12).reshape(1, 3, 4)
+    axis = _layout(compile({"data": [_trace("a")]}, {"a": ds}))["coloraxis"]
+    assert (axis["cmin"], axis["cmax"]) == (-4, 4)
+    assert "ticktext" not in axis["colorbar"]
+
+
+def test_points_layer_over_field_and_static_outline(tmp_path):
+    grid = make_gridded(n_time=2, lats=(-1.0, 0.0, 1.0), lons=(36.0, 37.0, 38.0))
+    stations = make_station(n_station=3, n_time=2)
+    stations["precip"].attrs["units"] = "mm day-1"
+    geo = tmp_path / "box.geojson"
+    geo.write_text(
+        json.dumps({"type": "Polygon", "coordinates": [[[36, -1], [38, -1], [38, 1], [36, -1]]]})
     )
-    assert format_plot_date_range(dt.date(2025, 12, 28), dt.date(2026, 1, 3)) == (
-        "28 Dec '25–3 Jan '26"
+    spec = {
+        "data": [
+            _trace("a"),
+            _trace("b", type="scatter", meta={"bind": "points"}),
+            {
+                "uid": "edge",
+                "type": "scatter",
+                "meta": {"bind": "geojson", "source": {"geojson": str(geo)}},
+            },
+            {"uid": "city", "type": "scatter", "mode": "markers", "x": [37], "y": [0]},
+        ]
+    }
+    fig = compile(spec, {"a": grid, "b": stations})
+    data = _data(fig)
+    per_panel = [t for t in data if t["xaxis"] == "x2"]
+    uids = [t["uid"] for t in per_panel]
+    # draw order: field, overlays, points, outline, plain traces
+    assert uids[0] == "a-p2"
+    assert uids.index("b-p2") < uids.index("edge-p2") < uids.index("city-p2")
+    assert any(u.startswith("overlay-") for u in uids)
+    # same variable on one map shares a scale
+    assert per_panel[uids.index("b-p2")]["marker"]["coloraxis"] == "coloraxis"
+
+
+def test_overlays_switch_off_and_restyle():
+    ds = make_gridded(n_time=1)
+    off = compile({"data": [_trace("a")], "layout": {"meta": {"overlays": False}}}, {"a": ds})
+    assert not [t for t in _data(off) if t["uid"].startswith("overlay")]
+    styled = compile(
+        {
+            "data": [_trace("a")],
+            "layout": {
+                "meta": {"overlays": {"coastline": False, "borders": {"line": {"color": "red"}}}}
+            },
+        },
+        {"a": ds},
     )
+    over = [t for t in _data(styled) if t["uid"].startswith("overlay")]
+    assert [t["uid"] for t in over] == ["overlay-borders-1"]
+    assert over[0]["line"]["color"] == "red"
 
 
-def test_apply_style_sets_rcparams():
-    import matplotlib as mpl
-
-    apply_style(16)
-    assert mpl.rcParams["axes.labelsize"] == 16
-    assert mpl.rcParams["xtick.labelsize"] == max(8, int(round(DEFAULT_FONTSIZE * 0.85)))
-    assert mpl.rcParams["figure.titlesize"] == 16
-
-
-def test_add_shared_colorbar_labels_every_discrete_tick():
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    import numpy as np
-    from matplotlib.colors import BoundaryNorm, ListedColormap
-
-    bounds = [2, 5, 10, 25, 50, 75, 100, 150, 200, 300]
-    cmap = ListedColormap(["#ccc"] * (len(bounds) - 1))
-    norm = BoundaryNorm(bounds, cmap.N)
-    fig, axes = plt.subplots(1, 2, figsize=(8, 3))
-    mesh = axes[0].pcolormesh(np.arange(4).reshape(2, 2), cmap=cmap, norm=norm)
-    cbar = add_shared_colorbar(fig, mesh, axes, "precip", ticks=bounds, spacing="uniform")
-    fig.canvas.draw()
-    labels = [t.get_text() for t in cbar.ax.get_xticklabels() if t.get_visible() and t.get_text()]
-    assert labels == ["2", "5", "10", "25", "50", "75", "100", "150", "200", "300"]
-    plt.close(fig)
-
-
-def test_add_shared_colorbar_custom_tick_labels():
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    import numpy as np
-    from matplotlib.colors import BoundaryNorm, ListedColormap
-
-    bounds = [0, 10, 50, 100]
-    cmap = ListedColormap(["#fff", "#080", "#040"])
-    norm = BoundaryNorm(bounds, cmap.N)
-    fig, ax = plt.subplots(figsize=(4, 3))
-    mesh = ax.pcolormesh(np.arange(4).reshape(2, 2), cmap=cmap, norm=norm)
-    cbar = add_shared_colorbar(
-        fig, mesh, ax, "precip", ticks=bounds, labels=["dry", "low", "wet", "flood"]
+def test_series_spaghetti_band_and_cycle():
+    ds = make_forecast(n_number=5, n_step=4)
+    src = {"reduce": ["latitude", "longitude"]}
+    same = compile(
+        {
+            "data": [
+                _trace("a", type="scatter", source=src, meta={"bind": "series", "along": "number"})
+            ]
+        },
+        {"a": ds},
     )
-    fig.canvas.draw()
-    texts = [t.get_text() for t in cbar.ax.get_yticklabels() if t.get_text()]
-    if not texts:
-        texts = [t.get_text() for t in cbar.ax.get_xticklabels() if t.get_text()]
-    assert texts == ["dry", "low", "wet", "flood"]
-    plt.close(fig)
-
-
-def test_apply_suptitle_honors_layout_y():
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    from weather_skills_core.errors import UsageError
-
-    from weather_skills_plotting.figure import apply_suptitle, suptitle_kwargs
-
-    fig, ax = plt.subplots()
-    ax.plot([0, 1], [0, 1])
-    apply_suptitle(fig, "Rain", {"layout": {"suptitle": {"y": 1.05}}})
-    fig.canvas.draw()
-    assert fig._suptitle.get_position()[1] == pytest.approx(1.05)
-    plt.close(fig)
-
-    fig, ax = plt.subplots()
-    ax.plot([0, 1], [0, 1])
-    apply_suptitle(fig, "Rain", None)
-    fig.canvas.draw()
-    assert fig._suptitle.get_position()[1] == pytest.approx(0.98)
-    plt.close(fig)
-
-    with pytest.raises(UsageError, match="layout.suptitle.y must be a number"):
-        suptitle_kwargs({"layout": {"suptitle": {"y": "up"}}})
-
-
-def test_add_shared_colorbar_labelpad():
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    import numpy as np
-
-    fig, ax = plt.subplots(figsize=(4, 3))
-    mesh = ax.pcolormesh(np.arange(4).reshape(2, 2))
-    cbar = add_shared_colorbar(fig, mesh, ax, "value", labelpad=20, labelsize=22, ticksize=15)
-    fig.canvas.draw()
-    axis = (
-        cbar.ax.yaxis if getattr(cbar, "orientation", "vertical") == "vertical" else cbar.ax.xaxis
+    lines = _data(same)
+    assert len(lines) == 1 and list(lines[0]["x"]).count(None) == 5
+    band = compile(
+        {
+            "data": [
+                _trace(
+                    "a",
+                    type="scatter",
+                    source=src,
+                    meta={"bind": "series", "along": "number", "band": [10, 90]},
+                )
+            ]
+        },
+        {"a": ds},
     )
-    assert axis.get_label_text() == "value"
-    assert axis.labelpad == 20
-    assert axis.label.get_size() == 22
-    tick_sizes = [t.get_fontsize() for t in axis.get_ticklabels() if t.get_text()]
-    assert tick_sizes and all(size == 15 for size in tick_sizes)
-    plt.close(fig)
-
-
-def test_add_shared_colorbar_and_save(tmp_path):
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    import numpy as np
-
-    apply_style(16)
-    fig, ax = plt.subplots(figsize=(6, 4))
-    mesh = ax.pcolormesh(np.arange(4).reshape(2, 2))
-    cbar = add_shared_colorbar(fig, mesh, ax, "value")
-    assert cbar is not None
-    assert cbar.ax.get_ylabel() == "value" or cbar.ax.get_xlabel() == "value"
-    out = save_figure(fig, tmp_path / "fig.png")
-    assert out.exists()
-    assert out.stat().st_size > 0
-
-
-def test_save_figure_keeps_canvas_when_not_tight(tmp_path):
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.image as mpimg
-    import matplotlib.pyplot as plt
-
-    fig, ax = plt.subplots(figsize=(7, 5))
-    ax.plot([0, 1], [0, 1])
-    out = save_figure(fig, tmp_path / "sized.png", tight=False)
-    img = mpimg.imread(out)
-    assert img.shape[1] == 7 * 150
-    assert img.shape[0] == 5 * 150
-
-
-def test_facet_panel_titles_do_not_overlap():
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    from weather_skills_plotting.figure import (
-        apply_suptitle,
-        facet_figure,
-        settle_figure,
-        wrap_axes_title,
+    assert [t["fill"] for t in _data(band)] == [None, "tonexty", None]
+    cycle = compile(
+        {
+            "data": [
+                _trace(
+                    "a",
+                    type="scatter",
+                    source=src,
+                    meta={"bind": "series", "along": "number", "along_color": "cycle"},
+                )
+            ]
+        },
+        {"a": ds},
     )
-
-    fig, axes = facet_figure(1, 2, figsize=(8, 4), despine=True)
-    caption = "ECMWF ENS mean (init 2026-08-01), IRPS interpolated"
-    for ax in axes.flat:
-        ax.set_title(wrap_axes_title(ax, caption))
-    apply_suptitle(fig, "Ghana August 2026 total precipitation")
-    settle_figure(fig)
-    renderer = fig.canvas.get_renderer()
-    left, right = (ax.title.get_window_extent(renderer) for ax in axes.flat)
-    assert left.x1 <= right.x0 + 1.0
-    sup = fig._suptitle.get_window_extent(renderer)
-    assert sup.ymin >= max(left.ymax, right.ymax) - 2.0
-    plt.close(fig)
+    assert [t["name"] for t in _data(cycle)] == ["0", "1", "2", "3", "4"]
 
 
-def test_crowded_colorbar_labels_rotate_without_dropping_ticks():
-    import matplotlib
+def test_series_needs_reduce_or_along():
+    with pytest.raises(UsageError, match="Nothing is averaged silently"):
+        compile(
+            {"data": [_trace("a", type="scatter", meta={"bind": "series"})]}, {"a": make_gridded()}
+        )
 
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    import numpy as np
 
-    from weather_skills_plotting.figure import facet_figure, settle_figure
+def test_series_forecast_plots_valid_time_with_date_ticks():
+    ds = make_forecast(n_number=0, n_step=3)
+    fig = compile(
+        {
+            "data": [
+                _trace(
+                    "a",
+                    type="scatter",
+                    source={"reduce": ["latitude", "longitude"]},
+                    meta={"bind": "series"},
+                )
+            ]
+        },
+        {"a": ds},
+    )
+    assert _data(fig)[0]["x"][0].startswith("2026-01-01")
+    assert _layout(fig)["xaxis"]["tickformat"] == "%-d %b '%y"
 
-    bounds = [0, 1, 2, 5, 10, 15, 20, 30, 40, 50, 75, 100, 500, 2000]
-    fig, axes = facet_figure(1, 2, figsize=(5, 3), despine=True)
-    mesh = axes[0, 0].pcolormesh(np.arange(4).reshape(2, 2))
-    add_shared_colorbar(fig, mesh, axes.ravel(), "precip", ticks=bounds, location="bottom")
-    settle_figure(fig)
-    cbar = next(ax for ax in fig.axes if ax.get_label() == "<colorbar>")
-    labels = [tick for tick in cbar.get_xticklabels() if tick.get_text()]
-    assert [tick.get_text() for tick in labels] == [str(b) for b in bounds]
-    assert all(tick.get_rotation() == 45 for tick in labels)
-    plt.close(fig)
+
+def test_pair_on_year_labels_points():
+    def yearly(start, values):
+        times = np.array(
+            [np.datetime64(f"{y}-09-01", "ns") for y in range(start, start + len(values))]
+        )
+        return xr.Dataset({"v": (("time",), np.asarray(values, float))}, coords={"time": times})
+
+    spec = {
+        "data": [
+            {
+                "uid": "xy",
+                "type": "scatter",
+                "meta": {
+                    "bind": "pair",
+                    "pair_on": "year",
+                    "x": {"input": "x"},
+                    "y": {"input": "y"},
+                },
+            }
+        ]
+    }
+    fig = compile(spec, {"x": yearly(2000, [1, 2, 3]), "y": yearly(2001, [5, 6, 7])})
+    tr = _data(fig)[0]
+    assert list(tr["text"]) == ["2001", "2002"]
+    assert list(tr["x"]) == [2, 3] and list(tr["y"]) == [5, 6]
+
+
+def test_samples_box_and_mean_line():
+    ds = make_forecast(n_number=4, n_step=3)
+    src = {"point": {"lat": 0.9, "lon": 10.1}}
+    fig = compile(
+        {
+            "data": [
+                _trace("a", type="box", source=src, meta={"bind": "samples"}),
+                _trace("m", input="a", type="scatter", source=src, meta={"bind": "samples"}),
+            ]
+        },
+        {"a": ds},
+    )
+    box, mean = _data(fig)
+    assert len(box["y"]) == 12 and list(box["x"][:4]) == ["+0d"] * 4
+    assert list(mean["x"]) == ["+0d", "+1d", "+2d"]
+
+
+def test_windrose_bins():
+    lat, lon = [0.0, 1.0], [10.0, 11.0]
+    u = np.full((2, 2, 2), 3.0)
+    v = np.zeros((2, 2, 2))
+    ds = xr.Dataset(
+        {
+            "u10": (("time", "latitude", "longitude"), u),
+            "v10": (("time", "latitude", "longitude"), v),
+        },
+        coords={
+            "time": np.array(["2026-01-01", "2026-01-02"], dtype="datetime64[ns]"),
+            "latitude": lat,
+            "longitude": lon,
+        },
+    )
+    for k in ("u10", "v10"):
+        ds[k].attrs["units"] = "m s-1"
+    fig = compile(
+        {"data": [{"uid": "a", "type": "barpolar", "meta": {"source": {"input": "a"}}}]}, {"a": ds}
+    )
+    bars = _data(fig, "barpolar")
+    assert [t["name"] for t in bars] == ["0–2 m/s", "2–4 m/s"]
+    # westerly 3 m/s (from 270°) is all in the 2–4 bin at theta 270
+    assert bars[1]["r"][12] == 100.0
+    assert _layout(fig)["polar"]["angularaxis"]["direction"] == "clockwise"
+
+
+def test_arrows_and_speed_quiver():
+    lat, lon = np.arange(0, 5.0), np.arange(10, 15.0)
+    shape = (1, 5, 5)
+    ds = xr.Dataset(
+        {
+            "u10": (("time", "latitude", "longitude"), np.full(shape, 5.0)),
+            "v10": (("time", "latitude", "longitude"), np.zeros(shape)),
+        },
+        coords={"time": [np.datetime64("2026-01-01", "ns")], "latitude": lat, "longitude": lon},
+    )
+    for k in ("u10", "v10"):
+        ds[k].attrs["units"] = "m s-1"
+    spec = {
+        "data": [
+            {"uid": "a", "type": "heatmap", "meta": {"bind": "speed", "source": {"input": "a"}}},
+            {
+                "uid": "w",
+                "type": "scatter",
+                "meta": {"bind": "arrows", "source": {"input": "a"}, "arrows": {"step": 2}},
+            },
+        ]
+    }
+    fig = compile(spec, {"a": ds})
+    heat = _data(fig, "heatmap")[0]
+    assert np.allclose(np.asarray(heat["z"], float), 5.0)
+    assert _layout(fig)["coloraxis"]["colorbar"]["title"]["text"] == "Wind speed [m/s]"
+    arrows = next(t for t in _data(fig) if t["uid"] == "w")
+    assert list(arrows["x"]).count(None) == 9 * 3  # 3×3 thinned arrows, shaft + two head strokes
+
+
+def test_bind_type_mismatch():
+    with pytest.raises(UsageError, match="draws as type contour or heatmap.*series"):
+        compile({"data": [_trace("a", type="bar", meta={"bind": "field"})]}, {"a": make_gridded()})
+
+
+def test_unknown_input():
+    with pytest.raises(UsageError, match="input 'zz' is not an input"):
+        compile({"data": [_trace("a", input="zz")]}, {"a": make_gridded()})
+
+
+def test_two_scales_on_one_panel_do_not_overlap():
+    grid = make_gridded(n_time=1, lats=(-1.0, 0.0, 1.0), lons=(36.0, 37.0, 38.0))
+    stations = make_station(n_station=3, n_time=1)
+    stations["precip"].attrs["units"] = "mm"  # different label → its own colorbar
+    spec = {"data": [_trace("a"), _trace("b", type="scatter", meta={"bind": "points"})]}
+    layout = _layout(compile(spec, {"a": grid, "b": stations}))
+    x1, x2 = layout["coloraxis"]["colorbar"]["x"], layout["coloraxis2"]["colorbar"]["x"]
+    assert x2 > x1 + 0.05
+    assert layout["margin"]["r"] > 150  # room reserved for both bars
+
+
+def test_align_dayofyear_lines_up_leap_and_non_leap_years():
+    def ond(year):
+        times = np.arange(np.datetime64(f"{year}-09-30"), np.datetime64(f"{year}-10-03"))
+        return xr.Dataset(
+            {"precip": (("time",), [1.0, 2.0, 3.0])},
+            coords={"time": times.astype("datetime64[ns]")},
+        )
+
+    spec = {
+        "data": [
+            {
+                "uid": "a",
+                "type": "scatter",
+                "meta": {"bind": "series", "align": "dayofyear", "source": {"input": "a"}},
+            },
+            {
+                "uid": "b",
+                "type": "scatter",
+                "meta": {"bind": "series", "align": "dayofyear", "source": {"input": "b"}},
+            },
+        ]
+    }
+    fig = compile(spec, {"a": ond(2024), "b": ond(2025)})
+    xa, xb = (list(t["x"]) for t in _data(fig))
+    assert xa == xb  # 1 Oct is day 275 in 2024 and 274 in 2025; both land on 1 Oct
+    assert xa[1].startswith("2001-10-01")
+    assert _layout(fig)["xaxis"]["tickformat"] == "%-d %b"
+
+
+def test_align_dayofyear_folds_29_february():
+    times = np.array(["2024-02-28", "2024-02-29", "2024-03-01"], dtype="datetime64[ns]")
+    ds = xr.Dataset({"precip": (("time",), [1.0, 2.0, 3.0])}, coords={"time": times})
+    spec = {
+        "data": [{"uid": "a", "type": "scatter", "meta": {"bind": "series", "align": "dayofyear"}}]
+    }
+    x = list(_data(compile(spec, {"a": ds}))[0]["x"])
+    assert [v[:10] for v in x] == ["2001-02-28", "2001-02-28", "2001-03-01"]
+
+
+def test_cf_flag_field_gets_named_classes():
+    ds = make_gridded(n_time=1, name="event_hit", units=None)
+    ds["event_hit"].values[:] = np.resize([-1.0, 0.0, 1.0], ds["event_hit"].shape)
+    ds["event_hit"].attrs.update(flag_values=[-1, 0, 1], flag_meanings="disagree below hit")
+    fig = compile({"data": [_trace("a")]}, {"a": ds})
+    bar = _layout(fig)["coloraxis"]["colorbar"]
+    assert bar["ticktext"] == ["disagree", "below", "hit"]
+    assert bar["tickvals"] == [0, 1, 2]
+    z = np.asarray(_data(fig, "heatmap")[0]["z"], float)
+    assert sorted(set(z.ravel().tolist())) == [0.0, 1.0, 2.0]

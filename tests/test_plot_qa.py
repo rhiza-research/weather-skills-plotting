@@ -2,9 +2,9 @@
 
 import numpy as np
 import pytest
-from conftest import make_gridded
 from PIL import Image
 
+from conftest import make_gridded
 from weather_skills_plotting.qa import data_status, hash_png_pixels, report_figure
 
 
@@ -53,15 +53,15 @@ def test_report_figure_prints_null(tmp_path, capsys):
     assert "inspect-zarr" in out
 
 
+HEATMAP = {"data": [{"type": "heatmap", "uid": "a", "meta": {"source": {"input": "a"}}}]}
+
+
 def test_export_prints_hash_and_not_null(tmp_path, capsys):
-    pytest.importorskip("matplotlib")
     from weather_skills_plotting import compile, export
-    from weather_skills_plotting.spec import spec_from_flags
 
     ds = make_gridded(n_time=1)
-    compiled = compile(spec_from_flags(variable="precip", kind="heatmap"), {"a": ds})
     out = tmp_path / "map.png"
-    export(compiled, out, datasets={"a": ds})
+    export(compile(HEATMAP, {"a": ds}), out, datasets={"a": ds})
     text = capsys.readouterr().out
     assert out.is_file()
     assert text.startswith("plot hash: ")
@@ -69,12 +69,27 @@ def test_export_prints_hash_and_not_null(tmp_path, capsys):
 
 
 def test_export_prints_null_when_field_is_all_nan(tmp_path, capsys):
-    pytest.importorskip("matplotlib")
     from weather_skills_plotting import compile, export
-    from weather_skills_plotting.spec import spec_from_flags
 
     ds = make_gridded(n_time=1, fill=np.nan)
-    compiled = compile(spec_from_flags(variable="precip", kind="heatmap"), {"a": ds})
-    export(compiled, tmp_path / "empty.png", datasets={"a": ds})
-    text = capsys.readouterr().out
-    assert "data: NULL (precip 0/12 finite)" in text
+    export(compile(HEATMAP, {"a": ds}), tmp_path / "empty.png", datasets={"a": ds})
+    assert "data: NULL (precip 0/12 finite)" in capsys.readouterr().out
+
+
+def test_export_html_has_no_hash_line(tmp_path, capsys):
+    from weather_skills_plotting import compile, export
+
+    ds = make_gridded(n_time=1)
+    out = export(compile(HEATMAP, {"a": ds}), tmp_path / "map.html", datasets={"a": ds})
+    assert "plotly" in out.read_text().lower()
+    assert "plot hash" not in capsys.readouterr().out
+
+
+def test_export_rejects_other_suffixes(tmp_path):
+    from weather_skills_core.errors import UsageError
+
+    from weather_skills_plotting import compile, export
+
+    ds = make_gridded(n_time=1)
+    with pytest.raises(UsageError, match=".png, .jpg or .html"):
+        export(compile(HEATMAP, {"a": ds}), tmp_path / "map.svg")

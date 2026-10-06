@@ -1,8 +1,8 @@
 ---
 name: plot-mediogram
-description: Render an ECMWF-style mediogram PNG comparing a forecast ensemble against an m-climate ensemble at one point. Pass the forecast Zarr then the m-climate Zarr with -i. Set geo.lat, geo.lon, and any other parameters in --spec. Grouped box plots per step (forecast cyan, m-climate red) plus the forecast mean line. For precipitation, run convert-to-totals after aggregate-temporal before plotting.
+description: Render an ECMWF-style mediogram comparing a forecast ensemble against an m-climate ensemble at one point, as PNG or interactive HTML. Pass the forecast Zarr then the m-climate Zarr with -i. Set the point in --spec as layout.meta.geo.point {lat, lon}; the spec is a standard Plotly figure (traces forecast, mclimate, forecast-mean). Grouped box plots per step (forecast cyan, m-climate red) plus the forecast mean line. For precipitation, run convert-to-totals after aggregate-temporal before plotting.
 license: MIT
-compatibility: Requires Python 3.12 and uv.
+compatibility: Requires Python 3.12 and uv. PNG/JPG export needs Chrome (installed, or `plotly_get_chrome -y`).
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/plot_mediogram.py *)
 metadata:
   version: "0.0.2"
@@ -11,84 +11,41 @@ metadata:
 
 # plot-mediogram
 
-Single-point mediogram plotting an ECMWF ensemble forecast distribution against an m-climate (historical) ensemble distribution. For each forecast step, two side-by-side box plots are drawn (forecast left/cyan, m-climate right/red) with the forecast ensemble mean as a black line.
+Grouped box plots per forecast step: forecast members in cyan and m-climate members in red, plus a black forecast-mean line, at the grid cell nearest one point. The first 6 common steps are drawn, labelled by lead (`+7d`, `+10d`, …).
 
-## Before guessing a flag or a key
+`--spec` is a **standard Plotly figure** merged onto the one the command builds. That figure has three traces:
 
-Every drawing choice besides `-i`/`-o` is a JSON key under `--spec` (see
-**Parameters** below); an unknown or misplaced key is a hard error listing
-every valid key at that level, not a silent no-op. If you don't already
-know the shape of `--spec`, run `--help`: after the flags it prints the plot
-spec reference (every section and key, with recipes), rather than guessing
-keys one at a time. To modify a figure you already drew, `--dump-spec -`
-with the same two files prints its current spec to edit and pass back. And render once and look
-at the PNG before trying another variation — the `plot hash` printed after
-a render only tells you the pixels changed, never what changed or how it
-looks.
+| uid | Plotly type | What |
+| --- | --- | --- |
+| `forecast` | `box` | every forecast member per step |
+| `mclimate` | `box` | every m-climate member per step |
+| `forecast-mean` | `scatter` | forecast ensemble mean per step |
+
+Restyle them with Plotly keys, e.g. `{"data": [{"uid": "mclimate", "fillcolor": "orange"}]}`. To choose steps, set `meta.source.isel` on all three, e.g. `{"step": [0, 2, 4, 6]}`. If the two archives name the field differently, set each trace's `meta.source.variable`.
 
 ## Input schema
 
-Both inputs are Zarr stores with at least:
-- a `number` dim (ensemble members)
-- a `step` dim (forecast lead time)
-- spatial coords identifiable as `latitude`/`longitude` (CF-style or common aliases)
-- at least one data variable
+Both inputs need `number` (members) and `step` (lead) dims, plus latitude/longitude. Selection is nearest-neighbour.
 
-Lat/lon selection is nearest-neighbor.
-
-## Usage
+## Command line
 
 ```
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot_mediogram.py \
-    -i <forecast.zarr> -i <mclimate.zarr> -o <out.png> \
-    --spec '{"geo":{"lat":-1.3,"lon":36.8},"inputs":[{"variable":"tp"}],"title":"Nairobi"}'
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot_mediogram.py -i <forecast.zarr> -i <mclimate.zarr> -o <out.png|.html> \
+    --spec '{"layout": {"meta": {"geo": {"point": {"lat": -1.3, "lon": 36.8}}}}}'
 ```
 
-### Arguments
-
-- `--input`, `-i` — pass exactly twice: forecast Zarr first, m-climate Zarr second. Optional when `--spec` lists both paths.
-- `--output`, `-o` — PNG path.
-- `--spec` — JSON object or path, always deep-merged onto the spec built from the opened files. Your values win. `geo.lat` and `geo.lon` are required. A `patch` key inside the object is rejected.
-- `--dump-spec` — write the merged spec as JSON and skip the PNG. Bare `--dump-spec` or `-` prints to stdout. Use it to get the current spec to modify; for what keys exist, use `--help`.
-
-### Parameters (`--spec`)
-
-- `geo.lat`, `geo.lon` — point, nearest-neighbor.
-- `inputs[]` — `variable` per input (`forecast`, `mclimate`); an input that omits it uses `inputs[0].variable` (the forecast input), then auto-detects. The two archives may name the field differently — set each one's own `variable`.
-- `title`, `xlabel`, `ylabel`.
-- `theme.fontsize` (default 16), `layout.figsize` as `[W, H]` (default about 10×5).
-
-### Output
-
-A PNG at `--output`, single axes, default figsize `(10, 5)` (override with
-`layout.figsize`), legend below the boxes. Stdout prints `plot hash` (sha256 of
-RGB pixels) and `data: not null` or `data: NULL`. `NULL` means inspect-zarr
-the inputs. A changed hash only proves the pixels differ, not what changed
-or whether it looks right — never use hash comparisons to answer a layout
-or appearance question; always look at the PNG.
-`--dump-spec` skips the PNG and this report. Up to 6 forecast steps on the x-axis labeled with actual leads (`+7d`, `+10d`, …). The y-axis (and default title) use the variable `long_name`.
-
-### Provenance
-
-The decorator stamps a single `weather_skills_history` JSON array into the PNG
-metadata. Read-back:
-
-```bash
-python3 -c "from PIL import Image; import json; img=Image.open('out.png'); print(json.loads(img.info['weather_skills_history']))"
-```
-
-Or:
-
-```bash
-exiftool out.png
-```
+- `-i` — exactly twice: forecast first (input id `forecast`), then m-climate (`mclimate`).
+- `--spec` — must set `layout.meta.geo.point`. Titles, axes and size are plain Plotly `layout` keys.
+- `--dump-spec [PATH]` — print or write the merged spec and skip drawing.
 
 ## Example
 
 ```bash
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot_mediogram.py \
-    -i /tmp/ecmwf_forecast.zarr \
-    -i /tmp/ecmwf_mclimate.zarr \
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot_mediogram.py -i /tmp/ecmwf_forecast.zarr -i /tmp/ecmwf_mclimate.zarr \
     -o /tmp/mediogram_nairobi.png \
-    --spec '{"geo":{"lat":-1.3,"lon":36.8},"inputs":[{"variable":"tp"}]}'
+    --spec '{"layout": {"meta": {"geo": {"point": {"lat": -1.3, "lon": 36.8}}}, "title": {"text": "Nairobi"}}}'
 ```
+
+## Output
+
+A 1000×520 px figure (2× pixels in PNG). The default title names the variable and the snapped grid point. The legend sits below the boxes. PNG/JPG print a pixel `plot hash` and `data: not null` / `NULL`. Look at the image; a hash only shows that pixels changed. Provenance is embedded in the PNG metadata or the HTML `<meta>` tag.

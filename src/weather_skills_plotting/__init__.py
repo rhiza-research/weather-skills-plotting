@@ -1,198 +1,108 @@
-"""Plot spec, matplotlib compiler, and figure helpers.
+"""Plotly figures from weather-skills standard dataset Zarrs.
 
-Compiling a figure needs this package's own matplotlib/seaborn/cartopy
-dependencies. ``import weather_skills_plotting`` alone does not load
-matplotlib — only `compile()`/`export()` do.
+The spec is a standard Plotly figure; weather-skills bindings live in each
+trace's ``meta`` and in ``layout.meta``.
 
 =====================  ========================================================
 Module                 Role
 =====================  ========================================================
-:mod:`.spec`           Canonical JSON spec (``FLAG_TO_SPEC``, overlay/resolve)
-:mod:`.theme`          Colormaps, user theme files, cmap/norm
-:mod:`.figure`         Dates, colorbar, artist allowlists, PNG save
-:mod:`.maps`           Lon/lat figures (heatmap, quiver, layers, grids)
-:mod:`.charts`         1-D / categorical figures (lines, xy, windrose, mediogram)
+:mod:`.spec`           Load, merge (by uid / name), validate, dump the spec
+:mod:`.bind`           Fill traces from datasets (``meta.bind`` modes)
+:mod:`.figure`         Panels, color axes, overlays → ``go.Figure``
+:mod:`.layout`         Templates and the map panel grid
+:mod:`.palettes`       CHC precipitation / SPI class palettes, theme files
+:mod:`.geodata`        Natural Earth overlays, spatial subsets, extents
+:mod:`.labels`         Date and panel labels
+:mod:`.wind`           u/v detection, arrows, wind-rose histograms, xy pairing
 :mod:`.qa`             Pixel hash + finite-data report printed by ``export()``
 =====================  ========================================================
 """
 
 from __future__ import annotations
 
-from weather_skills_plotting.spec import PlotSpec, dump_spec, load_spec
+from pathlib import Path
 
-__all__ = ["PlotSpec", "compile", "dump_spec", "export", "load_spec"]
+from weather_skills_plotting.spec import SPEC_VERSION, dump_spec, load_spec, merge_spec, validate
+
+__all__ = [
+    "SPEC_VERSION",
+    "SpecArg",
+    "compile",
+    "dump_spec",
+    "export",
+    "load_spec",
+    "merge_spec",
+    "validate",
+]
+
+OUTPUT_SUFFIXES = (".png", ".jpg", ".jpeg", ".html", ".htm")
+DEFAULT_EXPORT_SCALE = 2
 
 
-def compile(spec, datasets, *, theme_registry=None):
-    """Compile ``spec`` against ``datasets`` ``{id: Dataset}``.
+class SpecArg:
+    """A parsed ``--spec``. The skill decorator opens the Zarrs it lists.
 
-    Returns a :class:`~weather_skills_plotting.figure.CompiledFigure`.
+    ``layout.meta.inputs`` maps input ids to paths; those are opened only
+    when the command line names no dataset files.
     """
-    from weather_skills_core.errors import UsageError
 
-    from weather_skills_plotting.figure import (
-        colorbar_spec,
-        finish_figure,
-        resolve_axes_block,
-    )
-    from weather_skills_plotting.spec import (
-        MAP_KINDS,
-        SPEC_VERSION,
-        TRACE_KINDS,
-        normalize_spec,
-        overlay_spec,
-        trace_at,
-    )
-    from weather_skills_plotting.theme import (
-        DEFAULT_FONTSIZE,
-        DEFAULT_MAX_COLUMNS,
-        normalize_template,
-    )
+    def __init__(self, data: dict):
+        self.data = data
+        self.ds = None
+        self.datasets = None
 
-    if hasattr(spec, "data"):
+    def to_dict(self) -> dict:
+        """What provenance records for ``--spec``: the spec itself, not an object repr."""
+        return self.data
+
+    def input_paths(self) -> dict:
+        return dict(((self.data.get("layout") or {}).get("meta") or {}).get("inputs") or {})
+
+    def zarr_paths(self):
+        return [Path(p) for p in self.input_paths().values()]
+
+    def opened(self) -> dict:
+        """``{input id: Dataset}`` for the paths in ``layout.meta.inputs``."""
+        opened = list(self.datasets or ([self.ds] if self.ds is not None else []))
+        return dict(zip(self.input_paths(), opened, strict=False))
+
+
+def parse_spec_arg(value):
+    """Argparse converter for ``--spec`` → :class:`SpecArg`."""
+    from weather_skills_plotting.spec import parse_plot_spec
+
+    return SpecArg(parse_plot_spec(value))
+
+
+def compile(spec, datasets, *, theme=None):
+    """Compile a spec against ``{input id: Dataset}`` into a Plotly figure."""
+    from weather_skills_plotting.figure import compile_figure
+
+    if isinstance(spec, SpecArg):
         spec = spec.data
-    spec = overlay_spec({"version": SPEC_VERSION, "layout": {}, "theme": {}, "geo": {}}, spec)
-    spec = normalize_spec(spec)
-    traces = spec.get("traces") or [{"kind": "heatmap", "input": "a"}]
-    trace0 = traces[0] if traces else {}
-    kind = trace0.get("kind") or "heatmap"
-    if spec.get("layers"):
-        kind = "layer"
-    fontsize = int((spec.get("theme") or {}).get("fontsize") or DEFAULT_FONTSIZE)
-    template = normalize_template((spec.get("theme") or {}).get("template"))
-    inputs = spec.get("inputs") or []
-
-    if kind in MAP_KINDS:
-        from weather_skills_plotting.maps import compile_map
-
-        compiled = compile_map(
-            spec, datasets, fontsize=fontsize, template=template, registry=theme_registry
-        )
-    elif kind == "timeseries":
-        from weather_skills_plotting.charts import compile_timeseries
-
-        compiled = compile_timeseries(spec, datasets, fontsize=fontsize, template=template)
-    elif kind == "xy":
-        from weather_skills_plotting.charts import compile_xy
-
-        compiled = compile_xy(spec, datasets, fontsize=fontsize, template=template)
-    elif kind == "windrose":
-        from weather_skills_plotting.charts import compile_windrose
-
-        compiled = compile_windrose(spec, datasets, fontsize=fontsize, template=template)
-    elif kind == "grid":
-        raise UsageError(
-            "traces[].kind 'grid' is compiled with maps.compile_grid; "
-            "the skill supplies the cell matrix"
-        )
-    elif kind == "mediogram":
-        raise UsageError(
-            "traces[].kind 'mediogram' is compiled with charts.compile_mediogram; "
-            "the skill supplies the ensemble arrays"
-        )
-    else:
-        raise UsageError(
-            f"unknown traces[].kind {kind!r}; expected one of {', '.join(sorted(TRACE_KINDS))}"
-        )
-
-    fig = compiled.fig
-    finish_figure(fig, spec, getattr(fig, "axes", None))
-    drawn = compiled.map_drawn or {}
-    resolved = overlay_spec(spec, {})
-    resolved["traces"] = traces
-    resolved["theme"] = {
-        **(resolved.get("theme") or {}),
-        "template": template,
-        "fontsize": fontsize,
-        "colormap": (resolved.get("theme") or {}).get("colormap") or drawn.get("colormap"),
-    }
-    layout = resolved.setdefault("layout", {})
-    layout.setdefault("shared_colorscale", True)
-    facet_in = layout.get("facet") or {}
-    layout["facet"] = {
-        "max_columns": facet_in.get("max_columns", DEFAULT_MAX_COLUMNS),
-        **{k: drawn[k] for k in ("rows", "columns", "n_panels") if drawn.get(k) is not None},
-        **{k: facet_in[k] for k in ("wspace", "hspace") if facet_in.get(k) is not None},
-    }
-    if drawn.get("extent"):
-        resolved.setdefault("geo", {})["extent"] = drawn["extent"]
-    cbar = colorbar_spec(spec)
-    if cbar:
-        layout["colorbar"] = cbar
-    resolved["axes"] = resolve_axes_block(spec)
-    along = trace_at(resolved).get("along")
-    if along:
-        from weather_skills_plotting.theme import parse_along_color
-
-        resolved["traces"][0]["along_color"] = parse_along_color(
-            resolved["traces"][0].get("along_color")
-        )
-    if not resolved.get("inputs"):
-        resolved["inputs"] = inputs
-    compiled.spec = resolved
-    if compiled.tight is True:
-        compiled.tight = (
-            spec.get("layout", {}).get("autosize", True)
-            and spec.get("layout", {}).get("figsize") is None
-        )
-    return compiled
+    return compile_figure(spec, datasets, theme=theme)
 
 
-def export(compiled, output, *, datasets=None, dump_spec_path=None, spec=None):
-    """Write ``output`` PNG. Dump the resolved spec only when ``dump_spec_path`` is set.
+def export(fig, output, *, datasets=None, scale=None):
+    """Write ``output`` (.png, .jpg or .html) and print the QA lines for images.
 
-    Figure skills dump with ``maybe_emit_spec`` *before* compile and skip this
-    function. ``dump_spec_path`` is ``None``/``False`` (skip), ``"-"`` (stdout),
-    or a path. No ``*.plot.json`` sidecar is written by default.
-
-    After the PNG is written, stdout gets a pixel ``plot hash`` and a ``data:``
-    line (``not null`` or ``NULL``) unless ``dump_spec_path`` is ``"-"`` (that
-    path owns stdout).
+    Images print a pixel ``plot hash`` and whether the plotted data is all-NaN.
+    HTML embeds plotly.js so the file works offline.
     """
-    import json
-    import sys
-    from pathlib import Path
-
     from weather_skills_core.errors import UsageError
 
-    from weather_skills_plotting.figure import CompiledFigure, attach_figure_spec, export_png
-    from weather_skills_plotting.spec import dump_spec
-
-    if not isinstance(compiled, CompiledFigure):
-        raise TypeError("export() expects a CompiledFigure from compile()")
     output = Path(output)
     suffix = output.suffix.lower()
-    if suffix in {".html", ".htm"}:
-        raise UsageError("plot output is PNG; HTML export is not supported")
-    resolved_spec = compiled.spec
-    layout = resolved_spec.get("layout") or {}
-    tight = compiled.tight
-    if layout.get("figsize"):
-        tight = False
-    export_png(compiled.fig, output, tight=tight)
-    if str(dump_spec_path) != "-":
-        from weather_skills_plotting.qa import report_figure
-
-        report_figure(output, datasets)
-
-    spec_out = attach_figure_spec(resolved_spec, spec)
-    if datasets:
-        for ds in datasets.values() if isinstance(datasets, dict) else datasets:
-            raw = getattr(ds, "attrs", {}).get("weather_skills_history")
-            if not raw:
-                continue
-            if isinstance(raw, str):
-                try:
-                    raw = json.loads(raw)
-                except json.JSONDecodeError:
-                    continue
-            spec_out["weather_skills_history"] = raw
-            break
-    if dump_spec_path in (None, False):
+    if suffix not in OUTPUT_SUFFIXES:
+        raise UsageError(
+            f"output {output.name!r} must end in .png, .jpg or .html (got {suffix or 'no suffix'})"
+        )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if suffix in (".html", ".htm"):
+        fig.write_html(output, include_plotlyjs=True, full_html=True)
         return output
-    text = dump_spec(spec_out, None if str(dump_spec_path) == "-" else dump_spec_path)
-    if str(dump_spec_path) == "-":
-        sys.stdout.write(text)
-    else:
-        print(f"Wrote spec: {dump_spec_path}", file=sys.stderr)
+    fig.write_image(output, scale=scale or DEFAULT_EXPORT_SCALE)
+    from weather_skills_plotting.qa import report_figure
+
+    report_figure(output, datasets)
     return output
