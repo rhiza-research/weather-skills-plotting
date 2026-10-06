@@ -214,6 +214,8 @@ def apply_layer_alpha(options: dict, kind: str | None) -> dict:
     out = dict(options)
     out[block_name] = block
     return out
+
+
 BAR_MODES = frozenset({"grouped", "stacked", "overlay"})
 
 _SECTIONS = {
