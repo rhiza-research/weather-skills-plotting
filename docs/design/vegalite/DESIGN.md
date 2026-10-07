@@ -1,9 +1,19 @@
 # Design: one Vega-Lite `plot` skill
 
-Status: **proposal for review**. Nothing here is shipped. The prototype under
-[`prototypes/`](prototypes/) renders every example in this document from
-synthetic weather-skills Zarrs, so each claim below was checked against real
-output. The pictures in this document are those renders.
+Status: **implemented alongside the matplotlib skills** as
+[`skills/plot-vega`](../../../skills/plot-vega/SKILL.md), with the library in
+[`src/weather_skills_plotting/vega/`](../../../src/weather_skills_plotting/vega/).
+The existing `plot`, `plot-timeseries`, `plot-verify` and `plot-mediogram`
+are unchanged; replacing them (and naming the skill `plot`) is still the
+proposal below. The skill's SKILL.md and `references/` are the user-facing
+documentation and win where this document differs. Not yet built from this
+design: the 110m offline fallback to core's `countries.geojson`, the
+`<var>.flag` source, `usermeta.fit_aspect`, and passing compiler warnings
+through to stderr.
+
+The prototype under [`prototypes/`](prototypes/) renders every example in
+this document from synthetic weather-skills Zarrs, so each claim below was
+checked against real output. The pictures in this document are those renders.
 
 ## TL;DR
 
