@@ -68,6 +68,33 @@ def format_plot_date(value, *, year=True):
     return f"{day} {mon} '{y % 100:02d}"
 
 
+def format_plot_time(value):
+    """Figure date and UTC hour for sub-daily data: ``6 Oct '26 03:00``."""
+    try:
+        stamp = np.datetime_as_string(np.asarray(value).astype("datetime64[m]"), unit="m")
+    except (TypeError, ValueError):
+        if hasattr(value, "hour") and hasattr(value, "minute"):
+            return f"{format_plot_date(value)} {int(value.hour):02d}:{int(value.minute):02d}"
+        return format_plot_date(value)
+    return f"{format_plot_date(value)} {str(stamp)[11:16]}"
+
+
+def _spacing_seconds(all_steps):
+    """Median positive spacing of a datetime / timedelta axis in seconds, or None."""
+    arr = np.asarray(all_steps)
+    if arr.size < 2 or arr.dtype.kind not in "Mm":
+        return None
+    unit = "datetime64[s]" if arr.dtype.kind == "M" else "timedelta64[s]"
+    diffs = np.diff(arr.astype(unit).astype("int64"))
+    positive = diffs[diffs > 0]
+    return float(np.median(positive)) if positive.size else None
+
+
+def _hours(td) -> str:
+    seconds = int(np.asarray(td).astype("timedelta64[s]").astype("int64"))
+    return f"+{seconds // 3600}h" if seconds % 3600 == 0 else f"+{seconds / 3600:g}h"
+
+
 def axis_label(text):
     """Sentence-case an axis label; map lon/lat shorthand to Longitude/Latitude."""
     if text is None:
@@ -231,11 +258,17 @@ def panel_title(da, sdim, step_value, all_steps):
                     dt = None
             if dt is None:
                 dt = step_arr[1] - step_arr[0] if step_arr.size > 1 else np.timedelta64(1, "D")
+            spacing = _spacing_seconds(step_arr)
+            if spacing is not None and spacing < 86_400:
+                return f"{format_plot_time(start)} ({_hours(step_value)})"
             end = start + dt
             return f"{format_plot_date(start)} until {format_plot_date(end)}"
         except Exception:  # noqa: BLE001
             return fallback
     if value_arr.dtype.kind == "M" or hasattr(step_value, "calendar"):
+        spacing = _spacing_seconds(step_arr)
+        if spacing is not None and spacing < 86_400:
+            return format_plot_time(step_value)
         return format_calendar_panel(step_value, calendar_bin_width(da, all_steps))
     return f"{sdim}={format_step(step_value)}"
 

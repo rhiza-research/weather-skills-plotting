@@ -57,9 +57,12 @@ SOURCE_KEYS = frozenset(
     {"input", "variable", "isel", "sel", "reduce", "u", "v", "geojson", "mask_geojson", "point"}
 )
 ARROW_KEYS = frozenset({"step", "scale"})
-LAYOUT_META_KEYS = frozenset({"version", "skill", "inputs", "geo", "overlays", "export"})
+LAYOUT_META_KEYS = frozenset(
+    {"version", "skill", "inputs", "geo", "overlays", "export", "animation"}
+)
 GEO_KEYS = frozenset({"bbox", "mask_geojson", "point"})
 EXPORT_KEYS = frozenset({"scale"})
+ANIMATION_KEYS = frozenset({"duration", "transition"})
 OVERLAY_NAMES = ("coastline", "borders", "lakes", "rivers", "admin1")
 PAIR_ON = frozenset({"time", "year", "index"})
 # Layout lists that merge by ``name`` (Plotly's own item identity).
@@ -356,6 +359,15 @@ def check_layout_meta(meta) -> None:
                 )
     if meta.get("export") is not None:
         _check_keys(meta["export"], EXPORT_KEYS, "layout.meta.export")
+    animation = meta.get("animation")
+    if animation is not None:
+        _check_keys(animation, ANIMATION_KEYS, "layout.meta.animation")
+        for key, value in animation.items():
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+                raise UsageError(
+                    f"plot spec layout.meta.animation.{key} must be milliseconds >= 0; "
+                    f"got {value!r}"
+                )
 
 
 def check_meta(spec: dict) -> None:
