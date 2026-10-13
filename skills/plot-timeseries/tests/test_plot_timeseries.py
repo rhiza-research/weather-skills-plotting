@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 from skill_conftest import load_skill, make_forecast, make_gridded, run_skill, write_zarr
 from weather_skills_core.provenance import load_figure_history
@@ -864,3 +865,29 @@ def test_per_trace_reduce_overrides_trace0(tmp_path, plot_timeseries, capsys):
     assert "input 2" in err
     assert "traces[].reduce" in err
     assert "longitude" in err
+
+
+def test_mixed_rate_and_aggregated_precip_stay_rates_on_shared_axis(tmp_path, capsys):
+    """A daily rate next to a weekly aggregate must not mix mm/day with mm totals."""
+    daily = make_gridded(n_time=14)
+    weekly = make_gridded(n_time=2, fill=3.0).assign_coords(
+        time=np.array(["2026-01-01", "2026-01-08"], dtype="datetime64[ns]")
+    )
+    weekly["precip"].attrs["aggregation_period"] = "7 day"
+    write_zarr(daily, tmp_path / "daily.zarr")
+    write_zarr(weekly, tmp_path / "weekly.zarr")
+    spec = '{"traces":[{"reduce":["latitude","longitude"]}]}'
+    run_skill(
+        load_skill("plot-timeseries", "plot_timeseries").plot_timeseries,
+        "-i",
+        str(tmp_path / "daily.zarr"),
+        "-i",
+        str(tmp_path / "weekly.zarr"),
+        "-o",
+        str(tmp_path / "ts.png"),
+        "--spec",
+        spec,
+    )
+    err = capsys.readouterr().err
+    assert "drawn as a rate" in err
+    assert "differing units" not in err

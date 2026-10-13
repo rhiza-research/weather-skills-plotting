@@ -449,10 +449,26 @@ def plot_timeseries(
                 f"variable {variable!r} missing from input {idx + 1}. "
                 f"Available: {list(dataset.data_vars)}. Set inputs[{idx}].variable."
             )
-    datasets = [
-        precip_for_display(to_standard_units(dataset, variables=[variable]), variable)
+    rates = [
+        to_standard_units(dataset, variables=[variable])
         for dataset, variable in zip(datasets, variables, strict=True)
     ]
+    datasets = [
+        precip_for_display(dataset, variable)
+        for dataset, variable in zip(rates, variables, strict=True)
+    ]
+    # precip_for_display returns its input unchanged when it does not convert.
+    # On one shared y-axis, totals (mm) next to rates (mm/day) would sit under
+    # a single unit label, so keep every series a rate unless all converted.
+    converted = [out is not rate for out, rate in zip(datasets, rates, strict=True)]
+    if not per_trace and any(converted) and not all(converted):
+        datasets = rates
+        print(
+            "Note: some precip inputs have no aggregation_period, so every series "
+            "is drawn as a rate (mm/day) on the shared axis. Run aggregate-temporal "
+            "on all inputs to plot totals, or set layout.facet.per_trace.",
+            file=sys.stderr,
+        )
 
     unit_vals = []
     seen_units = {}
