@@ -112,7 +112,7 @@ def export(fig, output, *, datasets=None, scale=None):
     fig.write_image(output, scale=scale)
     from weather_skills_plotting.qa import report_figure
 
-    report_figure(output, datasets)
+    report_figure(output, datasets, fig=fig)
     return output
 
 

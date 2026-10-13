@@ -68,7 +68,7 @@ def test_png_render_with_provenance_and_qa(tmp_path, plot_fn, capsys):
         '{"layout": {"title": {"text": "Precip"}}}',
     )
     text = capsys.readouterr().out
-    assert "plot hash:" in text and "data: not null (precip 24/24 finite)" in text
+    assert "plot hash:" in text and "data: not null (a 24/24 finite)" in text
     history = load_figure_history(out)
     assert history and history[-1]["skill"] == "plot"
 
@@ -117,7 +117,23 @@ def test_xy_flags(tmp_path, plot_fn, capsys):
     y = write_zarr(make_gridded(n_time=3, fill=2.0), tmp_path / "y.zarr")
     spec = _dump(plot_fn, capsys, "--x", str(x), "--y", str(y))
     assert spec["data"][0]["meta"]["bind"] == "pair"
-    run_skill(plot_fn, "--x", str(x), "--y", str(y), "-o", str(tmp_path / "xy.png"))
+    # Grids pair only once their lat/lon are averaged explicitly.
+    with pytest.raises(SystemExit):
+        run_skill(plot_fn, "--x", str(x), "--y", str(y), "-o", str(tmp_path / "xy.png"))
+    assert "Nothing is averaged silently" in capsys.readouterr().err
+    area = {"reduce": ["latitude", "longitude"]}
+    user = {"data": [{"uid": "xy", "meta": {"x": area, "y": area}}]}
+    run_skill(
+        plot_fn,
+        "--x",
+        str(x),
+        "--y",
+        str(y),
+        "-o",
+        str(tmp_path / "xy.png"),
+        "--spec",
+        json.dumps(user),
+    )
 
 
 def test_layers(tmp_path, plot_fn, capsys):

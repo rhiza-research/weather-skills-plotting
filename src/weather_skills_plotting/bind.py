@@ -313,6 +313,11 @@ def _map_field(ctx, da, meta, loc, what):
         da = ensure_normalized_longitude(da, lon)
     fdim = _facet_dim(meta, da, (lat, lon), loc)
     if "number" in da.dims and fdim != "number":
+        print(
+            f"Note: {loc}: drawing the ensemble mean of {da.sizes['number']} members; set "
+            f'{loc}.facet "number" for one map per member',
+            file=sys.stderr,
+        )
         da = da.mean("number", keep_attrs=True)
     _leftover_error(da, {lat, lon, fdim}, what, loc)
     order = ([fdim] if fdim else []) + [lat, lon]
@@ -480,6 +485,11 @@ def bind_points(trace, meta, ctx, loc):
     da = _reduce(da, source)
     fdim = _facet_dim(meta, da, (pdim,), loc)
     if "number" in da.dims and fdim != "number":
+        print(
+            f"Note: {loc}: drawing the ensemble mean of {da.sizes['number']} members; set "
+            f'{loc}.facet "number" for one map per member',
+            file=sys.stderr,
+        )
         da = da.mean("number", keep_attrs=True)
     _leftover_error(da, {pdim, fdim}, "station points", loc)
     if fdim:
@@ -762,6 +772,7 @@ def seasonal_dates(coord, loc):
 
 def _xy_series(ctx, source, loc):
     da, _ = select(ctx, source, loc)
+    da = _reduce(da, source)
     sdim = "step" if "step" in da.dims else cf_dim(da, "time")
     if sdim is None or sdim not in da.dims:
         if da.ndim != 1:
@@ -770,9 +781,13 @@ def _xy_series(ctx, source, loc):
             )
         sdim = da.dims[0]
     rest = [d for d in da.dims if d != sdim]
-    reduced = da.mean(rest, keep_attrs=True) if rest else da
-    axis, _ = timeseries_axis(reduced, sdim)
-    return reduced, np.asarray(axis), np.asarray(reduced.values, dtype=float)
+    if rest:
+        raise UsageError(
+            f"{loc}: dims {rest} remain besides {sdim!r}. Average them with {loc}.reduce "
+            f"{rest}, or pick one value with {loc}.isel / sel. Nothing is averaged silently"
+        )
+    axis, _ = timeseries_axis(da, sdim)
+    return da, np.asarray(axis), np.asarray(da.values, dtype=float)
 
 
 def bind_pair(trace, meta, ctx, loc):

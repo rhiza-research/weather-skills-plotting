@@ -58,15 +58,24 @@ def trace_label(ds, idx: int) -> str:
     return dataset_display_label(ds, f"input {idx + 1}")
 
 
-def inherit_from_first(spec: dict) -> dict:
-    """Series settings on data[0] apply to every series that does not set its own."""
+def inherit_from_first(spec: dict, datasets: dict | None = None) -> dict:
+    """Series settings on data[0] apply to every series that does not set its own.
+
+    ``along`` (and its band and colours) passes on only to an input that has
+    that dim: an ensemble's spread does not apply to a climatology line.
+    """
     data = spec.get("data") or []
     if len(data) < 2:
         return spec
     first = data[0].get("meta") or {}
     for trace in data[1:]:
         meta = trace.setdefault("meta", {})
+        ds = (datasets or {}).get(str((meta.get("source") or {}).get("input")))
+        along = first.get("along")
+        lacks_along = along and ds is not None and along not in ds.dims
         for key in INHERITED_META:
+            if lacks_along and key in ("along", "along_color", "band"):
+                continue
             if key in first and key not in meta:
                 meta[key] = copy.deepcopy(first[key])
         source = meta.setdefault("source", {})
@@ -116,6 +125,29 @@ def keep_mixed_precip_as_rates(spec: dict, datasets: dict) -> dict:
             'plot totals, or give each its own axis (yaxis "y2", or layout.grid).'
         )
     return out
+
+
+def warn_disjoint_dates(spec: dict, datasets: dict) -> None:
+    """Overlaid series whose dates never overlap are rarely what was meant; say so."""
+    spans = {}
+    for trace in spec.get("data") or []:
+        if (trace.get("meta") or {}).get("align"):
+            continue  # seasonal overlays put different years on one axis on purpose
+        key = str(((trace.get("meta") or {}).get("source") or {}).get("input"))
+        ds = datasets.get(key)
+        if ds is None or "time" not in ds.coords or ds["time"].ndim != 1:
+            continue
+        times = ds["time"].values
+        if times.dtype.kind == "M" and times.size:
+            spans[trace.get("uid") or key] = (times.min(), times.max())
+    items = list(spans.items())
+    for i, (a, (a0, a1)) in enumerate(items):
+        for b, (b0, b1) in items[i + 1 :]:
+            if a1 < b0 or b1 < a0:
+                warn(
+                    f"series {a} ({str(a0)[:10]}–{str(a1)[:10]}) and {b} "
+                    f"({str(b0)[:10]}–{str(b1)[:10]}) share no dates"
+                )
 
 
 def warn_mixed_units(spec: dict, datasets: dict) -> None:
@@ -176,9 +208,10 @@ def plot_timeseries(ds, output, spec, theme_file, dump_spec, **kwargs):
     ]
     base = skeleton("plot-timeseries", datasets, data)
     user = spec.data if spec is not None else {}
-    merged = inherit_from_first(merge_spec(base, user))
+    merged = inherit_from_first(merge_spec(base, user), datasets)
     datasets = keep_mixed_precip_as_rates(merged, datasets)
     warn_mixed_units(merged, datasets)
+    warn_disjoint_dates(merged, datasets)
     return run(merged, None, datasets, output, dump_spec, theme_file=theme_file)
 
 

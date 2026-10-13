@@ -65,7 +65,7 @@ def test_export_prints_hash_and_not_null(tmp_path, capsys):
     text = capsys.readouterr().out
     assert out.is_file()
     assert text.startswith("plot hash: ")
-    assert "data: not null (precip 12/12 finite)" in text
+    assert "data: not null (a 12/12 finite)" in text
 
 
 def test_export_prints_null_when_field_is_all_nan(tmp_path, capsys):
@@ -73,7 +73,7 @@ def test_export_prints_null_when_field_is_all_nan(tmp_path, capsys):
 
     ds = make_gridded(n_time=1, fill=np.nan)
     export(compile(HEATMAP, {"a": ds}), tmp_path / "empty.png", datasets={"a": ds})
-    assert "data: NULL (precip 0/12 finite)" in capsys.readouterr().out
+    assert "data: NULL (a 0/12 finite)" in capsys.readouterr().out
 
 
 def test_export_html_has_no_hash_line(tmp_path, capsys):
