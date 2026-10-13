@@ -18,6 +18,8 @@ Module                 Role
 
 from __future__ import annotations
 
+from weather_skills_core.provenance import HISTORY_ATTR
+
 from weather_skills_plotting.spec import PlotSpec, dump_spec, load_spec
 
 __all__ = ["PlotSpec", "compile", "dump_spec", "export", "load_spec"]
@@ -178,7 +180,7 @@ def export(compiled, output, *, datasets=None, dump_spec_path=None, spec=None):
     spec_out = attach_figure_spec(resolved_spec, spec)
     if datasets:
         for ds in datasets.values() if isinstance(datasets, dict) else datasets:
-            raw = getattr(ds, "attrs", {}).get("weather_skills_history")
+            raw = getattr(ds, "attrs", {}).get(HISTORY_ATTR)
             if not raw:
                 continue
             if isinstance(raw, str):

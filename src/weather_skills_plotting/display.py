@@ -13,7 +13,7 @@ from pathlib import Path
 
 from weather_skills_core.cf import auto_variable
 from weather_skills_core.errors import UsageError
-from weather_skills_core.provenance import origin_skill
+from weather_skills_core.provenance import HISTORY_ATTR, SOURCE_ATTR, origin_skill
 from weather_skills_core.units import (
     AGGREGATION_PERIOD_ATTR,
     PRECIP_AMOUNT_LONG_NAME,
@@ -39,7 +39,7 @@ def _prettify_token(text: str) -> str:
 
 
 def label_from_history(ds) -> str | None:
-    raw = ds.attrs.get("weather_skills_history")
+    raw = ds.attrs.get(HISTORY_ATTR)
     if not raw:
         return None
     try:
@@ -65,7 +65,7 @@ def label_from_source_token(token: str) -> str:
 
 def dataset_display_label(ds, fallback) -> str:
     """Short product name from ``weather_skills_source``, provenance, or ``fallback``."""
-    for token in (ds.attrs.get("weather_skills_source"), ds.encoding.get("source")):
+    for token in (ds.attrs.get(SOURCE_ATTR), ds.encoding.get("source")):
         if isinstance(token, str) and (label := label_from_source_token(token)):
             return label
     return label_from_history(ds) or (fallback() if callable(fallback) else str(fallback))
