@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 from weather_skills_core import Dataset, UsageError, weather_skill
-from weather_skills_core.standard_utils import pick_time_dim
+from weather_skills_core.cf import cf_dim
 from weather_skills_core.units import to_standard_units, units_equal, variable_units
 
 from weather_skills_plotting import export
@@ -510,10 +510,23 @@ def plot_timeseries(
 
     for idx, (dataset, variable) in enumerate(zip(datasets, variables, strict=True)):
         da = dataset[variable]
-        try:
-            tdim = pick_time_dim(da, time_dim)
-        except UsageError as exc:
-            raise UsageError(f"Error (input {idx + 1}): {exc}", prefix=False) from None
+        # Time axis: --time-dim, else time, then step, then the CF time dim.
+        if time_dim:
+            tdim = time_dim
+            if tdim not in da.dims:
+                raise UsageError(
+                    f"Error (input {idx + 1}): --time-dim {tdim!r} not in dims {list(da.dims)}",
+                    prefix=False,
+                )
+        else:
+            candidates = ("time", "step", cf_dim(da, "time"))
+            tdim = next((d for d in candidates if d and d in da.dims), None)
+            if tdim is None:
+                raise UsageError(
+                    f"Error (input {idx + 1}): no time-like dim in {list(da.dims)}; "
+                    "pass --time-dim",
+                    prefix=False,
+                )
 
         reduce = _series_reduce(traces, idx)
         applicable = [d for d in reduce if d in da.dims]
