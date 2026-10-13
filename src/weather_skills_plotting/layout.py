@@ -161,26 +161,6 @@ def axis_suffix(p: int) -> str:
     return "" if p == 0 else str(p + 1)
 
 
-def map_size(rows: int, cols: int, aspect: float, width=None, height=None) -> tuple[int, int]:
-    """Canvas for a map grid: Plotly's default width per pair of columns, height from the aspect.
-
-    ``aspect`` is a panel's lon span over its lat span. A side the user set is
-    kept and the other follows from it. Plotly's margins and grid gaps are not
-    counted, so the panels (constrained to equal degrees) may leave a little
-    white space rather than be squeezed.
-    """
-    import plotly.io as pio
-
-    shape = rows / (cols * aspect)
-    if width is None and height is not None:
-        width = height / shape
-    if width is None:
-        width = pio.defaults.default_width * max(1.0, cols / 2)
-    if height is None:
-        height = width * shape
-    return round(width), round(height)
-
-
 def map_axes(p: int, extent, domain=None) -> tuple[dict, dict]:
     """Lon/lat axes for panel ``p`` over ``extent``, one degree the same length on both."""
     common = {"constrain": "domain", "showgrid": False, "ticksuffix": "°", "ticks": "outside"}

@@ -16,7 +16,7 @@ import re
 
 from weather_skills_core.errors import UsageError
 
-from weather_skills_plotting.layout import map_size
+from weather_skills_plotting.layout import COLORBAR_BELOW, COLORBAR_RIGHT, map_layout
 
 DEFAULT_DURATION_MS = 500
 DEFAULT_TRANSITION_MS = 0
@@ -119,10 +119,16 @@ def animate_figure(fig, *, user_layout: dict | None = None, animation: dict | No
 
     out_layout = {k: v for k, v in layout.items() if not _AXIS_RE.match(k) and k != "grid"}
     out_layout["annotations"] = frame_annotations(0)
-    # A one-panel map is narrow; a long colorbar title laid flat would eat its width.
-    for key, axis in out_layout.items():
-        if key.startswith("coloraxis") and isinstance(axis, dict):
-            title = axis.setdefault("colorbar", {}).setdefault("title", {})
+    # Panel 1 was one cell of a grid; as the only panel it takes the whole plot area.
+    for key in ("xaxis", "yaxis"):
+        out_layout[key] = {**out_layout[key], "domain": [0, 1]}
+    bars = [k for k, v in out_layout.items() if k.startswith("coloraxis") and isinstance(v, dict)]
+    for key in bars:
+        bar = out_layout[key].setdefault("colorbar", {})
+        if bar.get("orientation") != "h":
+            # A long colorbar title laid flat would eat the narrow map's width.
+            bar.update(len=1, y=0.5, yanchor="middle")
+            title = bar.setdefault("title", {})
             user_title = ((user_layout.get(key) or {}).get("colorbar") or {}).get("title") or {}
             if "side" not in user_title:
                 title["side"] = "right"
@@ -131,11 +137,19 @@ def animate_figure(fig, *, user_layout: dict | None = None, animation: dict | No
         out_layout.pop("shapes")
     xr_, yr_ = layout["xaxis"]["range"], layout["yaxis"]["range"]
     aspect = (xr_[1] - xr_[0]) / max(yr_[1] - yr_[0], 1e-6)
-    out_layout["width"], out_layout["height"] = map_size(
-        1, 1, aspect, user_layout.get("width"), user_layout.get("height")
+    horizontal = any((out_layout[k].get("colorbar") or {}).get("orientation") == "h" for k in bars)
+    sized, _ = map_layout(
+        1,
+        1,
+        aspect,
+        titled=bool((out_layout.get("title") or {}).get("text")),
+        panel_titles=True,
+        right=0 if horizontal or not bars else COLORBAR_RIGHT,
+        # Room under the map for the play button and slider.
+        below=90 + (COLORBAR_BELOW if horizontal else 0),
+        user=user_layout,
     )
-    # Room under the map for the play button and slider.
-    out_layout["height"] += 0 if user_layout.get("height") else 90
+    out_layout.update(sized)
 
     duration = animation.get("duration", DEFAULT_DURATION_MS)
     transition = animation.get("transition", DEFAULT_TRANSITION_MS)
