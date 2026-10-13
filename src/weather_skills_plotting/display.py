@@ -220,7 +220,15 @@ def variable_label_for_display(
     from weather_skills_plotting.palettes import is_precip_anomaly, is_statistic
 
     if is_statistic(da):
-        label = f"{label} std. dev."
+        # summarize-dim writes "Standard deviation of Total precipitation across number".
+        m = re.match(r"standard deviation of (.+?)(?: across (.+))?$", label, re.I)
+        if m:
+            what = short_label(m.group(1))
+            if what.lower() == "total precipitation":
+                what = "Precipitation"
+            label = f"{what} std. dev." + (f" ({m.group(2)})" if m.group(2) else "")
+        elif "std" not in label.lower() and "deviation" not in label.lower():
+            label = f"{label} std. dev."
     elif "anomal" not in label.lower() and (
         "anomal" in str(da.name).lower() or is_precip_anomaly(da)
     ):

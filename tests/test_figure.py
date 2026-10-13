@@ -464,3 +464,15 @@ def test_default_precip_palette_names_follow_aggregation_window():
     theme["palettes"]["default_precip"] = {"colors": ["#fff", "#00f"], "bounds": [0, 5, 10]}
     bar = _layout(compile(spec, {"a": ds}, theme=theme))["coloraxis"]["colorbar"]
     assert bar["ticktext"] == ["0", "5", "10"]
+
+
+def test_spread_from_summarize_dim_is_not_drawn_as_rain_totals():
+    ds = make_gridded(n_time=1, units="mm")
+    ds["precip"].attrs.update(
+        long_name="Standard deviation of Total precipitation across number",
+        cell_methods="number: standard_deviation",
+    )
+    axis = _layout(compile({"data": [_trace("a")]}, {"a": ds}))["coloraxis"]
+    # A continuous scale (no class ticks) and a label that says what it is.
+    assert "ticktext" not in axis["colorbar"]
+    assert axis["colorbar"]["title"]["text"] == "Precipitation std. dev. (number) [mm]"
