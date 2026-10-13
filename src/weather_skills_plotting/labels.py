@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import re
+
 import numpy as np
 from weather_skills_core.errors import UsageError
 from weather_skills_core.units import DATA_INTERVAL_ATTR, parse_aggregation_period
 
 from weather_skills_plotting.geodata import is_cftime_axis
 from weather_skills_plotting.palettes import aggregation_days
+
+# A variable described as covering the hours before its time stamp.
+_TRAILING = re.compile(r"\b(last|previous|past) \d+ ?(h|hours?)\b", re.I)
 
 # Sept not Sep — the usual meteorological short form.
 _MONTHS = (
@@ -256,12 +261,24 @@ def panel_title(da, sdim, step_value, all_steps):
                     dt = np.timedelta64(int(round(seconds)), "s")
                 except (TypeError, ValueError, UsageError):
                     dt = None
+            days = aggregation_days(da)
+            if dt is None and days:
+                dt = np.timedelta64(int(round(days * 86_400)), "s")
             if dt is None:
                 dt = step_arr[1] - step_arr[0] if step_arr.size > 1 else np.timedelta64(1, "D")
             spacing = _spacing_seconds(step_arr)
             if spacing is not None and spacing < 86_400:
                 return f"{format_plot_time(start)} ({_hours(step_value)})"
+            if _TRAILING.search(str(da.attrs.get("long_name") or "")):
+                # "… in the last 24 hours": the step labels the end of its window.
+                start = start - dt
             end = start + dt
+            whole_days = dt / np.timedelta64(1, "D")
+            if whole_days >= 1 and float(whole_days).is_integer():
+                last = (start + dt - np.timedelta64(1, "D")).astype("datetime64[D]")
+                if whole_days == 1:
+                    return format_plot_date(start)
+                return format_plot_date_range(start.astype("datetime64[D]"), last)
             return f"{format_plot_date(start)} until {format_plot_date(end)}"
         except Exception:  # noqa: BLE001
             return fallback

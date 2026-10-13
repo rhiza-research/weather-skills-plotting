@@ -119,9 +119,11 @@ def format_units_for_display(units: str | None) -> str:
     ``mm day-1`` / ``millimeter / day`` → ``mm/day``; ``degree_Celsius`` →
     ``°C``; other pint-parseable strings use CF compact form.
     """
-    if not isinstance(units, str) or not units.strip():
+    if not isinstance(units, str) or not units.strip() or units.strip() == "1":
         return ""
     raw = units.strip()
+    if raw.lower() in ("delta_degc", "delta_degree_celsius", "delta_degree_c"):
+        return "°C"
     for kind, nice in (("precip", "mm/day"), ("precip_amount", "mm"), ("temp", "°C")):
         if units_equal(raw, STANDARD[kind]["units"]):
             return nice
@@ -129,6 +131,26 @@ def format_units_for_display(units: str | None) -> str:
         return format(ureg.Unit(raw), "cf").replace(" d-1", "/day")
     except Exception:  # noqa: BLE001 — leave unparseable strings alone
         return raw
+
+
+_LABEL_NOISE = (
+    (re.compile(r"^(daily|hourly|weekly|monthly)\s+", re.I), ""),
+    (re.compile(r"^mean\s+", re.I), ""),
+    (re.compile(r"\s+in the (last|previous) \d+ hours?$", re.I), ""),
+    (re.compile(r"\s+at 2 met(re|er)s?", re.I), " (2 m)"),
+    (re.compile(r"\s+at 10 met(re|er)s?", re.I), " (10 m)"),
+)
+
+
+def short_label(label: str) -> str:
+    """Drop aggregation words a colorbar does not need ("Daily", "in the last 24 hours")."""
+    out = label
+    for pattern, repl in _LABEL_NOISE:
+        out = pattern.sub(repl, out)
+    out = out.strip()
+    if not out or out == label:
+        return label
+    return out[:1].upper() + out[1:]
 
 
 def variable_label_for_display(
@@ -155,6 +177,17 @@ def variable_label_for_display(
     )
     if kind == "precip_amount" and looks_like_rate_display_name(label):
         label = PRECIP_AMOUNT_LONG_NAME
+    label = short_label(label)
+    if kind in ("precip", "precip_amount") and label.lower() == "total precipitation":
+        label = "Precipitation"
+    from weather_skills_plotting.palettes import is_precip_anomaly, is_statistic
+
+    if is_statistic(da):
+        label = f"{label} std. dev."
+    elif "anomal" not in label.lower() and (
+        "anomal" in str(da.name).lower() or is_precip_anomaly(da)
+    ):
+        label = f"{label} anomaly"
     if not include_units:
         return label
     units = format_units_for_display(variable_units(da))

@@ -114,8 +114,8 @@ def test_variable_label_for_display_prefers_long_name():
         long_name="Total precipitation",
         GRIB_name="Precipitation rate",
     )
-    assert dl.variable_label_for_display(da) == "Total precipitation [mm]"
-    assert dl.variable_label_for_display(da, include_units=False) == "Total precipitation"
+    assert dl.variable_label_for_display(da) == "Precipitation [mm]"
+    assert dl.variable_label_for_display(da, include_units=False) == "Precipitation"
 
     product = make_gridded()["precip"]
     product.attrs["long_name"] = "IMERG daily precipitation"
@@ -128,7 +128,7 @@ def test_variable_label_for_display_prefers_long_name():
         long_name="precipitation rate",
         GRIB_name="Precipitation rate",
     )
-    assert dl.variable_label_for_display(amount) == "Total precipitation [mm]"
+    assert dl.variable_label_for_display(amount) == "Precipitation [mm]"
 
     bare = make_gridded()["precip"]
     assert dl.variable_label_for_display(bare) == "precip [mm/day]"

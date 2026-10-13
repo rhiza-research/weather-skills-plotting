@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import re
 
 import numpy as np
@@ -27,14 +28,17 @@ from weather_skills_plotting.geodata import (
     overlay_settings,
 )
 from weather_skills_plotting.layout import (
+    COLORBAR_BELOW,
+    COLORBAR_RIGHT,
     DEFAULT_TEMPLATE,
     axis_suffix,
-    grid_shape,
+    choose_grid,
+    colorbar_mode,
     map_axes,
-    map_size,
+    map_layout,
     panel_title,
+    place_colorbars,
     register_templates,
-    stacked_colorbars,
 )
 from weather_skills_plotting.palettes import (
     COLORBLIND,
@@ -46,6 +50,8 @@ from weather_skills_plotting.palettes import (
     default_palette,
     default_precip_window,
     discretize,
+    is_precip_anomaly,
+    is_temperature,
     load_theme,
     parse_palette,
 )
@@ -183,9 +189,8 @@ def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
         palette_raw = default_precip_window(*(days or [None]), anomaly=DEFAULT_PRECIP_PALETTES[key])
     palette = parse_palette(palette_raw, registry=ctx.palettes) if palette_raw else None
     if palette is None and "colorscale" not in user:
-        palette = next(
-            (default_palette(b.color_da) for _, b, _ in members if b.color_da is not None), None
-        )
+        das = [b.color_da for _, b, _ in members if b.color_da is not None]
+        palette = default_palette(*das) if das else None
     values = np.concatenate([np.ravel(v) for _, b, _ in members for v in b.color_values])
     finite = values[np.isfinite(values)]
     stretch = "cmin" in user or "cmax" in user
@@ -199,6 +204,8 @@ def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
         _, scale = discretize(finite, palette)
         axis.update(colorscale=scale["colorscale"], cmin=scale["cmin"], cmax=scale["cmax"])
         axis["colorbar"].update(tickvals=scale["tickvals"], ticktext=scale["ticktext"])
+        # An outline keeps white classes (dry, near-zero anomaly) visible on the bar.
+        axis["colorbar"].update(outlinewidth=1, outlinecolor="#999999")
         n_slots = len(scale["colorscale"]) // 2
         for tr in contour_traces:
             tr.setdefault("autocontour", False)
@@ -210,10 +217,16 @@ def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
         axis["colorscale"] = first.default_colorscale
     lo = float(finite.min()) if finite.size else 0.0
     hi = float(finite.max()) if finite.size else 1.0
-    diverging = lo < 0 < hi and not stretch
+    # Limits the user set decide whether the scale straddles zero; they are kept as given.
+    diverging = user.get("cmin", lo) < 0 < user.get("cmax", hi)
     if "colorscale" not in axis and "colorscale" not in user:
-        axis["colorscale"] = "RdBu_r" if diverging else continuous_colorscale(DEFAULT_SEQUENTIAL)
-    if diverging:
+        if diverging:
+            axis["colorscale"] = "RdBu_r"
+        elif first.color_da is not None and is_temperature(first.color_da):
+            axis["colorscale"] = "RdYlBu_r"
+        else:
+            axis["colorscale"] = continuous_colorscale(DEFAULT_SEQUENTIAL)
+    if diverging and not stretch:
         m = max(abs(lo), abs(hi))
         lo, hi = -m, m
     if lo == hi:
@@ -302,8 +315,6 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     else:
         panels = [(0, k) for k in plan[0]]
     n = len(panels)
-    grid_in = user_layout.get("grid") or {}
-    rows, cols = grid_shape(n, grid_in.get("rows"), grid_in.get("columns"))
 
     # Bind results per panel.
     panel_traces = [[] for _ in range(n)]  # (rank, trace dict, spec_trace, bound)
@@ -351,7 +362,8 @@ def _assemble_map(items, user_layout, lmeta, ctx):
             if bound_items:
                 panel_titles[p] = _input_label(ctx, bound_items[0][0]) or panel_titles[p]
 
-    # Color axes: explicit coloraxis wins; else same color title on one group shares.
+    # Color axes: explicit coloraxis wins; else traces showing the same quantity
+    # (color title, palette, anomaly or not) share one, side by side included.
     axis_of = {}  # id(spec_trace) -> coloraxis name
     axis_members: dict[str, list] = {}
     next_axis = 1
@@ -366,7 +378,12 @@ def _assemble_map(items, user_layout, lmeta, ctx):
                 else (spec_trace.get("marker") or {}).get("coloraxis")
             )
             if not name:
-                key = (g, bound.color_title)
+                key = (
+                    bound.color_title,
+                    json.dumps((spec_trace.get("meta") or {}).get("palette"), sort_keys=True),
+                    json.dumps(spec_trace.get("colorscale"), sort_keys=True),
+                    bound.color_da is not None and is_precip_anomaly(bound.color_da),
+                )
                 name = auto.get(key)
                 if name is None:
                     name = "coloraxis" if next_axis == 1 else f"coloraxis{next_axis}"
@@ -391,40 +408,65 @@ def _assemble_map(items, user_layout, lmeta, ctx):
             else:
                 entry[2].append(tr)
 
-    # A lone colorbar keeps Plotly's place; several share the right edge, in
-    # the order of the first panel each one colors (so a row's bar sits by it).
-    def first_panel(name):
-        return min(
-            p for p in range(n) for _, _, st, _ in panel_traces[p] if axis_of.get(id(st)) == name
+    if len(order) > 1 and ctx.bbox is None:
+        # Side-by-side maps of the same region share one window, so a coarse
+        # grid next to a fine one is compared on equal footing.
+        boxes = [e for e in extents if e]
+        area = [(e[1] - e[0]) * (e[3] - e[2]) for e in boxes]
+        overlap = all(
+            max(0.0, min(a[1], b[1]) - max(a[0], b[0]))
+            * max(0.0, min(a[3], b[3]) - max(a[2], b[2]))
+            >= 0.5 * min(area[i], area[j])
+            for i, a in enumerate(boxes)
+            for j, b in enumerate(boxes)
+            if i < j
         )
+        if overlap:
+            union = [
+                min(e[0] for e in boxes),
+                max(e[1] for e in boxes),
+                min(e[2] for e in boxes),
+                max(e[3] for e in boxes),
+            ]
+            extents = [union if e else None for e in extents]
 
-    shown = sorted(
-        (
-            name
-            for name in axis_members
-            if (user_layout.get(name) or {}).get("showscale") is not False
-        ),
-        key=first_panel,
-    )
-    slots = dict(zip(shown, stacked_colorbars(len(shown)), strict=True))
+    # Grid and canvas follow the maps' shape; colorbars go beside the rows or
+    # under the columns they colour when the panels split that way.
     aspect = float(np.median([(e[1] - e[0]) / max(e[3] - e[2], 1e-6) for e in extents if e]))
-    width, height = map_size(
-        rows, cols, aspect, user_layout.get("width"), user_layout.get("height")
+    grid_in = user_layout.pop("grid", None) or {}
+    rows, cols = choose_grid(n, aspect, grid_in.get("rows"), grid_in.get("columns"))
+    panels_of = {}
+    for name in axis_members:
+        if (user_layout.get(name) or {}).get("showscale") is False:
+            continue
+        panels_of[name] = [
+            p for p in range(n) for _, _, st, _ in panel_traces[p] if axis_of.get(id(st)) == name
+        ]
+    panels_of = dict(sorted(panels_of.items(), key=lambda item: min(item[1])))
+    mode = colorbar_mode(panels_of, cols)
+    layout, domains = map_layout(
+        rows,
+        cols,
+        aspect,
+        titled=bool((user_layout.get("title") or {}).get("text")),
+        panel_titles=any(panel_titles),
+        right=COLORBAR_RIGHT if panels_of and mode in ("right", "rows") else 0,
+        below=COLORBAR_BELOW if panels_of and mode in ("columns", "below") else 0,
+        user={**user_layout, "grid": grid_in},
     )
-    layout = {
-        "width": width,
-        "height": height,
-        "grid": {"rows": rows, "columns": cols, "pattern": "independent"},
-        "annotations": [],
-    }
+    slots = place_colorbars(mode, panels_of, domains)
+    # No-data cells show the plot background: a neutral grey, not the template's tint.
+    layout["plot_bgcolor"] = "#ebebeb"
+    layout["annotations"] = []
     for p in range(n):
         s = axis_suffix(p)
         if extents[p] is None:
             # An empty cell keeps a hidden axis so annotations can still target it,
             # painted with the page colour so the template's panel background
             # does not show as a blank box.
-            layout[f"xaxis{s}"] = {"visible": False}
-            layout[f"yaxis{s}"] = {"visible": False}
+            d = domains[p]
+            layout[f"xaxis{s}"] = {"visible": False, "domain": [d[0], d[1]], "anchor": f"y{s}"}
+            layout[f"yaxis{s}"] = {"visible": False, "domain": [d[2], d[3]], "anchor": f"x{s}"}
             layout.setdefault("shapes", []).append(
                 {
                     "type": "rect",
@@ -441,7 +483,7 @@ def _assemble_map(items, user_layout, lmeta, ctx):
                 }
             )
             continue
-        layout[f"xaxis{s}"], layout[f"yaxis{s}"] = map_axes(p, extents[p])
+        layout[f"xaxis{s}"], layout[f"yaxis{s}"] = map_axes(p, extents[p], domains[p])
         if panel_titles[p]:
             layout["annotations"].append(panel_title(p, panel_titles[p]))
     for name, members in axis_members.items():

@@ -35,9 +35,17 @@ def test_heatmap_panels_each_time_with_one_discrete_colorbar():
     assert {t["coloraxis"] for t in heat} == {"coloraxis"}
     layout = _layout(fig)
     bar = layout["coloraxis"]["colorbar"]
-    # Plotly's grid places the panels; one colorbar keeps Plotly's default spot.
-    assert layout["grid"] == {"rows": 2, "columns": 2, "pattern": "independent"}
-    assert not {"x", "y", "len", "orientation"} & set(bar)
+    # Each panel has its own explicit domain, anchored to its own axis, and
+    # no two panels overlap; one vertical colorbar spans the maps.
+    boxes = [
+        (*layout[f"xaxis{s}"]["domain"], *layout[f"yaxis{s}"]["domain"]) for s in ("", "2", "3")
+    ]
+    for i, a in enumerate(boxes):
+        for b in boxes[i + 1 :]:
+            assert a[1] <= b[0] or b[1] <= a[0] or a[3] <= b[2] or b[3] <= a[2]
+    assert layout["yaxis2"]["anchor"] == "x2"
+    assert "grid" not in layout
+    assert "orientation" not in bar and bar["title"]["side"] == "right"
     assert bar["ticktext"][:3] == ["0", "1", "2"]
     titles = [
         a["text"] for a in layout["annotations"] if a.get("name", "").startswith("panel-title")
@@ -379,7 +387,7 @@ def test_two_scales_on_one_panel_do_not_overlap():
     bar1, bar2 = layout["coloraxis"]["colorbar"], layout["coloraxis2"]["colorbar"]
     # Two bars sit side by side along the bottom, each in its own half.
     assert bar1["orientation"] == bar2["orientation"] == "h"
-    assert (bar1["len"], bar2["len"]) == (0.5, 0.5)
+    assert (bar1["len"], bar2["len"]) == (0.45, 0.45)
     assert (bar1["x"], bar2["x"]) == (0.25, 0.75)
 
 

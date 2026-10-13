@@ -339,30 +339,44 @@ def is_precip_poa(da) -> bool:
     return units in {"%", "percent"}
 
 
+def is_temperature(da) -> bool:
+    """Air, surface or sea temperature (not an anomaly): drawn cool to warm."""
+    text = " ".join(str(da.attrs.get(k) or "") for k in ("standard_name", "long_name")).lower()
+    return "temperature" in text and "anomal" not in text and "anomal" not in str(da.name).lower()
+
+
+def is_statistic(da) -> bool:
+    """A spread or variance (``cell_methods`` from summarize-dim): not a precip amount."""
+    methods = str(da.attrs.get("cell_methods") or "")
+    return "standard_deviation" in methods or "variance" in methods
+
+
 def is_spi(da) -> bool:
     name = f"{da.name or ''} {da.attrs.get('long_name') or ''}".lower()
     tokens = name.replace("_", " ").replace("-", " ").split()
     return "spi" in tokens or "standardized precipitation" in name
 
 
-def named_precip_scale(da) -> tuple[str, list[str], list[float]]:
+def named_precip_scale(da, *others) -> tuple[str, list[str], list[float]]:
     """Return ``(name, colors, bounds)`` for the default precip palette.
 
     Totals use a nested absolute-mm master cropped by ``aggregation_period``
     (white / beige below 5 mm, then CHC ``ppt_total`` hues from green).
     Anomalies crop the CHC diverging master the same way (daily ±50 mm, week
     ±200 mm, month ±300 mm, season ±500 mm). The historical CHC rainbow
-    palettes remain available as ``ppt_total`` / ``ppt_short``.
+    palettes remain available as ``ppt_total`` / ``ppt_short``. ``others``
+    share the colorbar: the window widens to cover every one's period.
     """
+    days = [aggregation_days(d) for d in (da, *others)]
     if is_spi(da):
         return "spi", list(SPI_COLORS), list(SPI_BOUNDS)
     if is_precip_poa(da):
         return "ppt_poa", list(PRECIP_POA_COLORS), list(PRECIP_POA_BOUNDS)
     if is_precip_anomaly(da):
-        name = precip_anomaly_window_name(aggregation_days(da))
+        name = widest_precip_anomaly_window(*days)
         entry = precip_nested_anomaly_palette(name)
         return name, list(entry["colors"]), list(entry["bounds"])
-    name = precip_window_name(aggregation_days(da))
+    name = widest_precip_window(*days)
     entry = precip_nested_palette(name)
     return name, list(entry["colors"]), list(entry["bounds"])
 
@@ -660,16 +674,19 @@ def flag_palette(da) -> dict | None:
     return {"name": "flags", "colors": colors, "bounds": bounds, "labels": labels}
 
 
-def default_palette(da) -> dict | None:
-    """The class palette a flag, precip, SPI or percent-of-normal field gets by default."""
+def default_palette(da, *others) -> dict | None:
+    """The class palette a flag, precip, SPI or percent-of-normal field gets by default.
+
+    ``others`` are the fields sharing its colorbar (see ``named_precip_scale``).
+    """
     if da is None:
         return None
     flags = flag_palette(da)
     if flags is not None:
         return flags
-    if not (is_precip(da) or is_spi(da) or is_precip_poa(da)):
+    if is_statistic(da) or not (is_precip(da) or is_spi(da) or is_precip_poa(da)):
         return None
-    name, colors, bounds = named_precip_scale(da)
+    name, colors, bounds = named_precip_scale(da, *others)
     return {"name": name, "colors": colors, "bounds": bounds}
 
 
