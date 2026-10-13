@@ -3,12 +3,6 @@
 # dependencies = [
 #   "weather-skills-plotting",
 #   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
-#   "cf-xarray",
-#   "cftime",
-#   "numpy",
-#   "xarray",
-#   "zarr",
-#   "pint-xarray>=0.6",
 # ]
 #
 # [tool.uv.sources]
@@ -64,10 +58,9 @@ def _select_point(da, lat, lon):
     name="plot-mediogram",
     version=_SKILL_VERSION,
 )
-@weather_skill.argument("-i", "--input", type=Dataset("any"), action="append", required=False)
+@weather_skill.argument("-i", "--input", type=Dataset("any"), action="append")
 @weather_skill.argument(
     "--spec",
-    default=None,
     type=parse_plot_spec,
     help=SPEC_ARGUMENT_HELP,
 )
@@ -75,15 +68,14 @@ def _select_point(da, lat, lon):
     "--dump-spec",
     nargs="?",
     const="-",
-    default=None,
     probe=True,
     help=DUMP_SPEC_ARGUMENT_HELP,
 )
 def plot_mediogram(
     ds,
     output,
-    spec=None,
-    dump_spec=None,
+    spec,
+    dump_spec,
     **kwargs,
 ):
     """ECMWF-style mediogram: forecast vs m-climate ensemble distributions at a point."""

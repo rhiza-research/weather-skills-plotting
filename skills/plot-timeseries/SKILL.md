@@ -127,12 +127,8 @@ Only inputs that carry a `units` attr participate in the comparison.
 
 ### Provenance
 
-The decorator stamps a single `weather_skills_history` JSON array into the PNG
-metadata. Read-back:
-
-```bash
-python3 -c "from PIL import Image; import json; img = Image.open('out.png'); print(json.loads(img.info['weather_skills_history']))"
-```
+The output carries a `weather_skills_history` provenance chain; inspect it
+with the `provenance` skill.
 
 ## Examples
 

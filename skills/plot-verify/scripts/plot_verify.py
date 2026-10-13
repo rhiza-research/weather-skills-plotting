@@ -3,12 +3,6 @@
 # dependencies = [
 #   "weather-skills-plotting",
 #   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
-#   "cf-xarray",
-#   "cftime",
-#   "numpy",
-#   "xarray",
-#   "zarr",
-#   "pint-xarray>=0.6",
 # ]
 #
 # [tool.uv.sources]
@@ -332,23 +326,20 @@ def _prepare(ds, variable):
     name="plot-verify",
     version=_SKILL_VERSION,
 )
-@weather_skill.argument("--obs", type=Dataset("spatial"), required=False)
+@weather_skill.argument("--obs", type=Dataset("spatial"))
 @weather_skill.argument(
     "--forecast",
     type=Dataset("spatial"),
     action="append",
-    required=False,
 )
 @weather_skill.argument(
     "--verify",
     type=Dataset("any"),
     action="append",
-    required=False,
     help="Verify Zarr from the verify skill, once per --forecast (same order).",
 )
 @weather_skill.argument(
     "--spec",
-    default=None,
     type=parse_plot_spec,
     help=SPEC_ARGUMENT_HELP,
 )
@@ -356,7 +347,6 @@ def _prepare(ds, variable):
     "--dump-spec",
     nargs="?",
     const="-",
-    default=None,
     probe=True,
     help=DUMP_SPEC_ARGUMENT_HELP,
 )
@@ -365,8 +355,8 @@ def plot_verify(
     forecast,
     verify,
     output,
-    spec=None,
-    dump_spec=None,
+    spec,
+    dump_spec,
     **kwargs,
 ):
     """Lead-week verification grid from obs, forecast, and pre-computed verify Zarrs."""

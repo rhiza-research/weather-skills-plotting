@@ -3,12 +3,6 @@
 # dependencies = [
 #   "weather-skills-plotting",
 #   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
-#   "cf-xarray",
-#   "cftime",
-#   "numpy",
-#   "xarray",
-#   "zarr",
-#   "pint-xarray>=0.6",
 # ]
 #
 # [tool.uv.sources]
@@ -396,7 +390,6 @@ def _internal_from_files(*, kind, datasets, user_theme, layers=None):
     "--input",
     type=Dataset("any"),
     action="append",
-    required=False,
     help=(
         "Input Zarr. Repeat for one map panel per file "
         "(heatmap, contour, quiver, or scatter). Mutually exclusive with --layer and with --x/--y."
@@ -406,22 +399,17 @@ def _internal_from_files(*, kind, datasets, user_theme, layers=None):
     "--x",
     dest="x_ds",
     type=Dataset("any"),
-    required=False,
-    default=None,
     help="X-axis Zarr for kind xy. Mutually exclusive with -i/--input and --layer.",
 )
 @weather_skill.argument(
     "--y",
     dest="y_ds",
     type=Dataset("any"),
-    required=False,
-    default=None,
     help="Y-axis Zarr for kind xy. Mutually exclusive with -i/--input and --layer.",
 )
 @weather_skill.argument(
     "--layer",
     action="append",
-    default=None,
     type=parse_layer,
     help=(
         "Map layer KIND:PATH. Repeat to overlay several layers on one map. "
@@ -434,32 +422,29 @@ def _internal_from_files(*, kind, datasets, user_theme, layers=None):
 )
 @weather_skill.argument(
     "--spec",
-    default=None,
     type=parse_plot_spec,
     help=SPEC_ARGUMENT_HELP,
 )
 @weather_skill.argument(
     "--theme-file",
-    default=None,
     help="User plot theme TOML/JSON (colormap, fontsize, template). Overrides ~/.config/weather-skills/theme.toml.",
 )
 @weather_skill.argument(
     "--dump-spec",
     nargs="?",
     const="-",
-    default=None,
     probe=True,
     help=DUMP_SPEC_ARGUMENT_HELP,
 )
 def plot(
     ds,
     output,
-    layer=None,
-    x_ds=None,
-    y_ds=None,
-    spec=None,
-    theme_file=None,
-    dump_spec=None,
+    layer,
+    x_ds,
+    y_ds,
+    spec,
+    theme_file,
+    dump_spec,
     **kwargs,
 ):
     """Render a heatmap, contour, timeseries, xy scatter, wind-rose, quiver, scatter, or layered map PNG from weather-skills Zarrs."""
