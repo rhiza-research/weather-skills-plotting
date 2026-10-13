@@ -107,7 +107,17 @@ COLORBAR_KEYS = frozenset(
 )
 THEME_KEYS = frozenset({"template", "colormap", "fontsize", "rc"})
 GEO_KEYS = frozenset(
-    {"extent", "bbox", "cities", "mask_geojson", "draw_boxes", "overlays", "lat", "lon"}
+    {
+        "extent",
+        "bbox",
+        "cities",
+        "mask_geojson",
+        "draw_boxes",
+        "overlays",
+        "nan_color",
+        "lat",
+        "lon",
+    }
 )
 SUBPLOT_KEYS = frozenset(
     {

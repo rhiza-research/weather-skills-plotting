@@ -5,16 +5,21 @@ from __future__ import annotations
 import sys
 
 import numpy as np
-from weather_skills_core.cf import auto_variable, cf_dim
+from weather_skills_core.cf import auto_variable
 from weather_skills_core.errors import UsageError
 from weather_skills_core.standard_utils import (
     ensure_normalized_longitude,
     parse_bbox,
     polygon_from_geojson,
 )
-from weather_skills_core.units import to_standard_units, units_equal, variable_units
+from weather_skills_core.units import units_equal, variable_units
 
-from weather_skills_plotting.display import precip_for_display, variable_label_for_display
+from weather_skills_plotting.display import (
+    cf_dim,
+    precip_for_display,
+    to_display_units,
+    variable_label_for_display,
+)
 from weather_skills_plotting.figure import (
     LEGEND_KEYS,
     apply_date_ticks,
@@ -311,10 +316,23 @@ def compile_lines(
         yarr = np.asarray(yvals, dtype=float)
         xplot = as_plot_x(xvals)
         band = style.get("band")
-        markers = style.get("marker")
-        use_marker = markers not in (None, "None", "none", "null")
+        # A marker at each time on single lines with few enough points to read them
+        # (always for a 1-point series, which would otherwise draw nothing).
+        # ``marker`` sets the shape; "none" turns it off.
+        marker = style.get("marker")
+        if marker is None:
+            marker = "o" if yarr.ndim == 1 and yarr.shape[0] <= 60 else None
+        if yarr.shape[0] < 2:
+            marker = marker or "o"
+        use_marker = marker not in (None, "None", "none", "null", "")
+        marker = marker if use_marker else None
         alpha = float(style.get("alpha") or 1)
-        lk = line_kwargs(style.get("line") or {}, loc=f"styles[{i}].line")
+        # traces[].line keys arrive flattened on the style (plot-timeseries) or nested
+        # under "line" (plot); both pass through to matplotlib (linestyle, marker, ...).
+        lk = line_kwargs(style, loc=f"styles[{i}].line")
+        lk.pop("marker", None)
+        lk.pop("color", None)
+        lk.pop("c", None)
         bk = bar_kwargs(style.get("bar") or {}, loc=f"styles[{i}].bar")
         cycle = along_color == ALONG_COLOR_CYCLE and yarr.ndim == 2
         if cycle and band:
@@ -330,10 +348,22 @@ def compile_lines(
         if color is None:
             color = f"C{(palette_i if any_cycle else i) % 10}"
         if yarr.ndim == 2 and band:
+            # Spaghetti (thin members) + percentile band + ensemble mean, all three.
             lo_q, hi_q = band
             low = np.nanpercentile(yarr, lo_q, axis=1)
             high = np.nanpercentile(yarr, hi_q, axis=1)
             mean = np.nanmean(yarr, axis=1)
+            for j in range(yarr.shape[1]):
+                _sns_line(
+                    plot_ax,
+                    xplot,
+                    yarr[:, j],
+                    color=color,
+                    linewidth=min(float(width_pt), 0.8),
+                    alpha=0.3,
+                    label=f"{label} members" if j == 0 else "_nolegend_",
+                    zorder=float(style.get("zorder") or 1),
+                )
             plot_ax.fill_between(
                 xplot,
                 low,
@@ -341,8 +371,8 @@ def compile_lines(
                 color=color,
                 alpha=float(style.get("band_alpha") or 0.25),
                 linewidth=0,
-                zorder=float(style.get("zorder") or 1),
-                label="_nolegend_",
+                zorder=float(style.get("zorder") or 1) + 0.5,
+                label=f"{label} {lo_q:g}–{hi_q:g}th percentile",
             )
             _sns_line(
                 plot_ax,
@@ -351,14 +381,15 @@ def compile_lines(
                 **{
                     "color": color,
                     "linewidth": width_pt,
-                    "marker": "o" if use_marker else None,
+                    "marker": marker,
                     "markersize": float(style.get("markersize") or 6),
                     "alpha": alpha,
-                    "label": label,
+                    "label": f"{label} mean",
                     "zorder": float(style.get("zorder") or 2) + 1,
                     **lk,
                 },
             )
+            legend_n += 2
             palette_i += 1
         else:
             traces_y = [yarr] if yarr.ndim == 1 else [yarr[:, j] for j in range(yarr.shape[1])]
@@ -446,7 +477,7 @@ def compile_lines(
                             "linewidth": (
                                 width_pt if (yarr.ndim == 1 or cycle) else min(float(width_pt), 1.2)
                             ),
-                            "marker": "o" if use_marker else None,
+                            "marker": marker,
                             "markersize": float(style.get("markersize") or 6),
                             "alpha": member_alpha if yarr.ndim == 2 else alpha,
                             "label": name,
@@ -466,8 +497,20 @@ def compile_lines(
             ax.set_xlabel(xlabel)
             ax.set_ylabel(ylabels[0] if ylabels else "")
     if not per_trace:
+        # Wrap long labels and pick a column count that fits the figure width, so a
+        # long legend never squeezes the axes.
+        import textwrap
+
+        handles, labels = axes[0, 0].get_legend_handles_labels()
+        labels = [textwrap.fill(text, 32) for text in labels]
+        widest = max((min(len(text), 32) for text in labels), default=1)
+        fits = int(fig_w * 72 / (widest * 0.6 * fontsize + 50))
         axes[0, 0].legend(
-            loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=min(max(legend_n, 1), 4)
+            handles,
+            labels,
+            loc="upper center",
+            bbox_to_anchor=(0.5, -0.12),
+            ncol=max(1, min(legend_n, 4, fits)),
         )
     apply_suptitle(fig, title, spec)
     finish_figure(fig, spec or {}, axes)
@@ -562,7 +605,7 @@ def _prepare_field(ds, spec_input: dict, geo: dict, style: str):
     variable = spec_input.get("variable") or auto_variable(ds)
     if not variable or variable not in ds:
         raise UsageError(f"no usable variable. Available: {list(ds.data_vars)}")
-    ds = to_standard_units(ds, variables=[variable])
+    ds = to_display_units(ds, variables=[variable])
     ds = precip_for_display(ds, variable)
     da = ds[variable]
     overrides = parse_index(spec_input.get("index"))
@@ -824,7 +867,7 @@ def _xy_1d(ds, variable, overrides, bbox_nwse, region_polygon, role: str):
             f"{role} has no usable variable {variable!r}. Available: {list(ds.data_vars)}"
         )
     try:
-        ds = to_standard_units(ds, variables=[variable])
+        ds = to_display_units(ds, variables=[variable])
     except UsageError:
         # Totals (mm) or anomalies can still carry a rate/temp standard_name
         # that classify_variable would force into an incompatible target.
@@ -1131,7 +1174,7 @@ def _plot_windrose(
             file=sys.stderr,
         )
     u_name, v_name = _resolve_uv(ds, u_variable, v_variable)
-    ds = to_standard_units(ds, variables=[u_name, v_name])
+    ds = to_display_units(ds, variables=[u_name, v_name])
     u_da = ds[u_name]
     v_da = ds[v_name]
     u_da = apply_index(u_da, overrides, list_dims=None)

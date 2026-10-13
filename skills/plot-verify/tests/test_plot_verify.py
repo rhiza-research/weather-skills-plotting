@@ -426,3 +426,71 @@ def test_week_labels_print_week1_to_week4(tmp_path, plot_fn, verify_fn, capsys):
     printed = capsys.readouterr().out
     lines = [ln.split("  ", 1)[0] for ln in printed.splitlines() if ln.startswith("Week ")]
     assert lines == ["Week 1", "Week 4"]
+
+
+def _hits_verify(path, values, *, init):
+    """A verify-skill-shaped hits Zarr (built here; verify lives in weather-skills)."""
+    import numpy as np
+
+    ds = make_gridded(n_time=1, name="event_hit").isel(time=0, drop=True)
+    ds["event_hit"].values[:] = np.asarray(values, dtype=float)
+    ds["event_hit"].attrs = {
+        "units": "1",
+        "verify_metric": "hits",
+        "flag_values": [-1, 0, 1],
+        "flag_meanings": "disagree below hit",
+        "event_threshold": 2.0,
+    }
+    ds.attrs.update(
+        verify_metric="hits",
+        verify_score_summary="hit rate 50%  (1/2 obs events)",
+        weather_skills_forecast_init=init,
+    )
+    return write_zarr(ds, path)
+
+
+def test_inherited_obs_variable_autodetects_forecast_and_splits_misses(tmp_path, plot_fn, capsys):
+    """Only the obs variable is set; the forecast names its field differently."""
+    obs_ds = _week(event_at=[(0, 0), (0, 1)])  # obs events at (0,0) and (0,1)
+    obs_ds["precip"].attrs.update(units="mm", standard_name="lwe_thickness_of_precipitation_amount")
+    obs = write_zarr(obs_ds, tmp_path / "obs.zarr")
+    fc_ds = _week(event_at=[(0, 0), (1, 1)], name="precipitation_surface")
+    fc_ds["precipitation_surface"].attrs.update(
+        units="mm", standard_name="lwe_thickness_of_precipitation_amount"
+    )
+    fc = write_zarr(fc_ds, tmp_path / "fc.zarr")
+    # hit at (0,0); miss at (0,1); false alarm at (1,1)
+    values = [[1, -1, 0, 0], [0, -1, 0, 0], [0, 0, 0, 0]]
+    v1 = _hits_verify(tmp_path / "v1.zarr", values, init="2026-01-01")
+    v2 = _hits_verify(tmp_path / "v2.zarr", values, init="2026-01-01")
+    out = tmp_path / "hits.png"
+    run_skill(
+        plot_fn,
+        "--obs",
+        str(obs),
+        "--forecast",
+        str(fc),
+        "--verify",
+        str(v1),
+        "--forecast",
+        str(fc),
+        "--verify",
+        str(v2),
+        "-o",
+        str(out),
+        "--spec",
+        '{"inputs":[{"id":"obs","variable":"precip"}]}',
+    )
+    assert out.stat().st_size > 0
+    captured = capsys.readouterr()
+    # Two leads from one init cannot verify one obs week.
+    assert "one init per lead" in captured.err
+    assert "1-week lead init 1 Jan '26" in captured.out
+
+
+def test_hits_scale_split_has_miss_and_false_alarm():
+    from weather_skills_plotting.maps import hits_scale
+
+    scale = hits_scale(label="event: ≥ 10 mm", split=True)
+    assert scale["ticktext"] == ["false alarm", "miss", "below", "hit"]
+    assert len(scale["colors"]) == len(scale["bounds"]) - 1

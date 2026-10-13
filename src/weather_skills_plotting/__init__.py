@@ -175,7 +175,7 @@ def export(compiled, output, *, datasets=None, dump_spec_path=None, spec=None):
     if str(dump_spec_path) != "-":
         from weather_skills_plotting.qa import report_figure
 
-        report_figure(output, datasets)
+        report_figure(output, datasets, plotted=(compiled.map_drawn or {}).get("plotted"))
 
     spec_out = attach_figure_spec(resolved_spec, spec)
     if datasets:

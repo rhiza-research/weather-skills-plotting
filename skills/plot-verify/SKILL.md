@@ -1,6 +1,6 @@
 ---
 name: plot-verify
-description: Plot a lead-week verification grid from pre-computed verify Zarrs. Columns are observation, then week-1 through week-4 forecasts; the metric row sits under the forecasts. Every --obs and --forecast must already be a single time — run select on the verifying week first. Run verify on each forecast/obs pair before this skill. For precipitation, aggregate-temporal then convert-to-totals before verify. Pass --forecast week-1 first. Set theme.fontsize in --spec to enlarge labels (default 16).
+description: Plot a lead-week verification grid for ONE fixed valid (obs) week, with one forecast init per lead (week-1 = the latest init, week-4 = the init 3 weeks earlier) so every column verifies the same obs week. Not for the weeks 1-4 of a single init — those verify different obs weeks (a warning is printed when inits repeat or are out of order). Columns are observation, then week-1 through week-4 forecasts; the metric row (hits, bias, or MAE from pre-computed verify Zarrs) sits under the forecasts. Every --obs and --forecast must already be a single time — run select on the verifying week first. Run verify on each forecast/obs pair before this skill. For precipitation, aggregate-temporal then convert-to-totals before verify. Pass --forecast week-1 first.
 license: MIT
 compatibility: Requires Python 3.12 and uv.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/plot_verify.py *)
@@ -11,7 +11,12 @@ metadata:
 
 # plot-verify
 
-Lead-week **verification figure** for **one observation week**. This skill
+Lead-week **verification figure** for **one observation (valid) week**:
+each column is a different forecast init whose lead lands on that same week
+(week-1 = latest init, e.g. inits 14 Sep, 7 Sep, 31 Aug, 24 Aug for weeks
+1–4 of 14–20 Sep). The weeks 1–4 of a *single* init verify four different obs
+weeks and do not fit this grid; a stderr warning fires when the forecasts'
+`weather_skills_forecast_init` repeat or are not newest-first. This skill
 **plots only** — it does not compute verification and it does not pick a
 time. Run `select` so every cube is one verifying week, run `verify` on
 each forecast/obs pair, then pass those Zarrs here.
@@ -26,7 +31,7 @@ the flags it prints the plot spec reference (every section and key, with
 recipes), rather than guessing keys one at a time. To modify a figure you
 already drew, `--dump-spec -` with the same files prints its current spec to
 edit and pass back. And render once and look at
-the PNG (or run `inspect-figure` on it) before trying another variation —
+the PNG before trying another variation —
 the `plot hash` printed after a render only tells you the pixels changed,
 never what changed or how it looks.
 
@@ -36,7 +41,9 @@ see `has time size N; select the verifying week`, run `select` first
 `step-to-time` first.
 
 Columns are **observation, then week-1 through week-4** (week-1 next to
-obs). Pass `--forecast` week-1 first. Column titles are `traces[0].leads`.
+obs). Pass `--forecast` week-1 first. Column titles are `traces[0].leads`
+(default `N-week lead`, plus `init <date>` when the inputs carry
+`weather_skills_forecast_init`).
 If those titles include week numbers (e.g. `Week 4 (init …)`), columns are
 sorted week-1 → week-4 even when you pass week-4 first. Label size is
 `theme.fontsize` (default 16).
@@ -83,7 +90,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot_verify.py \
 
 ### Parameters (`--spec`)
 
-- `inputs[]` — `variable` per input (`obs`, `forecast1`, `forecast2`, …); an input that omits it uses `inputs[0].variable` (the obs input), then auto-detects. Obs and a forecast may name the field differently (e.g. `precip` vs `precipitation_surface`) — set each one's own `variable`. `label` on obs and each forecast.
+- `inputs[]` — `variable` per input (`obs`, `forecast1`, `forecast2`, …); an input that omits it uses `inputs[0].variable` (the obs input) when it has that variable, else auto-detects its own. So obs `precip` next to a forecast's `precipitation_surface` needs only the obs `variable`. `label` on obs and each forecast.
 - `title`, `theme.fontsize` (default 16), `theme.colormap`, `vmin`, `vmax`.
 - `traces[0].leads` — column titles. Default `1-week lead` … `N-week lead`. Titles that name a week are sorted so week-1 sits next to the observation.
 - Keep `title` and `traces[0].leads` short: the grid has many panels, and the week dates are already added to the title.
@@ -101,10 +108,13 @@ A changed hash only proves the pixels differ, not what changed or whether
 it looks right — never use hash comparisons to answer a layout or
 appearance question; always look at the PNG. `NULL` means inspect-zarr the
 inputs. Hits
-use disagree / below / hit; bias uses a diverging scale centered on
+use false alarm / miss / below / hit (verify's `disagree` split by whether
+the obs had the event), and the colorbar names the threshold from the
+verify Zarr (`event: ≥ 10 mm`); bias uses a diverging scale centered on
 zero; MAE uses white at zero through warm colors. The verifying week
 dates are added to the figure title when the obs time coordinate can
-be read.
+be read — `select --value` drops that coordinate, so put the week in
+`title` yourself when the obs was selected down to one time.
 
 ## Example
 

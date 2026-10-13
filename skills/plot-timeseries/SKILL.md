@@ -94,7 +94,7 @@ One internal trace per input, kind `timeseries`, mark `line`. `layout.bar_mode` 
 - `traces[].reduce` — dims to average. Required for leftover non-time dims unless that dim is `along`.
 - `traces[0].along` — fan one leftover dim into lines (`number`). `along_color` is `same` or `cycle`.
 - `traces[].mark` — `line` or `bar`. `layout.bar_mode` — `grouped`, `stacked`, or `overlay`.
-- `traces[0].align` — `dayofyear` to overlay a seasonal axis. `traces[0].band` — percentile pair, e.g. `[10, 90]`, and it requires `along`.
+- `traces[0].align` — `dayofyear` to overlay a seasonal axis. `traces[0].band` — percentile pair, e.g. `[10, 90]`, and it requires `along`: the thin member lines stay, with the percentile band and a bold ensemble mean on top (legend: `<label> members`, `<label> 10–90th percentile`, `<label> mean`).
 - `layout.facet.per_trace` — one panel per input. `layout.figsize` as `[W, H]`. `theme.fontsize` (default 16), `theme.template`.
 - Per-series style: `traces[].line` (`color`, `linewidth`, `linestyle`, `marker`, `markersize`, `alpha`, `zorder`) or `traces[].bar`. Match a series with `traces[].input` (`a`, `b`, …) or by index.
 
@@ -109,8 +109,8 @@ report.
 Overlay mode is a single axes (default `figsize=(10, 6)`).
 `layout.facet.per_trace` is one stacked panel per input. Override the canvas with
 `layout.figsize`. One series per input
-(line with markers, `along` spaghetti, or bars; a per-trace `mark` of `line`
-can overlay a line on bars), legend below the traces. The y-axis label is the variable `long_name` (then
+(line with a marker at each time when the series has at most 60 points — always for a one-point series — `along` spaghetti, or bars; a per-trace `mark` of `line`
+can overlay a line on bars), legend below the traces (long labels wrap; fewer columns when they are wide). The y-axis label is the variable `long_name` (then
 `GRIB_name`, then the variable name) plus `[<units>]` when the variable
 carries a `units` attribute. Units are a short display form (`mm/day`,
 `°C`), not the on-disk CF string.

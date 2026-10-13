@@ -12,6 +12,7 @@ import re
 from pathlib import Path
 
 from weather_skills_core.cf import auto_variable
+from weather_skills_core.cf import cf_dim as _core_cf_dim
 from weather_skills_core.errors import UsageError
 from weather_skills_core.provenance import HISTORY_ATTR, SOURCE_ATTR, origin_skill
 from weather_skills_core.units import (
@@ -20,9 +21,11 @@ from weather_skills_core.units import (
     STANDARD,
     assert_nonoverlapping_intervals,
     classify_variable,
+    convert_dataarray,
     format_cell_methods,
     looks_like_rate_display_name,
     rate_to_total,
+    to_standard_units,
     units_equal,
     ureg,
     variable_units,
@@ -31,6 +34,21 @@ from weather_skills_core.units import (
 _DATE_TAIL = re.compile(r"[_-]\d{4}-\d{2}-\d{2}(?:[_-]\d{2}-\d{2}-\d{2})?$")
 _VAR_TAIL = re.compile(r"[_-](?:precip|tp)$", re.I)
 _ACRONYMS = frozenset({"ecmwf", "s2s", "ghcn", "cmip6", "gefs", "oisst", "imerg", "smap", "chirps"})
+
+
+_EXACT_GEO_NAMES = {"latitude": ("latitude", "lat"), "longitude": ("longitude", "lon")}
+
+
+def cf_dim(obj, cf_name: str):
+    """Coord name for a cf key, preferring an exact ``latitude``/``lat`` (``longitude``/``lon``).
+
+    point-value outputs carry extra ``grid_latitude``/``grid_longitude`` coords with
+    degree units, which make the cf-xarray lookup ambiguous (it then returns None).
+    """
+    for name in _EXACT_GEO_NAMES.get(cf_name, ()):
+        if name in obj.coords or name in obj.dims:
+            return name
+    return _core_cf_dim(obj, cf_name)
 
 
 def _prettify_token(text: str) -> str:
@@ -108,8 +126,10 @@ def resolve_input_variable(inputs, ds, *, id=None, index=None):
     if own:
         return own
     fallback = items[0].get("variable") if items else None
-    if fallback:
+    if fallback and (ds is None or fallback in ds.data_vars):
         return fallback
+    # The inherited name is not in this dataset (obs ``precip`` beside a forecast's
+    # ``precipitation_surface``): auto-detect this dataset's own field instead.
     return auto_variable(ds)
 
 
@@ -125,6 +145,8 @@ def format_units_for_display(units: str | None) -> str:
     for kind, nice in (("precip", "mm/day"), ("precip_amount", "mm"), ("temp", "°C")):
         if units_equal(raw, STANDARD[kind]["units"]):
             return nice
+    if units_equal(raw, "delta_degC"):
+        return "°C"
     try:
         return format(ureg.Unit(raw), "cf").replace(" d-1", "/day")
     except Exception:  # noqa: BLE001 — leave unparseable strings alone
@@ -161,6 +183,33 @@ def variable_label_for_display(
     if units:
         return f"{label} [{units}]"
     return label
+
+
+def to_display_units(ds, variables):
+    """``to_standard_units``, except a temperature *difference* stays a difference.
+
+    A ``difference`` anomaly of two °C fields is ``delta_degC`` but may keep
+    ``standard_name: air_temperature``; converting that to absolute
+    ``degree_Celsius`` is impossible, so it is shown as ``delta_degC`` (°C).
+    """
+    names = list(variables)
+    out = ds
+    for name in list(names):
+        units = variable_units(ds[name]) if name in ds.data_vars else None
+        try:
+            is_delta = units is not None and str(ureg.Unit(units)).startswith("delta_")
+        except Exception:  # noqa: BLE001 — unparseable units are left to the core check
+            is_delta = False
+        if not is_delta:
+            continue
+        names.remove(name)
+        converted, _ = convert_dataarray(ds[name], "delta_degC")
+        if converted.pint.units is not None:
+            converted = converted.pint.dequantify()
+        out = out.copy() if out is ds else out
+        out[name] = converted
+        out[name].attrs = {**ds[name].attrs, "units": "delta_degC"}
+    return to_standard_units(out, variables=names) if names else out
 
 
 def precip_for_display(ds, name: str):

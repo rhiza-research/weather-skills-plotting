@@ -458,8 +458,31 @@ def plot(
     files = _dataset_list(ds)
     if not files and spec is not None and not layers and kind != "xy":
         files = opened_datasets_from_spec(spec)
+    if layers and files and all(item.kind in ("outline", "mask") for item in layers):
+        # -i plus outline/mask decorations: the -i file becomes the base data layer.
+        from weather_skills_core.decorator import INPUT_PATH_ATTR
+
+        from weather_skills_plotting.maps import LayerSpec
+
+        base_kind = kind or "heatmap"
+        if len(files) != 1 or base_kind not in ("heatmap", "scatter", "quiver"):
+            raise UsageError(
+                "--layer outline:/mask: with -i takes one -i heatmap, scatter, or quiver map; "
+                "for anything else stack every file as a layer: "
+                "--layer heatmap:DATA.zarr --layer outline:REGION.geojson"
+            )
+        path = files[0].attrs.get(INPUT_PATH_ATTR)
+        base = LayerSpec(base_kind, path, {}, f"{base_kind}:{path}")
+        base.ds = files[0]
+        layers = [base, *layers]
+        files = []
+        kind = None
     if layers and files:
-        raise UsageError("pass either -i/--input or --layer, not both")
+        raise UsageError(
+            "pass either -i/--input or data --layer entries, not both; stack every file as a "
+            "layer instead, e.g. --layer heatmap:DATA.zarr --layer scatter:STATIONS.zarr "
+            "(outline:/mask: layers can go alongside one -i)"
+        )
     if layers and (x_ds is not None or y_ds is not None):
         raise UsageError("pass either --layer or --x/--y, not both")
     if files and (x_ds is not None or y_ds is not None):

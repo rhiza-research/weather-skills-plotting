@@ -637,8 +637,24 @@ class CompiledFigure:
 
 
 def export_png(fig, path, *, scale=1, tight=True) -> Path:
-    """Write a PNG via matplotlib Agg. Pass ``tight=False`` to keep ``--figsize``."""
-    return save_figure(fig, path, tight=tight, dpi=DEFAULT_DPI * float(scale or 1))
+    """Write a PNG via matplotlib Agg. Pass ``tight=False`` to keep ``--figsize``.
+
+    A blank strip is added under the figure: the provenance seal is stamped in
+    the bottom-right corner afterwards, and there it never covers a colorbar
+    arrow, tick label, or legend.
+    """
+    from PIL import Image
+
+    output = save_figure(fig, path, tight=tight, dpi=DEFAULT_DPI * float(scale or 1))
+    with Image.open(output) as img:
+        img.load()
+        w, h = img.size
+    # Seal: diameter <= 48 px plus a margin of 1.5% of the short side on each side.
+    strip = 48 + 2 * max(4, int(min(w, h + 64) * 0.015)) + 4
+    canvas = Image.new("RGBA", (w, h + strip), (255, 255, 255, 255))
+    canvas.paste(img.convert("RGBA"), (0, 0))
+    canvas.save(output)
+    return output
 
 
 _JSON_TYPES = (str, int, float, bool, list, dict, type(None))

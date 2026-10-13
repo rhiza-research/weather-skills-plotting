@@ -1,6 +1,6 @@
 ---
 name: plot-mediogram
-description: Render an ECMWF-style mediogram PNG comparing a forecast ensemble against an m-climate ensemble at one point. Pass the forecast Zarr then the m-climate Zarr with -i. Set geo.lat, geo.lon, and any other parameters in --spec. Grouped box plots per step (forecast cyan, m-climate red) plus the forecast mean line. For precipitation, run convert-to-totals after aggregate-temporal before plotting.
+description: Render an ECMWF-style mediogram PNG comparing a forecast ensemble against an m-climate ensemble at one point. Pass the forecast Zarr then the m-climate Zarr with -i. BOTH need `number` (members) and `step` dims: the m-climate is a reforecast/hindcast ensemble on the forecast's leads, and no fetch skill currently writes one — a climatology mean/std (clim-fetch) has no members and is refused, so check you have an m-climate source before choosing this skill. Set geo.lat, geo.lon, and any other parameters in --spec. Grouped box plots per step (forecast cyan, m-climate red) plus the forecast mean line. For precipitation, run convert-to-totals after aggregate-temporal before plotting.
 license: MIT
 compatibility: Requires Python 3.12 and uv.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/plot_mediogram.py *)
@@ -35,6 +35,16 @@ Both inputs are Zarr stores with at least:
 - at least one data variable
 
 Lat/lon selection is nearest-neighbor.
+
+**Where the m-climate comes from.** ECMWF's m-climate is a reforecast
+ensemble: past years' hindcast members re-run for the same calendar date,
+stacked so `number` runs over year × member and `step` matches the forecast
+leads. No fetch skill currently produces that cube (the dynamical-fetch
+ensembles are real-time forecasts only), and a climatology `avg`/`std` from
+`clim-fetch` has no `number` dim, so it fails with `mclimate input requires
+'number' and 'step' dims`. Without a reforecast source, compare the forecast
+against a climatology another way (e.g. `difference` against the clim-fetch
+mean, or `plot-timeseries` with the ensemble band).
 
 ## Usage
 

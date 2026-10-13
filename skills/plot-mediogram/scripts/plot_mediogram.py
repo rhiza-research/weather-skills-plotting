@@ -11,14 +11,14 @@
 """ECMWF-style mediogram: forecast vs m-climate ensemble distributions at a point."""
 
 from weather_skills_core import DataError, Dataset, UsageError, weather_skill
-from weather_skills_core.cf import cf_dim
-from weather_skills_core.units import to_standard_units
 
 from weather_skills_plotting import export
 from weather_skills_plotting.charts import compile_mediogram
 from weather_skills_plotting.display import (
+    cf_dim,
     precip_for_display,
     resolve_input_variable,
+    to_display_units,
     variable_label_for_display,
 )
 from weather_skills_plotting.figure import (
@@ -121,8 +121,8 @@ def plot_mediogram(
             f"variable {mc_variable!r} missing from mclimate. Available: {list(ds_mc.data_vars)}"
         )
 
-    ds_fc = precip_for_display(to_standard_units(ds_fc, variables=[fc_variable]), fc_variable)
-    ds_mc = precip_for_display(to_standard_units(ds_mc, variables=[mc_variable]), mc_variable)
+    ds_fc = precip_for_display(to_display_units(ds_fc, variables=[fc_variable]), fc_variable)
+    ds_mc = precip_for_display(to_display_units(ds_mc, variables=[mc_variable]), mc_variable)
     da_fc = ds_fc[fc_variable]
     da_mc = ds_mc[mc_variable]
 

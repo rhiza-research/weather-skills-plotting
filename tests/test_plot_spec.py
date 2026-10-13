@@ -546,8 +546,9 @@ def test_precip_nested_windows_keep_absolute_mm_colors():
         PRECIP_COLORS[3],
         PRECIP_COLORS[4],
         *PRECIP_COLORS[6:8],
-        *PRECIP_COLORS[9:16],
-        "#7a0000",
+        *PRECIP_COLORS[9:15],
+        "#800040",
+        "#3d0066",
     ]
 
     assert precip_window_name(None) == "ppt_week"
@@ -555,7 +556,8 @@ def test_precip_nested_windows_keep_absolute_mm_colors():
     assert precip_window_name(1.9) == "ppt_daily"
     assert precip_window_name(2) == "ppt_week"
     assert precip_window_name(9.9) == "ppt_week"
-    assert precip_window_name(10) == "ppt_month"
+    assert precip_window_name(10) == "ppt_week"
+    assert precip_window_name(10.5) == "ppt_month"
     assert precip_window_name(39.9) == "ppt_month"
     assert precip_window_name(40) == "ppt_season"
     assert widest_precip_window(1, 7, 90) == "ppt_season"
@@ -578,7 +580,7 @@ def test_precip_nested_windows_keep_absolute_mm_colors():
     weekly = daily.copy()
     weekly.attrs["aggregation_period"] = "7 day"
     monthly = daily.copy()
-    monthly.attrs["aggregation_period"] = "10 day"
+    monthly.attrs["aggregation_period"] = "11 day"
     seasonal = daily.copy()
     seasonal.attrs["aggregation_period"] = "90 day"
 
@@ -628,7 +630,7 @@ def test_precip_anomaly_and_poa_and_spi_colorscales():
     assert sd["bounds"][0] == -50
     assert sd["bounds"][-1] == 50
     monthly = da.copy()
-    monthly.attrs["aggregation_period"] = "10 day"
+    monthly.attrs["aggregation_period"] = "11 day"
     sm = resolve_colorscale(monthly, None)
     assert sm["name"] == "ppt_anom_month"
     assert sm["bounds"][0] == -300
@@ -1649,8 +1651,8 @@ def test_shared_colorscale_one_norm_across_panels():
     fig, resolved = compiled.fig, compiled.spec
     assert resolved["layout"]["shared_colorscale"] is True
     meshes = _quadmeshes(fig)
-    norms = {id(m.norm) for m in meshes}
-    assert len(norms) == 1
+    limits = {(m.norm.vmin, m.norm.vmax) for m in meshes}
+    assert len(limits) == 1
 
 
 def _two_cell_subplots_spec(*, shared=None):
@@ -2184,7 +2186,7 @@ def test_outline_style_defaults_and_overrides():
 
     from weather_skills_plotting.maps import outline_style
 
-    assert outline_style(None) == {"edgecolor": "black", "linewidth": 1.2}
+    assert outline_style(None) == {"edgecolor": "#c51b7d", "linewidth": 1.4}
     assert outline_style({"color": "red", "lw": 3, "ls": "--"}) == {
         "edgecolor": "red",
         "linewidth": 3,
@@ -2208,3 +2210,32 @@ def test_spec_argument_errors_point_at_dump_spec():
 
     with pytest.raises(argparse.ArgumentTypeError, match=r"traces\[0\].colormap.*--dump-spec -"):
         parse_plot_spec('{"traces": [{"input": "a", "colormap": "BrBG"}]}')
+
+
+def test_band_keeps_members_and_labels_mean_and_band():
+    pytest.importorskip("matplotlib")
+    from weather_skills_plotting.charts import compile_lines
+
+    x = np.arange("2026-01-01", "2026-01-06", dtype="datetime64[D]")
+    y = np.random.default_rng(0).normal(size=(5, 4))
+    fig = compile_lines([(x, y, "GEFS")], styles=[{"band": (10.0, 90.0)}]).fig
+    ax = fig.axes[0]
+    assert len(ax.lines) == 4 + 1  # four members plus the mean
+    labels = ax.get_legend_handles_labels()[1]
+    assert labels == ["GEFS members", "GEFS 10–90th percentile", "GEFS mean"]
+
+
+def test_line_marker_and_linestyle_are_honored_and_single_point_is_drawn():
+    pytest.importorskip("matplotlib")
+    from weather_skills_plotting.charts import compile_lines
+
+    x1 = np.array(["2026-01-01"], dtype="datetime64[D]")
+    x5 = np.arange("2026-01-01", "2026-01-06", dtype="datetime64[D]")
+    fig = compile_lines(
+        [(x1, np.array([1.0]), "one"), (x5, np.arange(5.0), "five")],
+        styles=[{}, {"marker": "s", "linestyle": "--"}],
+    ).fig
+    one, five = fig.axes[0].lines[:2]
+    assert one.get_marker() == "o"  # a one-point series still shows
+    assert five.get_marker() == "s"
+    assert five.get_linestyle() == "--"

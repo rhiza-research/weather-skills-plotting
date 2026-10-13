@@ -128,7 +128,8 @@ def test_figsize_writes_png(tmp_path, plot_fn):
 
     img = mpimg.imread(out)
     assert img.shape[1] == 7 * 150
-    assert img.shape[0] == 5 * 150
+    # export adds a blank strip under the figure for the provenance seal
+    assert 5 * 150 < img.shape[0] <= 5 * 150 + 100
     history = load_figure_history(out)
     assert history[-1]["args"]["spec"]["layout"]["figsize"] == [7.0, 5.0]
 
@@ -544,7 +545,7 @@ def test_precip_default_colormap_is_nested_window():
     da.attrs.update(
         units="mm",
         standard_name="lwe_thickness_of_precipitation_amount",
-        aggregation_period="10 day",
+        aggregation_period="11 day",
     )
     cmap, norm = plot_maps._heatmap_scale(da, None)
     month = precip_nested_palette("ppt_month")
@@ -553,14 +554,11 @@ def test_precip_default_colormap_is_nested_window():
     assert cmap.N == len(month["bounds"]) - 1
     assert isinstance(norm, BoundaryNorm)
     assert list(norm.boundaries) == pytest.approx(month["bounds"])
+    # A rate (mm/day) is not an amount: the mm classes do not apply.
     rate = make_gridded()["precip"]
     rate.attrs["aggregation_period"] = "7 day"
     cmap_rate, norm_rate = plot_maps._heatmap_scale(rate, None)
-    week = precip_nested_palette("ppt_week")
-    assert isinstance(cmap_rate, ListedColormap)
-    assert cmap_rate.name == "ppt_week"
-    assert isinstance(norm_rate, BoundaryNorm)
-    assert list(norm_rate.boundaries) == pytest.approx(week["bounds"])
+    assert cmap_rate == "YlGnBu" and norm_rate is None
 
 
 def test_precip_short_period_colormap_uses_daily_window():
@@ -829,7 +827,7 @@ def test_lakes_overlay_is_filled_grey():
 def test_rivers_overlay_is_slate_lines_under_lakes():
     assert plot_maps.RIVERS_STYLE["facecolor"] == "none"
     assert plot_maps.RIVERS_STYLE["edgecolor"] == plot_maps.LAKE_FACECOLOR
-    assert plot_maps.RIVERS_STYLE["zorder"] < plot_maps.LAKES_STYLE["zorder"]
+    assert plot_maps.RIVERS_STYLE["zorder"] < plot_maps.LAKES_OUTLINE_STYLE["zorder"]
 
 
 def test_load_geo_overlays_skips_on_download_failure(monkeypatch, capsys):
@@ -2203,3 +2201,182 @@ def test_every_shape_type_is_in_help():
     from weather_skills_plotting.reference import _SHAPES
 
     assert set(_SHAPES) == set(ws_figure.SHAPE_TYPES)
+
+
+# --- UX pass regressions -------------------------------------------------------
+
+
+def _compile_map(spec, datasets):
+    from weather_skills_plotting import compile
+
+    return compile(spec, datasets).fig
+
+
+def _map_axes(fig):
+    return [ax for ax in fig.axes if ax.get_label() != "<colorbar>"]
+
+
+def test_scatter_with_extra_grid_lat_lon_coords_and_bbox(tmp_path, plot_fn, capsys):
+    """point-value outputs carry grid_latitude/grid_longitude next to latitude/longitude."""
+    ds = make_point_obs(n_time=1, n_points=2).isel(time=0, drop=True)
+    ds = ds.assign_coords(
+        grid_latitude=("point_id", [1.0, 2.0]), grid_longitude=("point_id", [10.0, 11.0])
+    )
+    ds["grid_latitude"].attrs["units"] = "degrees_north"
+    ds["grid_longitude"].attrs["units"] = "degrees_east"
+    src = write_zarr(ds, tmp_path / "pv.zarr")
+    out = tmp_path / "pv.png"
+    spec = '{"traces":[{"kind":"scatter"}],"geo":{"bbox":[3,9,0,12]}}'
+    run_skill(plot_fn, "-i", str(src), "-o", str(out), "--spec", spec)
+    assert out.stat().st_size > 0
+    assert "precip 2/2 finite" in capsys.readouterr().out
+
+
+def test_single_time_map_keeps_its_date_title():
+    ds = make_gridded(n_time=1)
+    ds["precip"].attrs.update(
+        units="mm",
+        standard_name="lwe_thickness_of_precipitation_amount",
+        aggregation_period="10 day",
+    )
+    fig = _compile_map(ws_spec.spec_from_flags(variable="precip", kind="heatmap"), {"a": ds})
+    assert _map_axes(fig)[0].get_title() == "1–10 Jan '26"
+
+
+def test_rate_change_gets_continuous_diverging_palette():
+    """A ±0.4 mm/day change must not land in the white ±10 mm anomaly class."""
+    da = make_gridded(n_time=1)["precip"].isel(time=0)
+    da = da.copy(data=np.linspace(-0.4, 0.4, da.size).reshape(da.shape))
+    cmap, norm = plot_maps._heatmap_scale(da, None)
+    assert cmap == "BrBG" and norm is None
+    small = da.copy(data=np.full(da.shape, 3.0))
+    small.attrs.update(units="mm", standard_name="lwe_thickness_of_precipitation_amount")
+    small[0, 0] = -3.0  # an anomaly in mm that never leaves the ±10 mm class
+    assert plot_maps._heatmap_scale(small, None)[0] == "BrBG"
+
+
+def test_precip_totals_colorbar_extends_max_only():
+    from matplotlib.colors import BoundaryNorm
+
+    cmap, norm = plot_maps._heatmap_scale(make_forecast()["tp"].isel(step=0, drop=True), None)
+    assert isinstance(norm, BoundaryNorm)
+    assert plot_maps._cbar_boundary_kwargs(norm, cmap)["extend"] == "max"
+
+
+def test_temperature_difference_plots_in_degc(tmp_path, plot_fn):
+    ds = make_gridded(n_time=1, name="t2m")
+    ds["t2m"].attrs = {"units": "delta_degC", "standard_name": "air_temperature"}
+    src = write_zarr(ds, tmp_path / "anom.zarr")
+    out = tmp_path / "anom.png"
+    run_skill(plot_fn, "-i", str(src), "-o", str(out))
+    assert out.stat().st_size > 0
+    from weather_skills_plotting.display import format_units_for_display
+
+    assert format_units_for_display("delta_degC") == "°C"
+
+
+def test_lakes_fill_under_data_and_nan_cells_are_grey():
+    assert plot_maps.LAKES_STYLE["zorder"] < plot_maps._KIND_ZORDER["heatmap"]
+    assert plot_maps.LAKES_OUTLINE_STYLE["facecolor"] == "none"
+    ds = make_gridded(n_time=1)
+    ds["precip"][0, 0, 0] = np.nan
+    fig = _compile_map(ws_spec.spec_from_flags(variable="precip", kind="heatmap"), {"a": ds})
+    from matplotlib.collections import QuadMesh
+
+    meshes = [c for c in _map_axes(fig)[0].collections if isinstance(c, QuadMesh)]
+    assert any(m.cmap.colors == [plot_maps.NAN_COLOR] for m in meshes if hasattr(m.cmap, "colors"))
+
+
+def test_outline_layer_grows_extent_and_is_not_black(tmp_path, plot_fn, capsys):
+    from weather_skills_plotting.maps import outline_style
+
+    assert outline_style(None)["edgecolor"] not in ("black", "k", "#000000")
+    src = write_zarr(make_gridded(n_time=1), tmp_path / "in.zarr")
+    poly = {
+        "type": "Polygon",
+        "coordinates": [[[9.0, 0.0], [15.0, 0.0], [15.0, 4.0], [9.0, 4.0], [9.0, 0.0]]],
+    }
+    gj = tmp_path / "box.geojson"
+    gj.write_text(json.dumps(poly))
+    dumped = tmp_path / "spec.json"
+    out = tmp_path / "o.png"
+    # -i plus a non-data outline layer is allowed.
+    run_skill(plot_fn, "-i", str(src), "--layer", f"outline:{gj}", "-o", str(out))
+    assert out.stat().st_size > 0
+    run_skill(plot_fn, "-i", str(src), "--layer", f"outline:{gj}", "--dump-spec", str(dumped))
+    # With a fixed window that clips the outline, say so.
+    run_skill(
+        plot_fn,
+        "-i",
+        str(src),
+        "--layer",
+        f"outline:{gj}",
+        "-o",
+        str(out),
+        "--spec",
+        '{"geo":{"bbox":[3,10,1,13]}}',
+    )
+    assert "clipped at the frame" in capsys.readouterr().err
+
+
+def test_i_with_data_layer_error_names_the_layer_form(tmp_path, plot_fn):
+    from weather_skills_core import UsageError
+
+    src = write_zarr(make_gridded(n_time=1), tmp_path / "in.zarr")
+    with pytest.raises((UsageError, SystemExit)):
+        run_skill(
+            plot_fn, "-i", str(src), "--layer", f"heatmap:{src}", "-o", str(tmp_path / "x.png")
+        )
+
+
+def test_stacked_layers_with_different_quantities_warn_and_label_from_base(
+    tmp_path, plot_fn, capsys
+):
+    grid = make_gridded(n_time=1)
+    grid["precip"].attrs.update(
+        units="mm",
+        standard_name="lwe_thickness_of_precipitation_amount",
+        long_name="Total precipitation",
+        aggregation_period="1 month",
+    )
+    grid_path = write_zarr(grid, tmp_path / "tot.zarr")
+    stations = write_zarr(make_point_obs(n_time=1), tmp_path / "st.zarr")
+    out = tmp_path / "stack.png"
+    run_skill(
+        plot_fn,
+        "--layer",
+        f"heatmap:{grid_path}",
+        "--layer",
+        f"scatter:{stations}",
+        "-o",
+        str(out),
+    )
+    captured = capsys.readouterr()
+    assert "hold different quantities" in captured.err
+
+
+def test_data_line_reports_only_the_plotted_variable(tmp_path, plot_fn, capsys):
+    ds = make_gridded(n_time=1)
+    ds["other"] = ds["precip"] * np.nan
+    src = write_zarr(ds, tmp_path / "two.zarr")
+    run_skill(
+        plot_fn,
+        "-i",
+        str(src),
+        "-o",
+        str(tmp_path / "d.png"),
+        "--spec",
+        '{"inputs":[{"variable":"precip"}]}',
+    )
+    line = [x for x in capsys.readouterr().out.splitlines() if x.startswith("data:")][0]
+    assert "precip" in line and "other" not in line
+
+
+def test_seasonal_palette_darkens_above_200mm():
+    from matplotlib.colors import to_rgb
+
+    from weather_skills_plotting.theme import PRECIP_MASTER_BOUNDS, PRECIP_MASTER_COLORS
+
+    top = PRECIP_MASTER_COLORS[PRECIP_MASTER_BOUNDS.index(200) :]
+    lightness = [0.2126 * r + 0.7152 * g + 0.0722 * b for r, g, b in (to_rgb(c) for c in top)]
+    assert lightness == sorted(lightness, reverse=True)

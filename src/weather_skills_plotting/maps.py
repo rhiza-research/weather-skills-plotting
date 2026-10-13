@@ -13,7 +13,7 @@ from importlib.resources import files
 from pathlib import Path
 
 import numpy as np
-from weather_skills_core.cf import auto_variable, cf_dim
+from weather_skills_core.cf import auto_variable
 from weather_skills_core.errors import UsageError
 from weather_skills_core.standard_utils import (
     ensure_normalized_longitude,
@@ -24,14 +24,16 @@ from weather_skills_core.standard_utils import (
 from weather_skills_core.units import (
     DATA_INTERVAL_ATTR,
     parse_aggregation_period,
-    to_standard_units,
     units_equal,
     variable_units,
 )
 
 from weather_skills_plotting.display import (
+    cf_dim,
+    format_units_for_display,
     precip_for_display,
     resolve_input_labels,
+    to_display_units,
     variable_label_for_display,
 )
 from weather_skills_plotting.figure import (
@@ -65,9 +67,11 @@ from weather_skills_plotting.spec import (
 from weather_skills_plotting.theme import (
     DEFAULT_FONTSIZE,
     DISCRETE_PRECIP_NAMES,
+    PRECIP_TOTAL_NAMES,
     aggregation_days,
     deep_merge,
     mpl_cmap_norm,
+    mpl_color,
     parse_colormap_spec,
     resolve_colorscale,
     resolve_mpl_cmap_name,
@@ -84,15 +88,27 @@ MIDRES_MAX_SPAN_DEG = 90.0
 # (#50a5f5 / #1e6eeb) look like rainfall; this grey-blue does not.
 LAKE_FACECOLOR = "#708090"
 ADMIN1_STYLE = {"facecolor": "none", "edgecolor": "0.45", "linewidth": 0.4, "zorder": 3}
-# Same slate as lakes, thinner than admin-1, and drawn under the lake fill so
-# centerlines through Lake Victoria etc. are hidden.
+# Same slate as lakes, thinner than admin-1, drawn under the lake outline.
 RIVERS_STYLE = {"facecolor": "none", "edgecolor": LAKE_FACECOLOR, "linewidth": 0.35, "zorder": 3.4}
 LAKES_STYLE = {
     "facecolor": LAKE_FACECOLOR,
     "edgecolor": LAKE_FACECOLOR,
     "linewidth": 0.4,
+    "zorder": 0.5,
+}
+# Lakes are filled *beneath* the data (seen only where a cell is missing) and
+# outlined above it, so Lake Victoria never hides forecast or obs cells.
+LAKES_OUTLINE_STYLE = {
+    "facecolor": "none",
+    "edgecolor": LAKE_FACECOLOR,
+    "linewidth": 0.6,
     "zorder": 3.5,
 }
+# Default ``outline`` layer colour: distinct from the near-black borders/coastline.
+OUTLINE_COLOR = "#c51b7d"
+# Missing (NaN) heatmap cells: a light grey that is not any precip class
+# (white near-zero / beige trace classes), so "no data" never reads as "dry".
+NAN_COLOR = "#d9d9d9"
 BORDERS_STYLE = {"facecolor": "none", "edgecolor": "0.15", "linewidth": 0.8, "zorder": 4}
 COAST_STYLE = {"facecolor": "none", "edgecolor": "black", "linewidth": 0.8, "zorder": 4}
 
@@ -272,6 +288,8 @@ def load_geo_overlays(extent, overlays=None):
         add("physical", "rivers_lake_centerlines", RIVERS_STYLE)
     if choice.get("lakes", True):
         add("physical", "lakes", LAKES_STYLE)
+        if layers and layers[-1][1] is LAKES_STYLE:
+            layers.append((layers[-1][0], LAKES_OUTLINE_STYLE))
     if choice.get("borders", True):
         add("cultural", "admin_0_boundary_lines_land", BORDERS_STYLE)
     if choice.get("coastline", True):
@@ -624,15 +642,18 @@ def panel_title(da, sdim, step_value, all_steps):
             time_val = np.asarray(da["time"].values)
             start = time_val + np.asarray(step_value)
             dt = None
-            interval = da.attrs.get(DATA_INTERVAL_ATTR)
+            interval = da.attrs.get(DATA_INTERVAL_ATTR) or da.attrs.get("aggregation_period")
             if isinstance(interval, str) and interval.strip():
                 try:
                     seconds = float(parse_aggregation_period(interval).to("second").magnitude)
                     dt = np.timedelta64(int(round(seconds)), "s")
                 except (TypeError, ValueError, UsageError):
                     dt = None
+            if dt is None and step_arr.size < 2:
+                # One lead and no interval attr: the window length is unknown.
+                return f"valid {format_plot_date(start)}"
             if dt is None:
-                dt = step_arr[1] - step_arr[0] if step_arr.size > 1 else np.timedelta64(1, "D")
+                dt = step_arr[1] - step_arr[0]
             end = start + dt
             return f"{format_plot_date(start)} until {format_plot_date(end)}"
         except Exception:  # noqa: BLE001
@@ -1039,8 +1060,10 @@ def _cbar_boundary_kwargs(norm, cmap=None):
     if not isinstance(norm, BoundaryNorm):
         return {}
     kw = {"spacing": "uniform", "ticks": list(norm.boundaries)}
-    if getattr(cmap, "name", None) in DISCRETE_PRECIP_NAMES:
-        kw["extend"] = "both"
+    name = getattr(cmap, "name", None)
+    if name in DISCRETE_PRECIP_NAMES:
+        # Totals cannot go below 0 mm: only the top arrow means something.
+        kw["extend"] = "max" if name in PRECIP_TOTAL_NAMES else "both"
     return kw
 
 
@@ -1421,7 +1444,7 @@ def _prep_heatmap_layer(spec, bbox_nwse, region_polygon, extent, *, registry=Non
     _ensure_layer_dataset(spec)
     ds = spec.ds
     variable = _layer_variable(ds, spec)
-    ds = to_standard_units(ds, variables=[variable])
+    ds = to_display_units(ds, variables=[variable])
     ds = precip_for_display(ds, variable)
     da = ds[variable]
     overrides = _layer_overrides(spec, spec.options.get("index"))
@@ -1476,6 +1499,7 @@ def _prep_heatmap_layer(spec, bbox_nwse, region_polygon, extent, *, registry=Non
         "variable": variable,
         "units": variable_units(da),
         "zorder": _KIND_ZORDER["heatmap"],
+        "region_polygon": region_polygon,
         "draw": spec.options.get("draw"),
         "contour": spec.options.get("contour"),
         "mesh": spec.options.get("mesh"),
@@ -1492,7 +1516,7 @@ def _prep_scatter_layer(spec, bbox_nwse, region_polygon, *, registry=None):
             f"(got dims {list(ds.dims)})"
         )
     variable = _layer_variable(ds, spec)
-    ds = to_standard_units(ds, variables=[variable])
+    ds = to_display_units(ds, variables=[variable])
     ds = precip_for_display(ds, variable)
     da = ds[variable]
     overrides = _layer_overrides(spec, spec.options.get("index"))
@@ -1541,7 +1565,7 @@ def _prep_quiver_layer(spec, bbox_nwse, region_polygon, extent):
     _ensure_layer_dataset(spec)
     ds = spec.ds
     u_name, v_name = _resolve_uv(ds, spec.options.get("u_variable"), spec.options.get("v_variable"))
-    ds = to_standard_units(ds, variables=[u_name, v_name])
+    ds = to_display_units(ds, variables=[u_name, v_name])
     u_da = ds[u_name]
     v_da = ds[v_name]
     u_units = variable_units(u_da)
@@ -1733,6 +1757,25 @@ def _draw_heatmap_on_ax(ax, prepared, transform):
                 zorder=prepared["zorder"] + 0.1,
             )
         return filled
+    nan_color = prepared.get("nan_color")
+    missing = np.isnan(np.asarray(slab.values, dtype=float))
+    if nan_color and missing.any():
+        # Grey under-mesh for missing cells; cells outside geo.mask_geojson stay blank.
+        from matplotlib.colors import ListedColormap
+
+        if prepared.get("region_polygon") is not None:
+            import shapely
+
+            lon_grid, lat_grid = np.meshgrid(slab[lon_dim].values, slab[lat_dim].values)
+            missing &= shapely.contains_xy(prepared["region_polygon"], lon_grid, lat_grid)
+        ax.pcolormesh(
+            slab[lon_dim],
+            slab[lat_dim],
+            np.where(missing, 1.0, np.nan),
+            cmap=ListedColormap([nan_color]),
+            transform=transform,
+            zorder=prepared["zorder"] - 0.05,
+        )
     return ax.pcolormesh(
         slab[lon_dim],
         slab[lat_dim],
@@ -1837,8 +1880,12 @@ _OUTLINE_LINE_KWARGS = {
 
 
 def outline_style(line: dict | None, *, loc: str = "layers[].line") -> dict:
-    """Patch kwargs for an outline layer: black 1.2 pt unless ``line`` overrides."""
-    style = {"edgecolor": "black", "linewidth": 1.2}
+    """Patch kwargs for an outline layer: magenta 1.4 pt unless ``line`` overrides.
+
+    Not black, so a region outline stays visible where it runs along the
+    Natural Earth country borders.
+    """
+    style = {"edgecolor": OUTLINE_COLOR, "linewidth": 1.4}
     unsupported = sorted(k for k in (line or {}) if k not in _OUTLINE_LINE_KWARGS)
     if unsupported:
         raise UsageError(
@@ -2016,6 +2063,22 @@ def _apply_shared_scale(prepared_layers):
     data = [p for p in prepared_layers if p["kind"] in ("heatmap", "scatter")]
     if not data:
         return
+    units = {format_units_for_display(p.get("units")) for p in data}
+    periods = {p["da"].attrs.get("aggregation_period") for p in data}
+    if len(units) > 1 or len(periods) > 1:
+        # e.g. daily station rates over a monthly-total heatmap: one colorbar would mislabel one.
+        described = ", ".join(
+            f"{p['spec'].kind}:{Path(str(p['spec'].path)).name} "
+            f"[{format_units_for_display(p.get('units')) or 'no units'}, "
+            f"aggregation_period {p['da'].attrs.get('aggregation_period') or 'none'}]"
+            for p in data
+        )
+        print(
+            f"Warning: layers sharing one color scale hold different quantities ({described}). "
+            "The colorbar is labelled from the first (base) layer; aggregate/convert the "
+            "layers to the same units and period, or set layout.shared_colorscale: false.",
+            file=sys.stderr,
+        )
     user = [p for p in data if p.get("vlim_user")]
     if user:
         limits = {(p["vmin"], p["vmax"]) for p in user}
@@ -2096,6 +2159,8 @@ def _plot_layers(
 
     region_polygon = _combined_mask_polygon(mask_geojson, layers)
     extent_vals = parse_extent(extent)
+    nan_color = ((mpl_spec or {}).get("geo") or {}).get("nan_color", NAN_COLOR)
+    nan_color = mpl_color(NAN_COLOR if nan_color is True else nan_color or None)
     prepared = []
     for i, spec in enumerate(layers):
         if spec.kind == "mask":
@@ -2119,6 +2184,7 @@ def _plot_layers(
         elif cbar_label:
             item["cbar_label"] = cbar_label
         item["zorder"] = item["zorder"] + i * 0.01
+        item["nan_color"] = nan_color
         prepared.append(item)
 
     if not prepared:
@@ -2130,6 +2196,7 @@ def _plot_layers(
             p["draw_mesh"] = not has_heatmap
 
     groups = _panel_groups(prepared)
+    single_title = None
     if groups is not None:
         where = "subplots[] cell" if is_subplots else "heatmap/quiver trace"
         for p in prepared:
@@ -2185,14 +2252,16 @@ def _plot_layers(
             _sel_layer(p, dim, aligned)
         title_da = _layer_field(driver)
         steps = list(title_da[sdim].values) if sdim in title_da.dims else aligned
+        native = driver.get("native_steps")
+        native_dim = driver.get("native_step_dim")
+        title_steps = native if native is not None and native_dim == sdim else steps
         if sdim is not None and title_da.sizes.get(sdim, 1) == 1:
+            # One map: still title it with its date (or forecast valid window).
+            single_title = panel_title(title_da, sdim, steps[0], title_steps)
             for p in prepared:
                 _squeeze_layer_dim(p, p.get("panel_dim"))
             steps = [None]
             sdim = None
-        native = driver.get("native_steps")
-        native_dim = driver.get("native_step_dim")
-        title_steps = native if native is not None and native_dim == sdim else steps
 
     for p in prepared:
         dim = p.get("panel_dim")
@@ -2203,12 +2272,12 @@ def _plot_layers(
                 "select a position with index= (the other layers have no panel axis)"
             )
 
+    user_window = extent_vals is not None or bbox_nwse is not None
     if extent_vals is None:
         if bbox_nwse is not None:
             r_n, r_w, r_s, r_e = bbox_nwse
             extent_vals = [float(r_w), float(r_e), float(r_s), float(r_n)]
         else:
-            extent_vals = None
             for p in prepared:
                 if p["kind"] in ("heatmap", "quiver"):
                     src = p["da"] if p["kind"] == "heatmap" else p["speed"]
@@ -2218,8 +2287,34 @@ def _plot_layers(
                 scatter = next((p for p in prepared if p["kind"] == "scatter"), None)
                 if scatter is not None:
                     extent_vals = _extent_from_points(scatter["da"])
-                else:
-                    raise UsageError("could not determine map extent; set geo.extent or geo.bbox")
+    outline_geoms = [g for p in prepared if p["kind"] == "outline" for g in p["polygons"]]
+    if outline_geoms:
+        import shapely
+
+        w, s, e, n = shapely.GeometryCollection(outline_geoms).bounds
+        pad = 0.03 * max(e - w, n - s)
+        past = extent_vals is not None and (
+            w < extent_vals[0] or e > extent_vals[1] or s < extent_vals[2] or n > extent_vals[3]
+        )
+        if user_window and past:
+            print(
+                f"Warning: an outline layer reaches past the map window "
+                f"(lon {w:.2f}..{e:.2f}, lat {s:.2f}..{n:.2f}) and is clipped at the frame; "
+                "widen geo.bbox / geo.extent to show all of it.",
+                file=sys.stderr,
+            )
+        elif extent_vals is None:
+            extent_vals = [w - pad, e + pad, s - pad, n + pad]
+        elif past:
+            # Grow the data window to the outline (plus a small pad) so it is not clipped.
+            extent_vals = [
+                min(extent_vals[0], w - pad),
+                max(extent_vals[1], e + pad),
+                min(extent_vals[2], s - pad),
+                max(extent_vals[3], n + pad),
+            ]
+    if extent_vals is None:
+        raise UsageError("could not determine map extent; set geo.extent or geo.bbox")
 
     wrap_lon = True
     for p in prepared:
@@ -2255,9 +2350,25 @@ def _plot_layers(
         "hspace": None if spacing is None else spacing[1],
         "extent": list(extent_vals) if extent_vals is not None else None,
         "colormap": next(
-            (getattr(p.get("cmap"), "name", None) for p in prepared if p.get("cmap") is not None),
+            (
+                p["cmap"] if isinstance(p["cmap"], str) else getattr(p["cmap"], "name", None)
+                for p in prepared
+                if p.get("cmap") is not None
+            ),
             None,
         ),
+        # What was actually drawn, for the stdout ``data:`` line (not every variable on disk).
+        "plotted": [
+            (str(name), da)
+            for p in prepared
+            for name, da in (
+                [(p["variable"], p["da"])]
+                if p["kind"] in ("heatmap", "scatter")
+                else [(p["u_da"].name, p["u_da"]), (p["v_da"].name, p["v_da"])]
+                if p["kind"] == "quiver"
+                else []
+            )
+        ],
     }
     overlays = load_geo_overlays(extent_vals, ((mpl_spec or {}).get("geo") or {}).get("overlays"))
     cities_map = parse_cities(cities)
@@ -2286,6 +2397,7 @@ def _plot_layers(
             break
 
     last_by_group = {}
+    label_by_group = {}  # the colorbar label comes from the first (base) layer of a group
     group_axes = {}
     group_overrides = {}
     last_quiv = None
@@ -2309,12 +2421,14 @@ def _plot_layers(
                 artist = _draw_heatmap_on_ax(ax, slab, transform)
                 key = share_keys.get(id(p), id(p))
                 last_by_group[key] = (artist, p)
+                label_by_group.setdefault(key, p)
                 group_axes.setdefault(key, []).append(ax)
                 group_overrides.setdefault(key, []).append(p["spec"].options.get("colorbar"))
             elif slab["kind"] == "scatter":
                 artist = _draw_scatter_on_ax(ax, slab, transform)
                 key = share_keys.get(id(p), id(p))
                 last_by_group[key] = (artist, p)
+                label_by_group.setdefault(key, p)
                 group_axes.setdefault(key, []).append(ax)
                 group_overrides.setdefault(key, []).append(p["spec"].options.get("colorbar"))
             elif slab["kind"] == "quiver":
@@ -2350,7 +2464,7 @@ def _plot_layers(
         elif groups is not None:
             auto = _panel_label_title(panel_layers)
         else:
-            auto = None
+            auto = single_title
         _set_panel_title(ax, i, auto, subplot_titles)
 
     for j in range(num_steps, len(axes)):
@@ -2405,11 +2519,12 @@ def _plot_layers(
             extend = _cbar_extend_for_limits(field, p.get("vmin"), p.get("vmax"))
         if extend and "extend" not in kw:
             kw["extend"] = extend
+        base = label_by_group.get(key, p)
         cbar = add_shared_colorbar(
             fig,
             mappable,
             axes_for,
-            p.get("cbar_label") or _variable_label(p.get("da")),
+            base.get("cbar_label") or _variable_label(base.get("da")),
             **kw,
         )
         if (
@@ -2782,7 +2897,20 @@ def scale_from_da(da, colormap=None, *, stretch=False, label=None, vmin=None, vm
     return scale
 
 
-def hits_scale(*, label="event"):
+def hits_scale(*, label="event", split=False):
+    """Event classes. ``split`` separates verify's ``disagree`` into miss / false alarm
+    (the caller recodes false alarms as -2)."""
+    if split:
+        return {
+            "name": "hits",
+            "colors": ["#fdae61", *HITS_COLORS],
+            "bounds": [-2.5, -1.5, -0.5, 0.5, 1.5],
+            "tickvals": [-2, -1, 0, 1],
+            "ticktext": ["false alarm", "miss", "below", "hit"],
+            "cmin": -2.5,
+            "cmax": 1.5,
+            "label": label,
+        }
     return {
         "name": "hits",
         "colors": HITS_COLORS,

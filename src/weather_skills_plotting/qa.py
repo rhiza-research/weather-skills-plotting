@@ -66,14 +66,25 @@ def data_var_counts(datasets) -> list[tuple[str, int, int]]:
     return rows
 
 
-def data_status(datasets) -> tuple[str, str]:
+def data_status(datasets, plotted=None) -> tuple[str, str]:
     """Return ``(status, detail)``.
 
     ``status`` is ``not null`` when any numeric data variable has a finite
     value, ``NULL`` when every such variable is all-NaN / empty, or
-    ``not checked`` when there is nothing to scan.
+    ``not checked`` when there is nothing to scan. ``plotted`` — ``(name,
+    DataArray)`` pairs the compiler drew — replaces the scan of every
+    variable in ``datasets`` when given.
     """
-    rows = data_var_counts(datasets)
+    import numpy as np
+
+    if plotted:
+        rows = []
+        for name, da in plotted:
+            values = _numeric_values(da)
+            if values is not None:
+                rows.append((name, int(np.isfinite(values).sum()), int(values.size)))
+    else:
+        rows = data_var_counts(datasets)
     if not rows:
         return "not checked", "no numeric data variables"
     detail = ", ".join(f"{name} {finite}/{n} finite" for name, finite, n in rows)
@@ -82,11 +93,11 @@ def data_status(datasets) -> tuple[str, str]:
     return "NULL", detail
 
 
-def report_figure(path, datasets=None, *, file=None) -> str:
+def report_figure(path, datasets=None, *, file=None, plotted=None) -> str:
     """Print ``plot hash`` and ``data:`` lines. Returns the pixel hash."""
     dest = sys.stdout if file is None else file
     digest = hash_png_pixels(path)
-    status, detail = data_status(datasets)
+    status, detail = data_status(datasets, plotted)
     print(f"plot hash: {digest}", file=dest)
     print(f"data: {status} ({detail})", file=dest)
     if status == "NULL":

@@ -23,7 +23,7 @@ and transforms when those are available (for example a fetch skill,
    `--spec` JSON, not a flag — read that skill's SKILL.md and
    `docs/plotting.md` before guessing a key.
 4. Run the skill script and report the output PNG path, and look at the
-   pixels (or use `inspect-figure` if available) before calling a render
+   pixels before calling a render
    correct.
 5. On failure, report the actual error — do not paper over it.
 
@@ -37,8 +37,9 @@ and transforms when those are available (for example a fetch skill,
 - **`plot-timeseries`** overlays one line per input Zarr on a shared time
   axis — for several stacked panels, or spaghetti/band plots across an
   ensemble dimension.
-- **`plot-verify`** builds a lead-week event-verification grid (week-4
-  through week-1 forecasts against one observation week, with a hits row).
+- **`plot-verify`** builds a lead-week verification grid: ONE observation
+  week, then the week-1 … week-4 forecasts that verify it (one init per lead,
+  week-1 = latest init), with a hits / bias / MAE row.
   Coarsen observations onto the forecast grid first, not the other way
   around.
 - **`plot-mediogram`** compares a forecast ensemble against an m-climate

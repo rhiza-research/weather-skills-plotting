@@ -9,6 +9,7 @@ from pathlib import Path
 from weather_skills_core.errors import UsageError
 from weather_skills_core.units import (
     parse_aggregation_period,
+    units_convertible,
     variable_units,
 )
 
@@ -56,8 +57,9 @@ PRECIP_LONG_MIN_DAYS = 5
 # ``ppt_total`` — white, beige, light / mid / dark green, blue, purple,
 # yellow, orange, red — so adjacent classes stay distinct. 0–1 mm is white,
 # matching CHC's 0–2 mm class; 1–2 and 2–5 mm are beige so green starts at
-# 5 mm. CHC's pale cyan and pale lavender are skipped. Overflow above 1000 mm
-# is a darker maroon than the last class, not CHC's pale pink.
+# 5 mm. CHC's pale cyan and pale lavender are skipped. Above 200 mm the
+# classes keep darkening (dark red, wine, deep violet) instead of CHC's salmon and
+# pale pink, so seasonal totals never read lighter as they grow.
 PRECIP_BEIGE_TRACE = "#f6e8c3"  # 1–2 mm
 PRECIP_BEIGE_LIGHT = "#e8d4a0"  # 2–5 mm
 PRECIP_MASTER_BOUNDS = [0, 1, 2, 5, 10, 15, 20, 30, 40, 50, 75, 100, 150, 200, 400, 700, 1000]
@@ -70,11 +72,12 @@ PRECIP_MASTER_COLORS = [
     PRECIP_COLORS[4],  # 15–20 mm dark green
     PRECIP_COLORS[6],  # 20–30 mm sky blue
     PRECIP_COLORS[7],  # 30–40 mm blue
-    *PRECIP_COLORS[9:16],  # 40–700 mm purple … salmon (skip pale lavender)
-    "#7a0000",  # 700–1000 mm
+    *PRECIP_COLORS[9:15],  # 40–400 mm purple … dark red (skip pale lavender)
+    "#800040",  # 400–700 mm wine
+    "#3d0066",  # 700–1000 mm deep violet
 ]
 PRECIP_UNDER = "#ffffff"
-PRECIP_OVER = "#5a0000"
+PRECIP_OVER = "#1a0033"
 PRECIP_WINDOW_ORDER = ("ppt_daily", "ppt_week", "ppt_month", "ppt_season")
 PRECIP_WINDOW_VMAX = {
     "ppt_daily": 50.0,
@@ -183,7 +186,7 @@ def precip_window_name(days: float | None) -> str:
         return "ppt_week"
     if days < 2:
         return "ppt_daily"
-    if days < 10:
+    if days <= 10:  # a dekad is a 10-day window: keep it on the weekly scale
         return "ppt_week"
     if days < 40:
         return "ppt_month"
@@ -277,6 +280,11 @@ DISCRETE_PRECIP_NAMES = frozenset(
         "ppt_spp",
         "spi",
     }
+)
+
+# Totals palettes (no meaningful values below 0 mm, so the colorbar extends max only).
+PRECIP_TOTAL_NAMES = frozenset(
+    {*PRECIP_WINDOW_ORDER, "chirps_total", "chirps_short", "ppt_total", "ppt_short"}
 )
 
 _THEME_ENV = "WEATHER_SKILLS_PLOT_THEME"
@@ -922,12 +930,34 @@ def resolve_colorscale(
             "bounds": None,
         }
         return _scale_with_overrides(scale, parsed, stretch=stretch)
+    if da is not None and is_precip(da) and not (is_spi(da) or is_precip_poa(da)):
+        # The mm class palettes only fit amounts whose range clears the white
+        # near-zero class (0–1 mm totals, ±10 mm anomalies). A rate such as a
+        # ±0.4 mm/day change, or a tiny range, would be one white class.
+        import numpy as np
+
+        units = variable_units(da)
+        anomaly = is_precip_anomaly(da)
+        values = np.asarray(da.values, dtype=float)
+        span = float(np.nanmax(np.abs(values))) if np.isfinite(values).any() else 0.0
+        is_amount = units is not None and units_convertible(units, "mm")
+        if not is_amount or span < (10.0 if anomaly else 1.0):
+            name = "BrBG" if anomaly else "YlGnBu"
+            return _scale_with_overrides(
+                {"name": name, "cmap": name, "bounds": None}, parsed, stretch=stretch
+            )
     if da is not None and (is_precip(da) or is_spi(da) or is_precip_poa(da)):
         name, colors, bounds = named_precip_scale(da)
         return _scale_with_overrides(
             _discrete_scale(name, {"colors": colors, "bounds": bounds}, stretch=stretch),
             parsed,
             stretch=stretch,
+        )
+    units = variable_units(da) if da is not None else None
+    if units is not None and units.startswith("delta_"):
+        # A temperature difference (e.g. a ``difference`` anomaly) is signed.
+        return _scale_with_overrides(
+            {"name": "RdBu_r", "cmap": "RdBu_r", "bounds": None}, parsed, stretch=stretch
         )
     return _scale_with_overrides(
         {"name": SEABORN_SEQUENTIAL, "cmap": SEABORN_SEQUENTIAL, "bounds": None},

@@ -14,26 +14,29 @@ from __future__ import annotations
 
 import sys
 
+import numpy as np
 from weather_skills_core import Dataset, UsageError, weather_skill
-from weather_skills_core.cf import cf_dim
 from weather_skills_core.standard_utils import polygon_from_geojson
-from weather_skills_core.units import to_standard_units, units_equal, variable_units
+from weather_skills_core.units import units_equal, variable_units
 
 from weather_skills_plotting import export
 from weather_skills_plotting.display import (
+    cf_dim,
     combine_display_labels,
     dataset_display_label,
     format_units_for_display,
     precip_for_display,
     resolve_input_labels,
     resolve_input_variable,
+    to_display_units,
 )
 from weather_skills_plotting.figure import (
     DEFAULT_FONTSIZE,
+    format_plot_date,
     format_plot_date_range,
     parse_figsize,  # noqa: F401 — tests call this via the skill module
 )
-from weather_skills_plotting.maps import extent_from_da, slice_bbox_mask
+from weather_skills_plotting.maps import extent_from_da, plain, slice_bbox_mask
 from weather_skills_plotting.reference import install_spec_help
 from weather_skills_plotting.spec import (
     DUMP_SPEC_ARGUMENT_HELP,
@@ -70,6 +73,7 @@ _VERIFY_VARS = {
 }
 _ROW_FALLBACKS = ("Observation", "Forecast", "Verification")
 _METRIC_ROW_LABELS = {"hits": "Hits", "bias": "Bias", "mae": "MAE"}
+INIT_ATTR = "weather_skills_forecast_init"
 
 
 def _metric_from_verify(ds, role: str) -> str:
@@ -310,8 +314,9 @@ def _squeeze_map(da, role):
 
 
 def _pick_variable(ds, inputs, input_id, role):
-    """This dataset's own ``inputs[].variable`` (by id), else ``inputs[0].variable``,
-    else auto-detect — never a name borrowed from a *different* dataset's field."""
+    """This dataset's own ``inputs[].variable`` (by id), else ``inputs[0].variable``
+    when this dataset has it, else auto-detect (obs ``precip`` next to a forecast's
+    ``precipitation_surface`` needs no per-input ``variable``)."""
     name = resolve_input_variable(inputs, ds, id=input_id)
     if not name or name not in ds:
         raise UsageError(f"variable {name!r} missing from {role}. Available: {list(ds.data_vars)}")
@@ -319,7 +324,7 @@ def _pick_variable(ds, inputs, input_id, role):
 
 
 def _prepare(ds, variable):
-    return precip_for_display(to_standard_units(ds, variables=[variable]), variable)
+    return precip_for_display(to_display_units(ds, variables=[variable]), variable)
 
 
 @weather_skill(
@@ -430,6 +435,27 @@ def plot_verify(
     if len(set(metrics)) != 1:
         raise UsageError(f"all --verify inputs must share the same verify_metric; got {metrics}.")
     metric = metrics[0]
+    # One fixed valid week, one init per lead: week-1 is the latest init. Same or
+    # out-of-order inits mean the columns do not verify the obs week shown.
+    inits = [
+        str(fc.attrs.get(INIT_ATTR) or vds.attrs.get(INIT_ATTR) or "")[:10] or None
+        for fc, vds in zip(forecasts, verify_sets, strict=True)
+    ]
+    known = [init for init in inits if init]
+    if len(known) == len(inits) and len(inits) > 1:
+        if len(set(known)) < len(known) or known != sorted(known, reverse=True):
+            print(
+                f"Warning: forecast inits by lead are {known}. plot-verify expects ONE "
+                "verifying (obs) week and one init per lead, latest init as week-1 "
+                "(e.g. inits 14, 7, 1 Sep, 24 Aug for weeks 1-4 of 14-20 Sep). Lead weeks "
+                "of a single init verify different obs weeks and do not belong in one grid.",
+                file=sys.stderr,
+            )
+    if not trace0.get("leads") and len(known) == len(inits):
+        leads = [
+            f"{lead}\ninit {format_plot_date(np.datetime64(init))}"
+            for lead, init in zip(leads, inits, strict=True)
+        ]
     row_labels = _row_labels(obs, forecasts, metric, labels=labels)
     trace0 = spec_data["traces"][0]
     trace0["metric"] = metric
@@ -441,7 +467,6 @@ def plot_verify(
         raise UsageError("--output is required unless --dump-spec is set")
 
     import cf_xarray  # noqa: F401 — registers the .cf accessor
-    import numpy as np
 
     inputs_spec = spec_data.get("inputs")
     obs_name = _pick_variable(obs, inputs_spec, "obs", "--obs")
@@ -477,6 +502,12 @@ def plot_verify(
     obs_lat, obs_lon = _lat_lon(obs_da, "--obs")
     obs_da = _slice_bbox_mask(obs_da, obs_lat, obs_lon, bbox, polygon, "--obs")
     week_dates = _verifying_week_title(obs_ds[obs_name], obs_ds)
+    threshold = None
+    if metric == "hits":
+        threshold = _verify_field(verify_sets[0], metric, "--verify 1").attrs.get("event_threshold")
+        # The threshold is in the obs units verify compared (as stored, before display).
+        raw_obs = plain(_squeeze_map(obs[obs_name], "--obs"))
+        raw_units = format_units_for_display(variable_units(obs[obs_name]))
 
     columns = []
     for i, (fc_ds, fc_name, verify_ds, label) in enumerate(
@@ -490,10 +521,15 @@ def plot_verify(
             _verify_field(verify_ds, metric, f"--verify {i}"),
             f"--verify {i}",
         )
+        if metric == "hits" and threshold is not None:
+            # verify writes -1 for both kinds of disagreement; the obs says which:
+            # obs event -> miss (-1), no obs event -> false alarm (-2).
+            obs_event = raw_obs >= threshold
+            verify_da = verify_da.where(~((verify_da == -1) & ~obs_event), -2)
         verify_da = _slice_bbox_mask(verify_da, lat_dim, lon_dim, bbox, polygon, f"--verify {i}")
         summary = verify_ds.attrs.get("verify_score_summary")
         if isinstance(summary, str) and summary.strip():
-            print(f"{label}  {summary.strip()}")
+            print(f"{label.replace(chr(10), ' ')}  {summary.strip()}")
         columns.append((label, fc_da, verify_da, lat_dim, lon_dim))
 
     extent = _extent_from_da(obs_da, obs_lat, obs_lon, bbox)
@@ -529,7 +565,10 @@ def plot_verify(
             obs_da, field_cmap, stretch=True, label=_variable_label(obs_da), vmin=vmin, vmax=vmax
         )
     if metric == "hits":
-        verify_scale = hits_scale()
+        caption = "event"
+        if threshold is not None:
+            caption = f"event: ≥ {float(threshold):g} {raw_units}".rstrip()
+        verify_scale = hits_scale(label=caption, split=threshold is not None)
     else:
         import xarray as xr
 

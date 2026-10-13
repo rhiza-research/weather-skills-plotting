@@ -12,7 +12,7 @@ for dataset loading, the CLI decorator, and a handful of shared utilities.
 | --- | --- |
 | [`plot`](skills/plot/) | Heatmap, contour, timeseries, xy scatter, wind-rose, quiver, or layered map, one dataset or several side by side |
 | [`plot-timeseries`](skills/plot-timeseries/) | One 1D trace per input Zarr overlaid on a shared time axis |
-| [`plot-verify`](skills/plot-verify/) | Lead-week event-verification grid of maps for one observation week |
+| [`plot-verify`](skills/plot-verify/) | Lead-week verification grid of maps: one observation week, one forecast init per lead |
 | [`plot-mediogram`](skills/plot-mediogram/) | ECMWF-style mediogram comparing a forecast ensemble against an m-climate ensemble |
 
 The full `--spec` schema shared by all four skills is documented in
@@ -38,9 +38,11 @@ uv run skills/plot/scripts/plot.py -i /tmp/forecast.zarr -o /tmp/out.png \
 uv run skills/plot-timeseries/scripts/plot_timeseries.py -i /tmp/a.zarr -i /tmp/b.zarr \
   -o /tmp/timeseries.png
 
-# A lead-week verification grid
-uv run skills/plot-verify/scripts/plot_verify.py \
-  --obs /tmp/obs.zarr --forecast /tmp/wk1.zarr /tmp/wk2.zarr /tmp/wk3.zarr /tmp/wk4.zarr \
+# A lead-week verification grid: one obs week, one init per lead (week-1 = latest
+# init), each forecast already paired with its `verify` Zarr
+uv run skills/plot-verify/scripts/plot_verify.py --obs /tmp/obs.zarr \
+  --forecast /tmp/wk1.zarr --verify /tmp/verify_wk1.zarr \
+  --forecast /tmp/wk2.zarr --verify /tmp/verify_wk2.zarr \
   -o /tmp/verify.png
 
 # A mediogram

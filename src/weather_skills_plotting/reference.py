@@ -142,6 +142,7 @@ _DESCRIPTIONS = {
     "geo.draw_boxes": "list of [N, W, S, E] boxes to outline",
     "geo.lat": "point latitude (mediogram / point extraction)",
     "geo.lon": "point longitude (mediogram / point extraction)",
+    "geo.nan_color": "fill for missing (NaN) heatmap cells, default light grey '#d9d9d9'; false = transparent. Cells outside geo.mask_geojson stay blank",
     "geo.overlays": "base-map layers: false = none, or {coastline, borders, lakes, rivers, admin1: true/false}; admin1 defaults on only for country-scale views",
     # annotations[]
     "annotation.text": "the label text (required)",

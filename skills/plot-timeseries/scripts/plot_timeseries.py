@@ -16,15 +16,16 @@ import sys
 from pathlib import Path
 
 from weather_skills_core import Dataset, UsageError, weather_skill
-from weather_skills_core.cf import cf_dim
-from weather_skills_core.units import to_standard_units, units_equal, variable_units
+from weather_skills_core.units import units_equal, variable_units
 
 from weather_skills_plotting import export
 from weather_skills_plotting.charts import compile_lines, leftover_dims
 from weather_skills_plotting.display import (
+    cf_dim,
     dataset_display_label,
     precip_for_display,
     resolve_input_variable,
+    to_display_units,
     variable_label_for_display,
 )
 from weather_skills_plotting.figure import (
@@ -442,7 +443,7 @@ def plot_timeseries(
                 f"Available: {list(dataset.data_vars)}. Set inputs[{idx}].variable."
             )
     rates = [
-        to_standard_units(dataset, variables=[variable])
+        to_display_units(dataset, variables=[variable])
         for dataset, variable in zip(datasets, variables, strict=True)
     ]
     datasets = [
