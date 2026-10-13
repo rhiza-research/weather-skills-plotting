@@ -21,11 +21,11 @@ from pathlib import Path
 
 from weather_skills_core import Dataset, UsageError, weather_skill
 from weather_skills_core.cf import auto_variable
-from weather_skills_core.display_labels import dataset_display_label
 from weather_skills_core.units import units_equal, variable_units
 
 from weather_skills_plotting import parse_spec_arg
 from weather_skills_plotting.cli import input_path, letter, run, skeleton, spec_datasets, warn
+from weather_skills_plotting.display import dataset_display_label
 from weather_skills_plotting.reference import install_spec_help
 from weather_skills_plotting.spec import DUMP_SPEC_HELP, SPEC_ARGUMENT_HELP, merge_spec
 

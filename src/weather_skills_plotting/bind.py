@@ -18,14 +18,9 @@ import numpy as np
 from weather_skills_core.cf import auto_variable, cf_dim
 from weather_skills_core.errors import UsageError
 from weather_skills_core.standard_utils import ensure_normalized_longitude, polygon_from_geojson
-from weather_skills_core.units import (
-    precip_for_display,
-    to_standard_units,
-    units_equal,
-    variable_label_for_display,
-    variable_units,
-)
+from weather_skills_core.units import to_standard_units, units_equal, variable_units
 
+from weather_skills_plotting.display import precip_for_display, variable_label_for_display
 from weather_skills_plotting.geodata import (
     extent_from_da,
     plain,

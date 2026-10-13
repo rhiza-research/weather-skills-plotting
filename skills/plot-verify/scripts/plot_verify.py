@@ -24,11 +24,15 @@ second scale. The cell under the observation names the metric.
 import numpy as np
 from weather_skills_core import Dataset, UsageError, weather_skill
 from weather_skills_core.cf import auto_variable, cf_dim
-from weather_skills_core.display_labels import combine_display_labels, dataset_display_label
-from weather_skills_core.units import format_units_for_display, units_equal, variable_units
+from weather_skills_core.units import units_equal, variable_units
 
 from weather_skills_plotting import parse_spec_arg
 from weather_skills_plotting.cli import run, skeleton, warn
+from weather_skills_plotting.display import (
+    combine_display_labels,
+    dataset_display_label,
+    format_units_for_display,
+)
 from weather_skills_plotting.labels import format_plot_date_range
 from weather_skills_plotting.layout import axis_suffix, panel_title
 from weather_skills_plotting.palettes import aggregation_days, is_precip, widest_precip_window
