@@ -14,12 +14,12 @@ from skill_conftest import (
     write_zarr,
 )
 from weather_skills_core.provenance import load_figure_history
-from weather_skills_core.units import precip_for_display
 
 from weather_skills_plotting import charts as plot_charts
 from weather_skills_plotting import figure as ws_figure
 from weather_skills_plotting import maps as plot_maps
 from weather_skills_plotting import spec as ws_spec
+from weather_skills_plotting.display import precip_for_display
 from weather_skills_plotting.reference import RECIPES
 
 plot_mod = load_skill("plot", "plot")

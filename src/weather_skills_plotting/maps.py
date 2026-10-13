@@ -14,7 +14,6 @@ from pathlib import Path
 
 import numpy as np
 from weather_skills_core.cf import auto_variable, cf_dim
-from weather_skills_core.display_labels import resolve_input_labels
 from weather_skills_core.errors import UsageError
 from weather_skills_core.standard_utils import (
     ensure_normalized_longitude,
@@ -25,13 +24,16 @@ from weather_skills_core.standard_utils import (
 from weather_skills_core.units import (
     DATA_INTERVAL_ATTR,
     parse_aggregation_period,
-    precip_for_display,
     to_standard_units,
     units_equal,
-    variable_label_for_display,
     variable_units,
 )
 
+from weather_skills_plotting.display import (
+    precip_for_display,
+    resolve_input_labels,
+    variable_label_for_display,
+)
 from weather_skills_plotting.figure import (
     add_shared_colorbar,
     apply_style_then_rc,

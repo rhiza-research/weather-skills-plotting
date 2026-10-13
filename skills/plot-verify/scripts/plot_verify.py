@@ -21,22 +21,19 @@ from __future__ import annotations
 import sys
 
 from weather_skills_core import Dataset, UsageError, weather_skill
-from weather_skills_core.cf import cf_dim, resolve_input_variable
-from weather_skills_core.display_labels import (
-    combine_display_labels,
-    dataset_display_label,
-    resolve_input_labels,
-)
+from weather_skills_core.cf import cf_dim
 from weather_skills_core.standard_utils import polygon_from_geojson
-from weather_skills_core.units import (
-    format_units_for_display,
-    precip_for_display,
-    to_standard_units,
-    units_equal,
-    variable_units,
-)
+from weather_skills_core.units import to_standard_units, units_equal, variable_units
 
 from weather_skills_plotting import export
+from weather_skills_plotting.display import (
+    combine_display_labels,
+    dataset_display_label,
+    format_units_for_display,
+    precip_for_display,
+    resolve_input_labels,
+    resolve_input_variable,
+)
 from weather_skills_plotting.figure import (
     DEFAULT_FONTSIZE,
     format_plot_date_range,

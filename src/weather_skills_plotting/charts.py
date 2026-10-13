@@ -12,14 +12,9 @@ from weather_skills_core.standard_utils import (
     parse_bbox,
     polygon_from_geojson,
 )
-from weather_skills_core.units import (
-    precip_for_display,
-    to_standard_units,
-    units_equal,
-    variable_label_for_display,
-    variable_units,
-)
+from weather_skills_core.units import to_standard_units, units_equal, variable_units
 
+from weather_skills_plotting.display import precip_for_display, variable_label_for_display
 from weather_skills_plotting.figure import (
     LEGEND_KEYS,
     apply_date_ticks,

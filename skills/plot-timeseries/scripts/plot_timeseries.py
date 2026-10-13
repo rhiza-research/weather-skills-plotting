@@ -22,19 +22,17 @@ import sys
 from pathlib import Path
 
 from weather_skills_core import Dataset, UsageError, weather_skill
-from weather_skills_core.cf import resolve_input_variable
-from weather_skills_core.display_labels import dataset_display_label
 from weather_skills_core.standard_utils import pick_time_dim
-from weather_skills_core.units import (
-    precip_for_display,
-    to_standard_units,
-    units_equal,
-    variable_label_for_display,
-    variable_units,
-)
+from weather_skills_core.units import to_standard_units, units_equal, variable_units
 
 from weather_skills_plotting import export
 from weather_skills_plotting.charts import compile_lines, leftover_dims
+from weather_skills_plotting.display import (
+    dataset_display_label,
+    precip_for_display,
+    resolve_input_variable,
+    variable_label_for_display,
+)
 from weather_skills_plotting.figure import (
     DEFAULT_FONTSIZE,
     format_plot_date,

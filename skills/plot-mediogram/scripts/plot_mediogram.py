@@ -17,15 +17,16 @@
 """ECMWF-style mediogram: forecast vs m-climate ensemble distributions at a point."""
 
 from weather_skills_core import DataError, Dataset, UsageError, weather_skill
-from weather_skills_core.cf import cf_dim, resolve_input_variable
-from weather_skills_core.units import (
-    precip_for_display,
-    to_standard_units,
-    variable_label_for_display,
-)
+from weather_skills_core.cf import cf_dim
+from weather_skills_core.units import to_standard_units
 
 from weather_skills_plotting import export
 from weather_skills_plotting.charts import compile_mediogram
+from weather_skills_plotting.display import (
+    precip_for_display,
+    resolve_input_variable,
+    variable_label_for_display,
+)
 from weather_skills_plotting.figure import (
     DEFAULT_FONTSIZE,
     parse_figsize,  # noqa: F401 — tests call this via the skill module
