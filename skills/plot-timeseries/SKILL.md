@@ -13,7 +13,9 @@ metadata:
 
 Each `-i` becomes one trace on a shared time axis: uid `a`, `b`, … in order, named after the file (or the station id). `--spec` is a **standard Plotly figure** merged onto that, with traces matched by `uid`. Everything except `meta` is plain Plotly: `type: "bar"`, `line`, `marker`, `layout.barmode`, `layout.yaxis2`, `layout.grid`. The `-o` suffix picks `.png`, `.jpg`, or `.html`.
 
-**Settings on `data[0]` apply to every series that leaves them unset:** `meta.source.variable`, `meta.source.reduce`, `meta.along`, `meta.along_color`, `meta.band`, `meta.align`. Set them once on trace `a`.
+**Settings on `data[0]` apply to every series that leaves them unset:** `meta.source.variable`, `meta.source.reduce`, `meta.along`, `meta.along_color`, `meta.band`, `meta.align`. Set them once on trace `a`. `along` (with its band and colours) passes only to inputs that have that dim, so an ensemble's spread does not land on a climatology line. Set a key to `null` on a later trace to drop an inherited value.
+
+Two variables of one file are two `-i` of the same path, each with its own `meta.source.variable`.
 
 ## Dimensions
 
@@ -21,7 +23,7 @@ A series keeps one time axis, either `time` or a forecast `step`. A forecast is 
 
 - **averaged:** `meta.source.reduce: ["latitude", "longitude"]`
 - **selected:** `meta.source.isel: {"number": 0}`, or `meta.source.sel: {"latitude": -1.3}` (nearest)
-- **fanned out:** `meta.along: "number"`, one line per member. `along_color: "same"` gives one color and one legend entry; `"cycle"` gives each value its own color. `band: [10, 90]` shades the 10–90% range around the mean.
+- **fanned out:** `meta.along: "number"`, one line per member. `along_color: "same"` gives one color and one legend entry; `"cycle"` gives each value its own color. `band: [10, 90]` shades the 10–90% range and draws the mean over the faint members. With `type: "bar"`, `along` gives one bar series per value, named by it (e.g. one per `station_id`).
 
 A leftover dim is an error that names the fix; nothing is averaged silently. For 101 ensemble members use `along` on one input, not 101 `-i` files (at most 26 inputs).
 
@@ -41,7 +43,7 @@ A leftover dim is an error that names the fix; nothing is averaged silently. For
 
 Keep the title and axis labels short: a few words for the title, the quantity and units for an axis (`Rain [mm]`). Methods and sources go in your reply.
 
-Series on one y-axis in different units print a warning and still render; give them separate panels or a second axis.
+Series on one y-axis in different units print a warning and still render; give them separate panels or a second axis. Series whose dates never overlap print a warning too. When only some precip inputs carry an `aggregation_period`, every series on that axis stays a rate (mm/day) rather than mixing totals and rates.
 
 ## Command line
 
@@ -75,4 +77,4 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py -i /tmp/obs.zarr -i /tmp/c
 
 ## Output
 
-The figure at `--output`, at Plotly's default size and legend position unless `layout` sets them. The y-axis label is the variable's `long_name` plus short units. PNG/JPG print a pixel `plot hash` and `data: not null` / `NULL` (`NULL` means all-NaN input; run `inspect-zarr`). Look at the image rather than comparing hashes. Provenance is embedded in the PNG metadata or the HTML `<meta>` tag.
+The figure at `--output`, at Plotly's default size. With two or more legend entries the legend sits in a row above the plot, in input order; one series gets no legend. The y-axis label is the variable's `long_name` plus short units. PNG/JPG print a pixel `plot hash` and `data: not null` / `NULL` (`NULL` means all-NaN input; run `inspect-zarr`). Look at the image rather than comparing hashes. Provenance is embedded in the PNG metadata or the HTML `<meta>` tag.

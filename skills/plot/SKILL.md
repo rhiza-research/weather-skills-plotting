@@ -1,6 +1,6 @@
 ---
 name: plot
-description: Render a map (heatmap, filled contour, stations, wind quiver), time series, xy scatter, or wind rose from weather-skills standard dataset Zarrs as PNG, JPG, or interactive HTML. The --spec is a standard Plotly figure JSON; dataset bindings go in each trace's meta. Side-by-side maps on different grids (CHIRPS 0.05° next to ECMWF 1.5°) are one -i per file, each on its own axes and grid; do not coarsen them onto one grid. --layer KIND:PATH stacks files on one map. --help lists the meta keys and recipes. Named places: get a bbox or polygon from resolve-region first. For precipitation, run aggregate-temporal then convert-to-totals first. For a lead-week verification grid, use plot-verify.
+description: Render a map (heatmap, filled contour, stations, wind quiver), time series, xy scatter, or wind rose from weather-skills standard dataset Zarrs as PNG, JPG, or interactive HTML. The --spec is a standard Plotly figure JSON; dataset bindings go in each trace's meta. Side-by-side maps on different grids (CHIRPS 0.05° next to ECMWF 1.5°) are one -i per file, each on its own axes and grid; do not coarsen them onto one grid. --layer KIND:PATH stacks files on one map. --help lists the meta keys and recipes. Named places: get a bbox or polygon from resolve-region first. For precipitation, run aggregate-temporal then convert-to-totals first (meta.source.reduce averages; it never sums). For a lead-week verification grid, use plot-verify.
 license: MIT
 compatibility: Requires Python 3.12 and uv. PNG/JPG export needs Chrome (installed, or `plotly_get_chrome -y`).
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py *)
@@ -29,7 +29,7 @@ What the command builds from each file:
 
 | File | Trace |
 | --- | --- |
-| lat/lon grid | `heatmap`, one panel per `time` or `step` value (ensemble `number` is averaged) |
+| lat/lon grid | `heatmap`, one panel per `time` or `step` value. Ensemble `number` is averaged and stderr says so; `meta.facet: "number"` maps each member. |
 | `station_id` / `point_id` data | `scatter` markers at the stations, colored by value (`meta.bind: "points"`) |
 | 1-D along time | `scatter` line (`meta.bind: "series"`) |
 | `--x` + `--y` | `scatter` of one series against the other (`meta.bind: "pair"`) |
@@ -38,12 +38,13 @@ What the command builds from each file:
 
 | Goal | How |
 | --- | --- |
-| Two datasets side by side, each on its own grid | Repeat `-i`. Trace `a` sits on axes `x`/`y`, trace `b` on `x2`/`y2`, and so on. Each panel keeps its own lat/lon spacing and gets its own colorbar. Each input must already be one map: select or aggregate the time first. |
-| Datasets drawn on top of each other | `--layer heatmap:a.zarr --layer scatter:stations.zarr --layer outline:kenya.geojson`. Every trace on the same axes stacks on one map. Same-variable layers share a colorbar. |
-| Several times or steps of one dataset | One `-i`. The trace panels its `time` / `step` dim. `layout.grid.rows` / `columns` shape the grid (default: as near square as the panel count allows). |
-| One colorbar for side-by-side maps | Point both traces at the same axis: `"coloraxis": "coloraxis"`. |
+| Two datasets side by side, each on its own grid | Repeat `-i`. Trace `a` sits on axes `x`/`y`, trace `b` on `x2`/`y2`, and so on. Each panel keeps its own lat/lon spacing. Panels of the same quantity share one colorbar, and panels of the same region share one map window. Each input must already be one map: select or aggregate the time first. |
+| Datasets drawn on top of each other | `--layer heatmap:a.zarr --layer scatter:stations.zarr --layer outline:kenya.geojson`. Every trace on the same axes stacks on one map. Layers of the same quantity share a colorbar. |
+| A boundary on `-i` maps | Add `--layer outline:PATH` (or `mask:PATH`) to `-i`: it is drawn on every panel. An outline frames the map (unless `geo.bbox` is set) and turns off Natural Earth's admin-1 lines. |
+| Several times or steps of one dataset | One `-i`. The trace panels its `time` / `step` dim. `layout.grid.rows` / `columns` shape the grid (default: the grid closest to a landscape page with no empty row, e.g. 10 panels → 5×2). |
+| Separate colorbars for side-by-side maps | Give one trace its own axis: `"coloraxis": "coloraxis2"`. Traces naming the same axis always share it. |
 
-Panel titles are annotations named `panel-title-1`, `panel-title-2`, …. Rename one with `{"layout": {"annotations": [{"name": "panel-title-2", "text": "ECMWF"}]}}`. Panels sit in Plotly's `layout.grid`, so its own keys apply: `xgap` / `ygap` set the space between panels, as a fraction of a cell. Fonts, margins and gaps are Plotly's defaults. The canvas is Plotly's default width (wider for more than two columns), and its height follows the map's shape. `layout.width` / `height` override both. One colorbar keeps Plotly's default place on the right; several lie side by side along the bottom, in panel order.
+Panel titles are annotations named `panel-title-1`, `panel-title-2`, …. Rename one with `{"layout": {"annotations": [{"name": "panel-title-2", "text": "ECMWF"}]}}`. The canvas is sized from the maps: each panel is as large as its lon/lat shape allows (up to 760×560 px alone, 340×340 px in a grid), with fixed room for titles, ticks and colorbars, so there is no empty band around a map. `layout.width` / `height` fix the canvas and the maps shrink to fit; `layout.grid.xgap` / `ygap` set the gap between panels as a fraction of a panel. One colorbar stands on the right. Several stand beside the rows, or under the columns, they colour (totals row and anomalies row each get their own); otherwise they lie side by side along the bottom.
 
 Do not `coarsen` or `downscale` just to draw a figure. Only `difference` and `verify` need a shared grid.
 
@@ -54,7 +55,7 @@ Do not `coarsen` or `downscale` just to draw a figure. Only `difference` and `ve
 | Key | Meaning |
 | --- | --- |
 | `bind` | How the arrays are filled: `field` (grid → heatmap/contour), `speed` (wind speed from u/v), `arrows` (u/v arrows), `points` (stations), `geojson` (boundary lines), `series` (1-D line or bar), `pair` (xy), `samples` (box per step), `windrose` (barpolar). The default comes from the trace type. |
-| `source` | `{input, variable, isel, sel, reduce, u, v, geojson, mask_geojson, point}`. `reduce` lists dims to average. **Nothing is averaged silently**: a leftover dim is an error naming the fix. |
+| `source` | `{input, variable, isel, sel, reduce, u, v, geojson, mask_geojson, point}`. `variable` picks one field of a multi-variable file (unset: rainfall if present, and stderr names it). `reduce` lists dims to average. A dim of size 1 is dropped; any other leftover dim is an error naming the fix (the ensemble mean on maps is the one default average). `u` and `v` must be in the same input: merge separate u and v files into one Zarr first. |
 | `facet` | The dim to panel (default `step` or `time`); `false` turns paneling off. |
 | `along`, `along_color`, `band` | Series: one line per value of a dim (`"number"` gives ensemble spaghetti). `along_color` is `same` (default) or `cycle`. `band: [10, 90]` shades a percentile band around the mean. |
 | `align` | Series: `"dayofyear"` overlays years on one seasonal axis. |
@@ -68,15 +69,15 @@ Do not `coarsen` or `downscale` just to draw a figure. Only `difference` and `ve
 | --- | --- |
 | `geo.bbox` | `[N, W, S, E]` map window; subsets every input. There is no `geo.region`: run `resolve-region` and pass its bbox. |
 | `geo.mask_geojson` | Blank map cells outside a polygon (does not draw it; add a `geojson` trace for the edge). |
-| `geo.point` | `{lat, lon}` for `samples` traces. |
+| `geo.point` | `{lat, lon}` for `samples` and wind-rose traces (nearest grid cell). |
 | `overlays` | Base map: `true` (default), `false`, or per layer, e.g. `{"rivers": false, "admin1": true, "borders": {"line": {"width": 2}}}`. Layers: `coastline`, `borders`, `lakes`, `rivers`, `admin1` (Natural Earth; scale follows the map span). |
 | `export.scale` | PNG/JPG pixel multiplier (Plotly's default 1; 2 doubles the pixels). |
 
-To draw official national or local boundaries instead of the built-in Natural Earth lines, check whether an installed skill provides more specific region GeoJSON for the use case, add each file as `--layer outline:PATH`, and set `"overlays": {"admin1": false, "borders": false, "coastline": false}` so the built-in lines do not draw alongside them.
+To draw official national or local boundaries instead of the built-in Natural Earth lines, check whether an installed skill provides more specific region GeoJSON for the use case and add each file as `--layer outline:PATH`. An outline already turns admin-1 off; set `"overlays": {"borders": false, "coastline": false}` too if the file holds the national border.
 
 ## Colors
 
-Precipitation totals get the nested absolute-mm class palette automatically: the same color always means the same millimetres, and the window follows `aggregation_period`. Anomalies get the diverging classes. Fields with CF `flag_values` (e.g. `verify` hits) get one class per flag, labelled with `flag_meanings` (disagree / below / hit). Other fields get a sequential scale, or `RdBu_r` centred on zero when the data spans zero.
+Precipitation totals get the nested absolute-mm class palette automatically: the same color always means the same millimetres, and the window follows `aggregation_period`. Anomalies get the diverging classes. Fields with CF `flag_values` (e.g. `verify` hits) get one class per flag, labelled with `flag_meanings` (disagree / below / hit). Temperatures get `RdYlBu_r` (blue cold, red warm). A spread (`cell_methods` with `standard_deviation`, as summarize-dim writes) gets a sequential scale, not the rainfall classes. Other fields get a sequential scale, or `RdBu_r` centred on zero when the data, or your limits, span zero.
 
 - **A Plotly colorscale and limits:** set `colorscale`, `zmin` / `zmax` (or `marker.cmin` / `cmax` for stations) and `colorbar` on the trace. They apply to the trace's color axis. Setting limits on a class palette turns it into a continuous scale.
 - **A class palette:** `meta.palette`.
@@ -84,7 +85,7 @@ Precipitation totals get the nested absolute-mm class palette automatically: the
 `default_precip` (totals) and `default_precip_anom` (anomalies) are the palettes precipitation gets automatically, with the window picked from `aggregation_period`: under 2 days 0–50 mm (±50), under 10 days 0–200 (±200), under 40 days 0–400 (±300), longer 0–1000 (±500); weekly with no period. Name one in `meta.palette` to skip detection when an anomaly lost its precip name (e.g. after `difference`), an anomaly is all positive, a bias-corrected total has negative values, or totals and anomalies share a figure. To pin a window, name it: `ppt_daily` … `ppt_season`, `ppt_anom_daily` … `ppt_anom_season`. A `--theme-file` palette of the same name replaces the built-in one. For other named palettes (e.g. an agency's rainfall legend), check whether an installed skill provides a theme file and pass it with `--theme-file`.
 - **A whole color axis:** `layout.coloraxis` (or `coloraxis2`, …), e.g. `{"layout": {"coloraxis": {"colorbar": {"title": {"text": "Rain [mm]"}}}}}`.
 
-The colorbar label defaults to the variable's `long_name` and short units (`Total precipitation [mm]`). Dates belong in titles.
+The colorbar label defaults to a short form of the variable's `long_name` and units (`Precipitation [mm]`, `Temperature (2 m) [°C]`), with `anomaly` or `std. dev.` added when the field is one. Forecast panels are titled with their valid dates (`3–9 Aug '26`). Dates belong in titles.
 
 Keep titles and colorbar labels short: a title names the subject in a few words (`CHIRPS weekly totals`), a colorbar label is the quantity and units (`Rain [mm]`). Methods, sources and caveats go in your reply, not the figure. Long text wraps and crowds side-by-side panels and colorbars.
 
@@ -97,7 +98,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --x <x.zarr> --y <y.zarr> -o <out.png
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i <in.zarr> --dump-spec -
 ```
 
-- `-i` — repeatable Zarr; exclusive with `--layer` and `--x`/`--y`.
+- `-i` — repeatable Zarr; exclusive with `--x`/`--y` and with data layers (`--layer outline:` / `mask:` go with `-i`).
 - `--layer KIND:PATH` — `heatmap`, `contour`, `scatter` (stations), `quiver` (u/v: speed plus arrows), `outline` (GeoJSON edge), `mask` (GeoJSON mask).
 - `--spec` — inline JSON or a file path.
 - `--dump-spec [PATH]` — print or write the merged spec and skip drawing.
@@ -146,8 +147,8 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --x /tmp/iod_sep.zarr --y /tmp/rain_o
 
 ## Output
 
-The figure is written at `--output`. For PNG/JPG, stdout prints a pixel `plot hash` and `data: not null (…)` or `data: NULL (…)`. `NULL` means every plotted variable is all-NaN: run `inspect-zarr` on the input. A changed hash only proves the pixels changed. Always look at the image before choosing between layout options.
+The figure is written at `--output`. For PNG/JPG, stdout prints a pixel `plot hash` and `data: not null (…)` or `data: NULL (…)`, counting the values each input actually draws. `NULL` means everything plotted is NaN: run `inspect-zarr` on the input. Notes about choices the command made (which variable, ensemble mean) go to stderr. A changed hash only proves the pixels changed. Always look at the image before choosing between layout options.
 
-Provenance (`weather_skills_history`) is embedded in the PNG metadata or the HTML `<meta>` tag. Read it with the `provenance` skill.
+Provenance (`weather_skills_history`) is embedded in the PNG metadata or the HTML `<meta>` tag. Read it with the `provenance` skill. A PNG/JPG whose chain is complete also gets a small red seal (a ring with a star) in the bottom-right corner: the weather-skills "provenance verified" stamp. It is expected; leave it in.
 
 Errors name the bad key and the keys allowed there. Plotly's own validator checks everything outside `meta` and suggests the closest key (`Did you mean "colorscale"?`).

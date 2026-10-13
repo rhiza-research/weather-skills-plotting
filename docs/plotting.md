@@ -69,8 +69,10 @@ dumped spec replays without file flags.
 
 The default bind follows the trace type (`heatmap` → `field`, `barpolar` →
 `windrose`, …). Units go through `to_standard_units` and `precip_for_display`
-as before. Nothing is averaged silently: a dim left over after
-`isel` / `sel` / `reduce` / `facet` / `along` is an error that names the fix.
+as before. Nothing is averaged silently: a size-1 dim is squeezed, and any
+other dim left over after `isel` / `sel` / `reduce` / `facet` / `along` is an
+error that names the fix. The one default average is the ensemble mean on
+maps, and stderr says so.
 
 ## Assembly (`figure.py`)
 
@@ -83,15 +85,20 @@ as before. Nothing is averaged silently: a dim left over after
 - **Map axes.** Map axes are equal-degree lon/lat axes (`scaleanchor`), which
   is the PlateCarree projection the cartopy version used. Plotly's geo
   subplots cannot hold a heatmap, so they are not used.
-- **Layout.** Plotly's defaults do the layout: panels sit in `layout.grid`,
-  and fonts, margins, gaps and legend placement come from the template. The
-  code adds only what Plotly cannot infer: equal-degree axes, a canvas
-  height that follows the map's shape (from Plotly's default width), panel
-  titles, and, when there is more than one colorbar, horizontal bars side by
-  side along the bottom, each in an equal slice of the width.
+- **Layout.** Charts keep Plotly's layout (legend in a row above the plot
+  when there are two or more entries). Maps do not: Plotly's default canvas
+  and grid cells ignore a map's shape, so equal-degree maps floated small in
+  mostly empty cells. `layout.map_layout` sizes each panel from the lon/lat
+  aspect (up to 760×560 px alone, 340×340 in a grid), adds fixed pixel room
+  for titles, ticks and colorbars, and places each panel with an explicit
+  axis domain anchored to its own axes. `choose_grid` picks the grid closest
+  to a 1.6:1 page without an empty row. One colorbar stands on the right;
+  several stand beside the rows or under the columns they colour when the
+  panels split that way, else side by side along the bottom.
 - **Color axes.** Each color-scaled source trace gets a `coloraxis`. Traces
-  that name the same `coloraxis` share it, and same-variable layers on one
-  map share automatically. Trace-level `colorscale`, `zmin`/`zmax`
+  that name the same `coloraxis` share it, and traces of the same quantity
+  (colour title, palette, anomaly or not) share automatically, side by side
+  included; a shared precip palette widens to the longest period. Trace-level `colorscale`, `zmin`/`zmax`
   (`marker.cmin`/`cmax`) and `colorbar` are lifted onto the axis.
 - **Class palettes.** Precipitation, SPI and percent-of-normal fields get the
   CHC class palettes; CF flag fields get one class per flag, labelled with

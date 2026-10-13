@@ -47,14 +47,14 @@ _SOURCE = {
     "u / v": "wind component variables (default: auto-detected u10/v10, eastward/northward …)",
     "geojson": "geojson bind: path to the boundary file",
     "mask_geojson": "blank cells outside this polygon for this trace only",
-    "point": 'samples bind: {"lat": …, "lon": …}, nearest grid cell',
+    "point": 'samples and windrose binds: {"lat": …, "lon": …}, nearest grid cell',
 }
 
 _LAYOUT_META = {
     "inputs": "{id: path} — opened when no file flag is passed (written by --dump-spec)",
     "geo.bbox": "[N, W, S, E] map window; subsets every input. Named places: run resolve-region",
     "geo.mask_geojson": "blank every map cell outside this polygon (does not draw it)",
-    "geo.point": '{"lat": …, "lon": …} for samples traces (plot-mediogram); nearest cell',
+    "geo.point": '{"lat": …, "lon": …} for samples (plot-mediogram) and wind-rose traces; nearest cell',
     "overlays": "true, false, or {coastline|borders|lakes|rivers|admin1: false or a scatter "
     'style such as {"line": {"width": 2}}}',
     "export.scale": "PNG/JPG pixel multiplier (Plotly's default 1)",
@@ -76,15 +76,19 @@ _RECIPES = [
         '{"layout": {"coloraxis": {"colorbar": {"title": {"text": "Rain [mm]"}, "len": 0.5}}}}',
     ),
     (
-        "Grid shape and gaps (Plotly layout.grid; gaps are fractions of a cell)",
+        "Grid shape and gaps (map gaps are fractions of a panel)",
         '{"layout": {"grid": {"rows": 2, "columns": 3, "xgap": 0.3, "ygap": 0.2}}}',
     ),
     ("Rename panel 2", '{"layout": {"annotations": [{"name": "panel-title-2", "text": "ECMWF"}]}}'),
     ("Map window", '{"layout": {"meta": {"geo": {"bbox": [5, 33.5, -5, 42]}}}}'),
     ("Base-map layers", '{"layout": {"meta": {"overlays": {"rivers": false, "admin1": true}}}}'),
     (
-        "One shared colorbar for two side-by-side maps",
-        '{"data": [{"uid": "a", "coloraxis": "coloraxis"}, {"uid": "b", "coloraxis": "coloraxis"}]}',
+        "Separate colorbars for side-by-side maps (same quantity shares one by default)",
+        '{"data": [{"uid": "b", "coloraxis": "coloraxis2"}]}',
+    ),
+    (
+        "Rainfall variable of a multi-variable station file",
+        '{"data": [{"uid": "b", "meta": {"source": {"variable": "precip"}}}]}',
     ),
     (
         "Boundary outline",

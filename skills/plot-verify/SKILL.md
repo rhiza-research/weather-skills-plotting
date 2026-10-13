@@ -18,7 +18,9 @@ A 2-row grid for one verifying week:
 | row 1 | observation | 1-week lead | 2-week lead | … |
 | row 2 | metric name | verify 1 | verify 2 | … |
 
-Columns follow the `--forecast` order, so **pass week-1 first**. Observation and forecasts share one color scale (precipitation gets the nested-mm class palette for the widest aggregation window). The verify row has its own scale: hits as disagree / below / hit, bias diverging around zero, and MAE from white through warm colors. The figure title gets the verifying week's dates (`6–12 Oct '26`), and each lead's `verify_score_summary` is printed to stdout.
+With one lead the figure is a single row instead: observation | 1-week lead | verify map, titled with the metric.
+
+Columns follow the `--forecast` order, so **pass week-1 first**. Observation and forecasts share one color scale (precipitation gets the nested-mm class palette for the widest aggregation window). The verify row has its own scale: hits as disagree / below / hit; bias symmetric about zero at the 98th percentile of |bias| (rainfall brown where the forecast is too dry, green where too wet; other fields blue/red); MAE from white through warm colors. The figure title gets the verifying week's dates (`6–12 Oct '26`, weeks labelled at their start as aggregate-temporal writes them) from any input that still has a `time` coordinate. `select` drops it, so when none has one a warning asks you to put the week in the title. Each lead's `verify_score_summary` is printed to stderr.
 
 **`--obs` and each `--forecast` must have a single time.** If you see `has time size N; select the verifying week`, run `select` first. A leftover `step` axis needs `step-to-time` first. Obs and forecasts must share a grid: coarsen obs onto the forecast with `--reference-grid`, not the reverse.
 
@@ -72,4 +74,4 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot_verify.py \
 
 ## Output
 
-PNG/JPG print a pixel `plot hash` and `data: not null` / `NULL`, then each lead's score summary. Look at the image; a hash only shows that pixels changed. Provenance is embedded in the PNG metadata or the HTML `<meta>` tag.
+PNG/JPG print a pixel `plot hash` and `data: not null` / `NULL` on stdout; each lead's score summary goes to stderr, so `--dump-spec -` prints only JSON. Look at the image; a hash only shows that pixels changed. Provenance is embedded in the PNG metadata or the HTML `<meta>` tag.

@@ -11,7 +11,7 @@ metadata:
 
 # plot-mediogram
 
-Grouped box plots per forecast step: forecast members in cyan and m-climate members in red, plus a black forecast-mean line, at the grid cell nearest one point. The first 6 common steps are drawn, labelled by lead (`+7d`, `+10d`, …).
+Grouped box plots per forecast step: forecast members in blue and m-climate members in red, plus a black forecast-mean line, at the grid cell nearest one point (each input snaps on its own grid). Up to 15 common steps are drawn. Boxes pair up by lead, so an m-climate from a different init lines up by lead, not by date. When the forecast has its init `time`, ticks show each lead's valid date and the title the init date. Boxes are Plotly's: the box spans the 25th–75th percentile, whiskers reach the furthest member within 1.5 × IQR, and members beyond are dots. A rainfall axis does not go below zero.
 
 `--spec` is a **standard Plotly figure** merged onto the one the command builds. That figure has three traces:
 
@@ -25,7 +25,7 @@ Restyle them with Plotly keys, e.g. `{"data": [{"uid": "mclimate", "fillcolor": 
 
 ## Input schema
 
-Both inputs need `number` (members) and `step` (lead) dims, plus latitude/longitude. Selection is nearest-neighbour.
+Both inputs need `number` (members) and `step` (lead) dims, plus latitude/longitude. Selection is nearest-neighbour. The m-climate must be a member-level reforecast ensemble for the same leads; a climatology mean/std (as `clim-fetch` returns) is not one.
 
 ## Command line
 
@@ -48,4 +48,4 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot_mediogram.py -i /tmp/ecmwf_forecast.zarr
 
 ## Output
 
-The figure uses Plotly's default size and legend position unless `layout` sets them. The default title names the variable and the snapped grid point. PNG/JPG print a pixel `plot hash` and `data: not null` / `NULL`. Look at the image; a hash only shows that pixels changed. Provenance is embedded in the PNG metadata or the HTML `<meta>` tag.
+The figure uses Plotly's default size unless `layout` sets it, with the legend in a row above the plot. The default title names the variable and the snapped grid point. PNG/JPG print a pixel `plot hash` and `data: not null` / `NULL`. Look at the image; a hash only shows that pixels changed. Provenance is embedded in the PNG metadata or the HTML `<meta>` tag.

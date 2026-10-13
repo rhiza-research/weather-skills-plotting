@@ -48,9 +48,11 @@ and transforms when those are available (for example a fetch skill,
   scale). It takes the same `--spec` as `plot`. The HTML embeds every frame,
   so select fewer frames or a smaller bbox for long or fine-grid series.
 - Side-by-side maps are traces on separate axes (`x`, `x2`, …), each on its
-  own grid; traces on the same axes are layers. Point traces at the same
-  `coloraxis` to share a colorbar. Panel titles are annotations named
-  `panel-title-N`. Spacing, fonts and margins are Plotly's defaults; change them with plain `layout` keys.
+  own grid; traces on the same axes are layers. Panels of the same quantity
+  share one colorbar and, over the same region, one map window; give a trace
+  its own `coloraxis` to split them. Panel titles are annotations named
+  `panel-title-N`. The canvas is sized from the maps; `layout.width` /
+  `height` fix it and the maps shrink to fit.
 - **Keep titles and colorbar labels short.** A title names the subject in a
   few words (`CHIRPS weekly totals`, `Week 1`), not the pipeline that made
   it; methods, sources and caveats go in your reply or the report text. A
