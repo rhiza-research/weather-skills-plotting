@@ -326,7 +326,8 @@ def is_precip_anomaly(da) -> bool:
         return True
     sample = np.asarray(da.values, dtype=float).ravel()
     finite = sample[np.isfinite(sample)]
-    return bool(finite.size) and bool(np.nanmin(finite) < 0)
+    # Real negatives, not the -1e-6 rounding a deaccumulated total can carry.
+    return bool(finite.size) and bool(np.nanmin(finite) < -0.01)
 
 
 def is_precip_poa(da) -> bool:

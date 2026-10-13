@@ -157,8 +157,14 @@ def plot(
     """Render a map, time series, xy scatter, or wind rose from weather-skills Zarrs."""
     files = [d for d in (ds or []) if d is not None]
     layers = list(layer or [])
+    # Boundaries and masks go on -i maps too: an outline on every panel.
+    shapes = [x for x in layers if x.kind in ("outline", "mask")] if files else []
+    if shapes and len(shapes) == len(layers):
+        layers = []
     if sum(bool(x) for x in (files, layers, x_ds is not None or y_ds is not None)) > 1:
-        raise UsageError("pass one of -i/--input, --layer, or --x/--y")
+        raise UsageError(
+            "pass one of -i/--input, --layer, or --x/--y (-i takes only outline: and mask: layers)"
+        )
     if (x_ds is None) != (y_ds is None):
         raise UsageError("an xy scatter needs both --x and --y")
     layout = {}
@@ -181,6 +187,19 @@ def plot(
             _default_trace(key, d, xaxis=None if i == 0 else f"x{i + 1}")
             for i, (key, d) in enumerate(datasets.items())
         ]
+        for j, shape in enumerate(shapes):
+            if shape.kind == "mask":
+                layout["meta"] = {"geo": {"mask_geojson": shape.path}}
+                continue
+            for i in range(len(datasets)):
+                outline = {
+                    "uid": f"outline{j + 1}" + (f"-{i + 1}" if i else ""),
+                    "type": "scatter",
+                    "meta": {"bind": "geojson", "source": {"geojson": shape.path}},
+                }
+                if i:
+                    outline.update(xaxis=f"x{i + 1}", yaxis=f"y{i + 1}")
+                data.append(outline)
     datasets = spec_datasets(spec, datasets)
     if not datasets and not any((t.get("meta") or {}).get("bind") == "geojson" for t in data):
         if spec is None or not (spec.data.get("data")):

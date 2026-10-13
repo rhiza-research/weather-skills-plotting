@@ -31,8 +31,9 @@ def test_spec_has_two_boxes_and_a_mean_line(inputs, med_fn, capsys):
         ("mclimate", "box"),
         ("forecast-mean", "scatter"),
     ]
-    assert spec["data"][0]["meta"]["source"]["isel"] == {"step": list(range(6))}
-    assert spec["layout"]["title"]["text"] == "Mediogram: Precipitation at lat=1, lon=11"
+    # Every common step up to 15: both inputs have 8.
+    assert spec["data"][0]["meta"]["source"]["isel"] == {"step": list(range(8))}
+    assert spec["layout"]["title"]["text"].startswith("Mediogram: Precipitation at lat=1, lon=11")
     assert spec["layout"]["boxmode"] == "group"
 
 

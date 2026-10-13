@@ -68,7 +68,8 @@ def test_renders_and_prints_scores(files, ver_fn, tmp_path, capsys):
     run_skill(
         ver_fn, *_argv(files), "-o", str(out), "--spec", '{"layout": {"title": {"text": "Kenya"}}}'
     )
-    text = capsys.readouterr().out
+    # Scores go to stderr so stdout stays clean for --dump-spec JSON.
+    text = capsys.readouterr().err
     assert "1-week lead  score 0.5" in text
     assert out.is_file()
 

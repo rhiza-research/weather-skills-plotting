@@ -30,7 +30,38 @@ from weather_skills_core.units import (
 
 _DATE_TAIL = re.compile(r"[_-]\d{4}-\d{2}-\d{2}(?:[_-]\d{2}-\d{2}-\d{2})?$")
 _VAR_TAIL = re.compile(r"[_-](?:precip|tp)$", re.I)
-_ACRONYMS = frozenset({"ecmwf", "s2s", "ghcn", "cmip6", "gefs", "oisst", "imerg", "smap", "chirps"})
+_ACRONYMS = frozenset(
+    {
+        "ecmwf",
+        "s2s",
+        "ghcn",
+        "cmip6",
+        "gefs",
+        "oisst",
+        "imerg",
+        "smap",
+        "chirps",
+        "nasa",
+        "noaa",
+        "ifs",
+        "ens",
+        "aifs",
+        "gfs",
+        "era5",
+        "arco",
+        "ucsb",
+        "chc",
+        "icon",
+        "eu",
+        "mrms",
+        "kmsa",
+        "tahmo",
+        "gsmap",
+        "jaxa",
+        "hres",
+        "er",
+    }
+)
 
 
 def _prettify_token(text: str) -> str:
@@ -50,6 +81,10 @@ def label_from_history(ds) -> str | None:
     return _prettify_token(skill.removesuffix("-fetch")) if skill else None
 
 
+# Words a catalog id carries that a panel title does not need.
+_ID_NOISE = re.compile(r"[-_](forecast|analysis)(?=[-_]|$)|[-_]\d+[-_](day|hour)s?.*$", re.I)
+
+
 def label_from_source_token(token: str) -> str:
     """Product name from a source token: ``scheme:product/…``, a path, or a bare id."""
     text = token.strip()
@@ -60,6 +95,8 @@ def label_from_source_token(token: str) -> str:
     elif "/" in text or "\\" in text or text.endswith(".zarr"):
         text = Path(text).stem
     text = _VAR_TAIL.sub("", _DATE_TAIL.sub("", text))
+    # nasa-imerg-analysis-late → NASA IMERG Late; ecmwf-ifs-ens-forecast-15-day-0-25-degree → ECMWF IFS ENS
+    text = _ID_NOISE.sub("", text) or text
     return _prettify_token(text)
 
 

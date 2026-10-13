@@ -224,7 +224,8 @@ def test_series_spaghetti_band_and_cycle():
         },
         {"a": ds},
     )
-    assert [t["fill"] for t in _data(band)] == [None, "tonexty", None]
+    # Faint members, the band's two edges, then the mean line.
+    assert [t["fill"] for t in _data(band)] == [None, None, "tonexty", None]
     cycle = compile(
         {
             "data": [

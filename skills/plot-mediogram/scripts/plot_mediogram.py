@@ -10,21 +10,25 @@
 # ///
 """ECMWF-style mediogram: forecast vs m-climate ensemble boxes at one point, as PNG or HTML."""
 
+import numpy as np
 from weather_skills_core import Dataset, UsageError, weather_skill
 from weather_skills_core.cf import auto_variable, cf_dim
 
 from weather_skills_plotting import parse_spec_arg
 from weather_skills_plotting.cli import run, skeleton
 from weather_skills_plotting.display import variable_label_for_display
+from weather_skills_plotting.labels import _TRAILING, format_plot_date, format_step
+from weather_skills_plotting.palettes import is_precip
 from weather_skills_plotting.reference import install_spec_help
 from weather_skills_plotting.spec import DUMP_SPEC_HELP, SPEC_ARGUMENT_HELP, merge_spec
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
 _SKILL_VERSION = "0.0.2"
 
-MAX_STEPS = 6
-FORECAST_COLOR = "cyan"
-MCLIMATE_COLOR = "red"
+MAX_STEPS = 15
+# ECMWF's mediogram colours, a little softer than pure cyan and red.
+FORECAST_COLOR = "#29b6f6"
+MCLIMATE_COLOR = "#e53935"
 
 
 def _box(uid, name, color, source):
@@ -105,11 +109,23 @@ def plot_mediogram(ds, output, spec, theme_file, dump_spec, **kwargs):
     snapped = da.sel({lat: point["lat"], lon: point["lon"]}, method="nearest")
     qty = variable_label_for_display(da, include_units=False)
     title = f"Mediogram: {qty} at lat={float(snapped[lat]):g}, lon={float(snapped[lon]):g}"
-    layout = {
-        "title": {"text": title},
-        "boxmode": "group",
-        "xaxis": {"title": {"text": "Forecast step"}},
-    }
+    leads = [format_step(v) for v in da["step"].values[:n_steps]]
+    xaxis = {"title": {"text": "Forecast step"}}
+    init = da["time"].values if "time" in da.coords and da["time"].ndim == 0 else None
+    if init is not None and np.asarray(init).dtype.kind == "M":
+        # Boxes pair up by lead; the ticks say which day each lead is.
+        trailing = _TRAILING.search(str(da.attrs.get("long_name") or ""))
+        shift = np.timedelta64(1, "D") if trailing else np.timedelta64(0, "D")
+        days = [init + s - shift for s in da["step"].values[:n_steps]]
+        xaxis = {
+            "title": {"text": "Valid date"},
+            "tickvals": leads,
+            "ticktext": [format_plot_date(d, year=False) for d in days],
+        }
+        title += f" · init {format_plot_date(init)}"
+    layout = {"title": {"text": title}, "boxmode": "group", "xaxis": xaxis}
+    if is_precip(da):
+        layout["yaxis"] = {"rangemode": "nonnegative"}
     base = skeleton("plot-mediogram", datasets, data, layout)
     return run(merge_spec(base, user), None, datasets, output, dump_spec, theme_file=theme_file)
 

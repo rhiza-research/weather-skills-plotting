@@ -11,6 +11,7 @@ sensible default; the user's own trace keys are merged on afterwards.
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -18,7 +19,12 @@ import numpy as np
 from weather_skills_core.cf import auto_variable, cf_dim
 from weather_skills_core.errors import UsageError
 from weather_skills_core.standard_utils import ensure_normalized_longitude, polygon_from_geojson
-from weather_skills_core.units import to_standard_units, units_equal, variable_units
+from weather_skills_core.units import (
+    classify_variable,
+    to_standard_units,
+    units_equal,
+    variable_units,
+)
 
 from weather_skills_plotting.display import precip_for_display, variable_label_for_display
 from weather_skills_plotting.geodata import (
@@ -150,7 +156,26 @@ def _display(ds, variable):
 
 
 def _variable(ds, name, loc):
-    variable = name or auto_variable(ds)
+    variable = name
+    if not variable and len(ds.data_vars) > 1:
+        # Several fields and none named: rainfall if there is one, and say so.
+        precip = [
+            v
+            for v in ds.data_vars
+            if classify_variable(
+                str(v),
+                units=variable_units(ds[v]),
+                standard_name=ds[v].attrs.get("standard_name"),
+            )
+            in ("precip", "precip_amount")
+        ]
+        variable = precip[0] if precip else auto_variable(ds)
+        print(
+            f"Note: {loc}: drawing {variable!r} of {', '.join(map(str, ds.data_vars))}; "
+            f"set {loc}.variable to choose",
+            file=sys.stderr,
+        )
+    variable = variable or auto_variable(ds)
     if not variable or variable not in ds:
         raise UsageError(
             f"{loc}.variable {variable!r} is not in the data; available: {', '.join(ds.data_vars)}"
@@ -198,7 +223,11 @@ def _sel(da, source: dict, loc: str):
             raise UsageError(
                 f"{loc}.sel {dim}={value!r} does not match the coordinate ({exc})"
             ) from None
-    return da
+    # A one-value dim (a single pressure level or member) has nothing to choose
+    # or average; time and step stay so a single map keeps its date.
+    keep = {"time", "step", cf_dim(da, "time"), cf_dim(da, "latitude"), cf_dim(da, "longitude")}
+    single = [d for d in da.dims if da.sizes[d] == 1 and d not in keep]
+    return da.squeeze(single) if single else da
 
 
 def _polygon(ctx: Context, source: dict):
@@ -307,8 +336,13 @@ def bind_field(trace, meta, ctx, loc, *, speed=False):
         ds = _dataset(ctx, source, f"{loc}.source")
         u_name, v_name = resolve_uv(ds, source.get("u"), source.get("v"))
         ds = to_standard_units(ds, variables=[u_name, v_name])
-        u_da = _subset(ctx, source, _sel(plain(ds[u_name]), source, f"{loc}.source"))
-        v_da = _subset(ctx, source, _sel(plain(ds[v_name]), source, f"{loc}.source"))
+        # reduce averages the wind vector; speed is that mean wind's speed.
+        u_da = _reduce(
+            _subset(ctx, source, _sel(plain(ds[u_name]), source, f"{loc}.source")), source
+        )
+        v_da = _reduce(
+            _subset(ctx, source, _sel(plain(ds[v_name]), source, f"{loc}.source")), source
+        )
         da = wind_speed_da(u_da, v_da)
         title = wind_speed_cbar_label(u_da)
     else:
@@ -364,8 +398,8 @@ def bind_arrows(trace, meta, ctx, loc):
     u_units, v_units = variable_units(ds[u_name]), variable_units(ds[v_name])
     if u_units and v_units and not units_equal(u_units, v_units):
         raise UsageError(f"u units {u_units!r} do not match v units {v_units!r}")
-    u_da = _subset(ctx, source, _sel(plain(ds[u_name]), source, f"{loc}.source"))
-    v_da = _subset(ctx, source, _sel(plain(ds[v_name]), source, f"{loc}.source"))
+    u_da = _reduce(_subset(ctx, source, _sel(plain(ds[u_name]), source, f"{loc}.source")), source)
+    v_da = _reduce(_subset(ctx, source, _sel(plain(ds[v_name]), source, f"{loc}.source")), source)
     u_da, lat, lon, fdim = _map_field(ctx, u_da, meta, loc, "wind arrows")
     v_da, *_ = _map_field(ctx, v_da, meta, loc, "wind arrows")
     step = quiver_step(u_da[lat].values, u_da[lon].values, opts.get("step"))
@@ -467,7 +501,12 @@ def bind_points(trace, meta, ctx, loc):
                         "text": names,
                         "customdata": vals,
                         # An outline keeps a station visible when its class is white.
-                        "marker": {"color": vals, "line": {"width": 1}},
+                        # A few stations read as dots, not specks; a dense network stays small.
+                        "marker": {
+                            "color": vals,
+                            "size": 13 if vals.size <= 50 else 8,
+                            "line": {"width": 1},
+                        },
                         "hovertemplate": "%{text}: %{customdata:.4g}<extra></extra>",
                         "showlegend": False,
                     }
@@ -517,13 +556,15 @@ def bind_geojson(trace, meta, ctx, loc):
     if not path:
         raise UsageError(f'{loc}: meta.bind "geojson" needs meta.source.geojson (a file path)')
     xs, ys, (w, s, e, n) = _geojson_lines(path)
+    parts = sum(1 for v in xs if v is None)
     line = {
         "mode": "lines",
         "x": xs,
         "y": ys,
         "hoverinfo": "skip",
         "showlegend": False,
-        "line": {"color": "black"},
+        # One boundary stands out; dozens of county lines would smother the data.
+        "line": {"color": "black", "width": 2 if parts <= 5 else 0.8},
     }
     return Bound([Panel([line])], is_map=True, static=True, extent=[w, e, s, n])
 
@@ -535,13 +576,18 @@ def _color_name(trace, color):
 
 
 def _rgba(color, alpha):
-    from plotly.colors import hex_to_rgb, unlabel_rgb
+    from PIL import ImageColor
+    from plotly.colors import unlabel_rgb
 
-    if isinstance(color, str) and color.startswith("#"):
-        r, g, b = hex_to_rgb(color)
-    elif isinstance(color, str) and color.startswith("rgb"):
-        r, g, b = unlabel_rgb(color)[:3]
-    else:
+    if not isinstance(color, str):
+        return color
+    try:
+        if color.startswith("rgb"):
+            r, g, b = unlabel_rgb(color)[:3]
+        else:
+            # Hex and CSS names (royalblue) alike.
+            r, g, b = ImageColor.getrgb(color)[:3]
+    except ValueError:
         return color
     return f"rgba({int(r)}, {int(g)}, {int(b)}, {alpha})"
 
@@ -586,7 +632,8 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
     ttype = trace.get("type") or "scatter"
     base = {"name": label}
     if ttype == "scatter":
-        base["mode"] = "lines+markers"
+        # Markers help a short series; on a long one they only blur the line.
+        base["mode"] = "lines+markers" if len(xs) <= 24 else "lines"
     traces = []
     if along is None:
         traces.append({**base, "x": xs, "y": np.asarray(da.values, dtype=float)})
@@ -597,6 +644,26 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
         band = meta.get("band")
         if band is not None:
             col = _color_name(trace, color)
+            # Members stay visible under the band: the spread is the point.
+            if ttype == "scatter":
+                gx, gy = [], []
+                for j in range(y.shape[1]):
+                    gx += xs + [None]
+                    gy += list(y[:, j]) + [None]
+                traces.append(
+                    {
+                        "type": "scatter",
+                        "x": gx,
+                        "y": gy,
+                        "mode": "lines",
+                        "opacity": 0.25,
+                        "line": {"color": col, "width": 1},
+                        "showlegend": False,
+                        "hoverinfo": "skip",
+                        "legendgroup": label,
+                        "uid_suffix": "members",
+                    }
+                )
             lo, hi = np.nanpercentile(y, band[0], axis=1), np.nanpercentile(y, band[1], axis=1)
             common = {
                 "type": "scatter",
@@ -636,7 +703,19 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
                         "x": xs,
                         "y": y[:, j],
                         "name": member,
-                        "mode": "lines",
+                        **({"mode": "lines"} if ttype == "scatter" else {}),
+                        "uid_suffix": f"{along}={member}",
+                    }
+                )
+        elif ttype != "scatter":
+            # Bars cannot share one gapped trace: one bar series per member.
+            for j, member in enumerate(members):
+                traces.append(
+                    {
+                        **base,
+                        "x": xs,
+                        "y": y[:, j],
+                        "name": member,
                         "uid_suffix": f"{along}={member}",
                     }
                 )
@@ -768,6 +847,15 @@ def bind_windrose(trace, meta, ctx, loc):
     ds = to_standard_units(ds, variables=[u_name, v_name])
     u_da = _subset(ctx, source, _sel(plain(ds[u_name]), source, f"{loc}.source"))
     v_da = _subset(ctx, source, _sel(plain(ds[v_name]), source, f"{loc}.source"))
+    point = source.get("point") or ctx.point
+    if point is not None:
+        # One place's winds, not the whole domain pooled.
+        lat, lon = cf_dim(u_da, "latitude"), cf_dim(u_da, "longitude")
+        if lat not in u_da.dims or lon not in u_da.dims:
+            raise UsageError(f"{loc}.source.point needs latitude/longitude dims")
+        where = {lat: point["lat"], lon: point["lon"]}
+        u_da = u_da.sel(where, method="nearest")
+        v_da = v_da.sel(where, method="nearest")
     extra = [d for d in u_da.dims if not is_sample_dim(u_da, d)]
     if extra:
         raise UsageError(
@@ -866,6 +954,8 @@ def bind_trace(trace: dict, ctx: Context, loc: str, *, color=None) -> Bound:
                 else ""
             )
         )
+    # Binders name keys under meta (source, along, arrows, …): errors say data[i].meta.<key>.
+    meta_loc = f"{loc}.meta"
     if bind == "series":
-        return bind_series(trace, trace.get("meta") or {}, ctx, loc, color=color)
-    return BINDERS[bind](trace, trace.get("meta") or {}, ctx, loc)
+        return bind_series(trace, trace.get("meta") or {}, ctx, meta_loc, color=color)
+    return BINDERS[bind](trace, trace.get("meta") or {}, ctx, meta_loc)

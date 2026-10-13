@@ -93,7 +93,25 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
 
     items = []
     n_colored = 0
-    for i, trace in enumerate(spec.get("data") or []):
+    traces = spec.get("data") or []
+    for trace in traces:
+        # Arrows over a speed field take that field's selection unless they set their own.
+        if bind_of(trace) != "arrows":
+            continue
+        source = trace.setdefault("meta", {}).setdefault("source", {})
+        twin = next(
+            (
+                t
+                for t in traces
+                if bind_of(t) == "speed"
+                and ((t.get("meta") or {}).get("source") or {}).get("input") == source.get("input")
+            ),
+            None,
+        )
+        for key, value in (((twin or {}).get("meta") or {}).get("source") or {}).items():
+            if key in ("sel", "isel", "reduce", "u", "v"):
+                source.setdefault(key, copy.deepcopy(value))
+    for i, trace in enumerate(traces):
         bound = None
         if bind_of(trace):
             bound = bind_trace(trace, ctx, f"data[{i}]", color=colorway[n_colored % len(colorway)])
@@ -124,6 +142,9 @@ def _concrete(spec_trace: dict, generated: dict, uid: str, *, user_style=True) -
     out = {"type": spec_trace.get("type") or "scatter"}
     if user_style and not str(suffix or "").startswith("band"):
         user = {k: v for k, v in spec_trace.items() if k not in ("meta", "uid", "xaxis", "yaxis")}
+        if "=" in str(suffix or ""):
+            # One trace per along member: the member's name, not the input's.
+            user.pop("name", None)
         out.update(deep_merge(gen, user))
     else:
         out.update(gen)
@@ -408,6 +429,15 @@ def _assemble_map(items, user_layout, lmeta, ctx):
             else:
                 entry[2].append(tr)
 
+    outlines = [
+        b.extent for _, st, b in items if b is not None and bind_of(st) == "geojson" and b.extent
+    ]
+    if outlines and ctx.bbox is None and len(order) == 1:
+        # An outline names the place of interest: frame it, with a margin.
+        w, e = min(o[0] for o in outlines), max(o[1] for o in outlines)
+        s, n_ = min(o[2] for o in outlines), max(o[3] for o in outlines)
+        pad = 0.1 * max(e - w, n_ - s)
+        extents = [[w - pad, e + pad, s - pad, n_ + pad] if x else None for x in extents]
     if len(order) > 1 and ctx.bbox is None:
         # Side-by-side maps of the same region share one window, so a coarse
         # grid next to a fine one is compared on equal footing.
@@ -504,6 +534,9 @@ def _assemble_map(items, user_layout, lmeta, ctx):
 
     # Overlays, then assemble each panel's traces in draw order.
     settings = overlay_settings(lmeta.get("overlays"))
+    if outlines and settings.get("admin1") is None:
+        # The outline file is the boundary to show; Natural Earth's would double it.
+        settings["admin1"] = False
     data = []
     for p in range(n):
         s = axis_suffix(p)
@@ -596,4 +629,16 @@ def _assemble_chart(items, user_layout):
         if bound.title:
             layout.setdefault("title", {"text": bound.title})
     layout.update(axis_titles)
+    # Room above the plot only for what is there: a title, a legend row.
+    titled = bool((user_layout.get("title") or layout.get("title") or {}).get("text"))
+    named = [tr for tr in data if tr.get("name") and tr.get("showlegend") is not False]
+    top = 60 if titled else 20
+    # Legend order follows the inputs even with filled bands (Plotly reverses those).
+    layout["legend"] = {"traceorder": "normal"}
+    if len(named) < 2:
+        layout["showlegend"] = False
+    elif not any(tr.get("type") == "barpolar" for tr in data):
+        layout["legend"].update(orientation="h", x=0, xanchor="left", y=1.02, yanchor="bottom")
+        top += 30
+    layout["margin"] = {"t": top}
     return data, layout

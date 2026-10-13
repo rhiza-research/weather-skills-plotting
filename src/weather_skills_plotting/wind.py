@@ -94,9 +94,15 @@ def resolve_uv(ds, u_variable, v_variable):
     """Eastward/northward variable names from flags, CF attrs, or common names."""
     names = list(ds.data_vars)
     if u_variable and u_variable not in ds:
-        raise UsageError(f"u_variable {u_variable!r} is not in the data (have {names})")
+        raise UsageError(
+            f"meta.source.u {u_variable!r} is not in this input (have {names}). u and v must be in "
+            "one input: merge the two files into one Zarr first"
+        )
     if v_variable and v_variable not in ds:
-        raise UsageError(f"v_variable {v_variable!r} is not in the data (have {names})")
+        raise UsageError(
+            f"meta.source.v {v_variable!r} is not in this input (have {names}). u and v must be in "
+            "one input: merge the two files into one Zarr first"
+        )
     if u_variable and v_variable:
         return u_variable, v_variable
     if u_variable:
@@ -104,16 +110,16 @@ def resolve_uv(ds, u_variable, v_variable):
         if partner and partner in ds:
             return u_variable, partner
         raise UsageError(
-            f"u_variable {u_variable!r} is set but no northward partner was found; "
-            "set v_variable too"
+            f"meta.source.u {u_variable!r} is set but no northward partner was found; "
+            "set meta.source.v too"
         )
     if v_variable:
         partner = _infer_uv_partner(v_variable, want_v=False)
         if partner and partner in ds:
             return partner, v_variable
         raise UsageError(
-            f"v_variable {v_variable!r} is set but no eastward partner was found; "
-            "set u_variable too"
+            f"meta.source.v {v_variable!r} is set but no eastward partner was found; "
+            "set meta.source.u too"
         )
     u_cf, v_cf = [], []
     for name in names:
@@ -130,7 +136,8 @@ def resolve_uv(ds, u_variable, v_variable):
         return matches[0]
     raise UsageError(
         "u/v plot needs eastward (u) and northward (v) wind components; "
-        f"could not auto-detect them in {names}. Set traces[].u_variable and traces[].v_variable."
+        f"could not auto-detect them in {names}. Set meta.source.u and meta.source.v; u and v "
+        "must be in one input (merge separate u and v files into one Zarr first)."
     )
 
 

@@ -52,14 +52,11 @@ def test_dataset_display_label_source_wins_over_history():
     ds = make_gridded()
     ds.attrs["weather_skills_source"] = "dynamical:nasa-imerg-analysis-late"
     ds.attrs["weather_skills_history"] = json.dumps([{"skill": "dynamical-fetch"}])
-    assert dl.dataset_display_label(ds, "fallback") == "Nasa IMERG Analysis Late"
+    assert dl.dataset_display_label(ds, "fallback") == "NASA IMERG Late"
 
 
 def test_label_from_source_token_colon_catalog():
-    assert (
-        dl.label_from_source_token("dynamical:nasa-imerg-analysis-late")
-        == "Nasa IMERG Analysis Late"
-    )
+    assert dl.label_from_source_token("dynamical:nasa-imerg-analysis-late") == "NASA IMERG Late"
 
 
 def test_label_from_source_token_colon_path():

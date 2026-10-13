@@ -15,6 +15,8 @@ color scale; row 2 holds each lead's verify map (hits, bias, or MAE) on a
 second scale. The cell under the observation names the metric.
 """
 
+import sys
+
 import numpy as np
 from weather_skills_core import Dataset, UsageError, weather_skill
 from weather_skills_core.cf import auto_variable, cf_dim
@@ -41,6 +43,9 @@ METRIC_LABELS = {"hits": "Hits", "bias": "Bias", "mae": "MAE"}
 HITS_PALETTE = {"colors": ["#d73027", "#f0f0f0", "#1a9850"], "bounds": [-1.5, -0.5, 0.5, 1.5]}
 BIAS_COLORS = ["#053061", "#2166ac", "#4393c3", "#92c5de", "#d1e5f0", "#ffffff",
                "#fddbc7", "#f4a582", "#d6604d", "#b2182b", "#67001f"]  # fmt: skip
+# Rainfall bias: brown where the forecast is too dry, green where too wet (BrBG).
+PRECIP_BIAS_COLORS = ["#543005", "#8c510a", "#bf812d", "#dfc27d", "#f6e8c3", "#f5f5f5",
+                      "#c7eae5", "#80cdc1", "#35978f", "#01665e", "#003c30"]  # fmt: skip
 MAE_COLORS = ["#ffffff", "#fddbc7", "#f4a582", "#d6604d", "#b2182b", "#67001f"]
 
 
@@ -191,7 +196,8 @@ def plot_verify(obs, forecast, verify, output, spec, theme_file, dump_spec, **kw
     for i, v in enumerate(verifies, 1):
         summary = v.attrs.get("verify_score_summary")
         if isinstance(summary, str) and summary.strip():
-            print(f"{i}-week lead  {summary.strip()}")
+            # stderr: stdout may be the --dump-spec JSON.
+            print(f"{i}-week lead  {summary.strip()}", file=sys.stderr)
 
     field_meta = {}
     if is_precip(obs_da):
@@ -218,8 +224,10 @@ def plot_verify(obs, forecast, verify, output, spec, theme_file, dump_spec, **kw
                 "meta": {"source": {"input": f"forecast{i}", "variable": var}, **field_meta},
             }
         )
+    single = n == 1
     for i in range(1, n + 1):
-        p = cols + i + 1
+        # One lead: obs | forecast | verify in one row. More: verify maps under each lead.
+        p = 3 if single else cols + i + 1
         data.append(
             {
                 "uid": f"verify{i}",
@@ -238,23 +246,28 @@ def plot_verify(obs, forecast, verify, output, spec, theme_file, dump_spec, **kw
     fc_label = combine_display_labels([dataset_display_label(f, "Forecast") for f in forecasts])
     titles = [obs_label] + [f"{i}-week lead" for i in range(1, n + 1)]
     annotations = [panel_title(p, t) for p, t in enumerate(titles)]
-    # Verify cells sit under their forecast column title; no date of their own.
-    annotations += [{"name": f"panel-title-{cols + i + 1}", "text": ""} for i in range(1, n + 1)]
     units = format_units_for_display(variable_units(obs_da))
     metric_label = METRIC_LABELS[metric]
     metric_title = f"{metric_label} [{units}]" if units and metric != "hits" else metric_label
-    blank = axis_suffix(cols)
-    annotations.append(
-        {
-            "name": "row-label-metric",
-            "text": f"<b>{metric_label}</b><br>{fc_label}",
-            "xref": f"x{blank} domain",
-            "yref": f"y{blank} domain",
-            "x": 0.5,
-            "y": 0.5,
-            "showarrow": False,
-        }
-    )
+    if single:
+        annotations.append(panel_title(2, f"{metric_label} · {fc_label}"))
+    else:
+        # Verify cells sit under their forecast column title; no date of their own.
+        annotations += [
+            {"name": f"panel-title-{cols + i + 1}", "text": ""} for i in range(1, n + 1)
+        ]
+        blank = axis_suffix(cols)
+        annotations.append(
+            {
+                "name": "row-label-metric",
+                "text": f"<b>{metric_label}</b><br>{fc_label}",
+                "xref": f"x{blank} domain",
+                "yref": f"y{blank} domain",
+                "x": 0.5,
+                "y": 0.5,
+                "showarrow": False,
+            }
+        )
     if metric == "hits":
         axis2 = {
             "colorbar": {
@@ -264,8 +277,17 @@ def plot_verify(obs, forecast, verify, output, spec, theme_file, dump_spec, **kw
             }
         }
     elif metric == "bias":
+        colors = PRECIP_BIAS_COLORS if is_precip(obs_da) else BIAS_COLORS
+        # Symmetric about zero, set by the bulk of the errors, not the few largest.
+        values = np.concatenate(
+            [np.abs(np.asarray(v[VERIFY_VARS[metric]].values, float)).ravel() for v in verifies]
+        )
+        values = values[np.isfinite(values)]
+        limit = float(np.percentile(values, 98)) if values.size else 1.0
         axis2 = {
-            "colorscale": [[i / 10, c] for i, c in enumerate(BIAS_COLORS)],
+            "colorscale": [[i / 10, c] for i, c in enumerate(colors)],
+            "cmin": -limit,
+            "cmax": limit,
             "colorbar": {"title": {"text": metric_title}},
         }
     else:
@@ -274,7 +296,15 @@ def plot_verify(obs, forecast, verify, output, spec, theme_file, dump_spec, **kw
             "cmin": 0,
             "colorbar": {"title": {"text": metric_title}},
         }
-    week = _week_title(obs_da)
+    # select drops the time coordinate; any input that still has it dates the week.
+    week = next(
+        (w for w in map(_week_title, [obs_da, *forecasts, *verifies]) if w is not None), None
+    )
+    if week is None:
+        warn(
+            "no verifying-week date found (select drops the time coordinate); put the week "
+            'in the title, e.g. --spec \'{"layout": {"title": {"text": "IMERG vs ENS, 3–9 Aug"}}}\''
+        )
     user_title = (user.get("layout") or {}).get("title") or {}
     user_title = user_title.get("text") if isinstance(user_title, dict) else user_title
     title = (
@@ -282,7 +312,8 @@ def plot_verify(obs, forecast, verify, output, spec, theme_file, dump_spec, **kw
         if not user_title
         else (f"{user_title} · {week}" if week and week not in user_title else user_title)
     )
-    layout = {"grid": {"rows": 2, "columns": cols}, "annotations": annotations, "coloraxis2": axis2}
+    grid = {"rows": 1, "columns": 3} if single else {"rows": 2, "columns": cols}
+    layout = {"grid": grid, "annotations": annotations, "coloraxis2": axis2}
     if title:
         layout["title"] = {"text": title}
     base = skeleton("plot-verify", datasets, data, layout)
