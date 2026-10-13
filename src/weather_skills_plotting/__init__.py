@@ -98,11 +98,40 @@ def export(fig, output, *, datasets=None, scale=None):
         )
     output.parent.mkdir(parents=True, exist_ok=True)
     if suffix in (".html", ".htm"):
+        import plotly.io as pio
+
         # An animation opens paused on its first frame; the viewer presses Play.
-        fig.write_html(output, include_plotlyjs=True, full_html=True, auto_play=False)
+        pio.write_html(
+            _float32(fig.to_plotly_json()),
+            output,
+            include_plotlyjs=True,
+            full_html=True,
+            auto_play=False,
+        )
         return output
     fig.write_image(output, scale=scale)
     from weather_skills_plotting.qa import report_figure
 
     report_figure(output, datasets)
     return output
+
+
+def _float32(obj):
+    """Copy of a figure dict with its float64 arrays stored as float32.
+
+    Plotly writes each array as base64 ``{"dtype": "f8", "bdata": ...}``. The
+    HTML embeds every one; 32-bit floats halve its size and keep ~7
+    significant digits, finer than any plotted value or hover label needs.
+    """
+    import base64
+
+    import numpy as np
+
+    if isinstance(obj, dict) and obj.get("dtype") == "f8" and "bdata" in obj:
+        values = np.frombuffer(base64.b64decode(obj["bdata"]), dtype="<f8").astype("<f4")
+        return {**obj, "dtype": "f4", "bdata": base64.b64encode(values.tobytes()).decode()}
+    if isinstance(obj, dict):
+        return {k: _float32(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_float32(v) for v in obj]
+    return obj

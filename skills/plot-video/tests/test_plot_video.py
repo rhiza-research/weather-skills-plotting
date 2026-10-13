@@ -55,6 +55,8 @@ def test_one_frame_per_time_with_controls(grid, video_fn, tmp_path, capsys):
     assert all(f["traces"] == [0] for f in frames)
     assert [first_z(f["data"][0]["z"]) for f in frames] == [0.0, 1.0, 2.0, 3.0]
     assert '"updatemenus"' in text and '"sliders"' in text
+    # Arrays are stored as 32-bit floats to keep the HTML small.
+    assert '"dtype":"f4"' in text and '"dtype":"f8"' not in text
     assert "\\u25b6 Play" in text
 
 

@@ -219,4 +219,6 @@ def _annotation_on_panel_one(item: dict) -> bool:
 
 def estimate_html_mb(fig) -> float:
     """Size of the figure JSON written into the HTML, in MB (plotly.js adds ~4.5 MB on top)."""
-    return len(fig.to_json()) / 1e6
+    from weather_skills_plotting import _float32
+
+    return len(json.dumps(_float32(fig.to_plotly_json()))) / 1e6
