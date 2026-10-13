@@ -39,9 +39,12 @@ from weather_skills_plotting.layout import (
 from weather_skills_plotting.palettes import (
     COLORBLIND,
     DEEP,
+    DEFAULT_PRECIP_PALETTES,
     DEFAULT_SEQUENTIAL,
+    aggregation_days,
     continuous_colorscale,
     default_palette,
+    default_precip_window,
     discretize,
     load_theme,
     parse_palette,
@@ -173,6 +176,11 @@ def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
         ),
         None,
     )
+    key = palette_raw.lower() if isinstance(palette_raw, str) else None
+    if key in DEFAULT_PRECIP_PALETTES and not any(k.lower() == key for k in ctx.palettes):
+        # A --theme-file entry of the same name wins over the window-following default.
+        days = [aggregation_days(b.color_da) for _, b, _ in members if b.color_da is not None]
+        palette_raw = default_precip_window(*(days or [None]), anomaly=DEFAULT_PRECIP_PALETTES[key])
     palette = parse_palette(palette_raw, registry=ctx.palettes) if palette_raw else None
     if palette is None and "colorscale" not in user:
         palette = next(

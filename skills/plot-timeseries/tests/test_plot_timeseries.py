@@ -81,3 +81,35 @@ def test_leftover_dims_error(tmp_path, ts_fn, capsys):
     with pytest.raises(SystemExit):
         run_skill(ts_fn, "-i", str(a), "-o", str(tmp_path / "x.png"))
     assert "Nothing is averaged silently" in capsys.readouterr().err
+
+
+def test_mixed_rate_and_aggregated_precip_stay_rates_on_shared_axis(tmp_path, ts_fn, capsys):
+    """A daily rate next to a weekly aggregate must not mix mm/day with mm totals."""
+    import numpy as np
+
+    daily = make_gridded(n_time=14)
+    weekly = make_gridded(n_time=2, fill=3.0).assign_coords(
+        time=np.array(["2026-01-01", "2026-01-08"], dtype="datetime64[ns]")
+    )
+    weekly["precip"].attrs["aggregation_period"] = "7 day"
+    a = write_zarr(daily, tmp_path / "daily.zarr")
+    b = write_zarr(weekly, tmp_path / "weekly.zarr")
+    user = {"data": [{"uid": "a", "meta": {"source": {"reduce": ["latitude", "longitude"]}}}]}
+    run_skill(
+        ts_fn,
+        *("-i", str(a), "-i", str(b), "-o", str(tmp_path / "ts.html")),
+        *("--spec", json.dumps(user)),
+    )
+    err = capsys.readouterr().err
+    assert "drawn as a rate" in err
+    assert "different units" not in err
+
+    spec = {"data": [{"meta": {"source": {"input": "a"}}}, {"meta": {"source": {"input": "b"}}}]}
+    kept = mod.keep_mixed_precip_as_rates(spec, {"a": daily, "b": weekly})
+    assert "aggregation_period" not in kept["b"]["precip"].attrs
+    assert weekly["precip"].attrs["aggregation_period"] == "7 day"  # input untouched
+
+    # Each on its own axis: the weekly series keeps its period and becomes a total.
+    spec["data"][1]["yaxis"] = "y2"
+    kept = mod.keep_mixed_precip_as_rates(spec, {"a": daily, "b": weekly})
+    assert kept["b"]["precip"].attrs["aggregation_period"] == "7 day"

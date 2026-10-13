@@ -251,6 +251,12 @@ def default_precip_window(*days: float | None, anomaly: bool = False) -> str:
     return widest_precip_window(*days)
 
 
+# Palette names that follow the field's ``aggregation_period`` like the
+# automatic precip default, but skip detection (so an all-positive anomaly
+# still gets the diverging scale). Value: whether it is the anomaly scale.
+DEFAULT_PRECIP_PALETTES = {"default_precip": False, "default_precip_anom": True}
+
+
 def precip_nested_palette(name: str) -> dict:
     """Packed under + master prefix + next-class over for a window name."""
     if name not in PRECIP_WINDOW_VMAX:
@@ -584,7 +590,8 @@ def parse_palette(value, *, loc="meta.palette", registry: dict | None = None) ->
         key = next((k for k in palettes if k.lower() == value.lower()), None)
         if key is None:
             raise UsageError(
-                f"{loc} {value!r} is not a known palette; known: {', '.join(sorted(palettes))}. "
+                f"{loc} {value!r} is not a known palette; known: "
+                f"{', '.join(sorted({*palettes, *DEFAULT_PRECIP_PALETTES}))}. "
                 "For a Plotly colorscale name (Viridis, RdBu, YlGn, …) set the trace's "
                 "colorscale instead"
             )

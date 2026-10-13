@@ -59,7 +59,7 @@ Do not `coarsen` or `downscale` just to draw a figure. Only `difference` and `ve
 | `along`, `along_color`, `band` | Series: one line per value of a dim (`"number"` gives ensemble spaghetti). `along_color` is `same` (default) or `cycle`. `band: [10, 90]` shades a percentile band around the mean. |
 | `align` | Series: `"dayofyear"` overlays years on one seasonal axis. |
 | `pair_on`, `x`, `y` | Pair: the two sources and how they join (`time`, `year`, `index`). |
-| `palette` | Class palette: a name (`ppt_daily`, `ppt_week`, `ppt_month`, `ppt_season`, `ppt_anom_*`, `spi`, `ppt_poa`, …), a color list, or `{colors, bounds, under, over}`. |
+| `palette` | Class palette: a name (`default_precip`, `default_precip_anom`, `ppt_daily`, `ppt_week`, `ppt_month`, `ppt_season`, `ppt_anom_*`, `spi`, `ppt_poa`, …), a color list, or `{colors, bounds, under, over}`. |
 | `arrows` | `{step, scale}`: thin to every Nth cell; degrees of arrow per unit of speed. |
 
 `layout.meta`:
@@ -72,15 +72,21 @@ Do not `coarsen` or `downscale` just to draw a figure. Only `difference` and `ve
 | `overlays` | Base map: `true` (default), `false`, or per layer, e.g. `{"rivers": false, "admin1": true, "borders": {"line": {"width": 2}}}`. Layers: `coastline`, `borders`, `lakes`, `rivers`, `admin1` (Natural Earth; scale follows the map span). |
 | `export.scale` | PNG/JPG pixel multiplier (Plotly's default 1; 2 doubles the pixels). |
 
+To draw official national or local boundaries instead of the built-in Natural Earth lines, check whether an installed skill provides more specific region GeoJSON for the use case, add each file as `--layer outline:PATH`, and set `"overlays": {"admin1": false, "borders": false, "coastline": false}` so the built-in lines do not draw alongside them.
+
 ## Colors
 
 Precipitation totals get the nested absolute-mm class palette automatically: the same color always means the same millimetres, and the window follows `aggregation_period`. Anomalies get the diverging classes. Fields with CF `flag_values` (e.g. `verify` hits) get one class per flag, labelled with `flag_meanings` (disagree / below / hit). Other fields get a sequential scale, or `RdBu_r` centred on zero when the data spans zero.
 
 - **A Plotly colorscale and limits:** set `colorscale`, `zmin` / `zmax` (or `marker.cmin` / `cmax` for stations) and `colorbar` on the trace. They apply to the trace's color axis. Setting limits on a class palette turns it into a continuous scale.
 - **A class palette:** `meta.palette`.
+
+`default_precip` (totals) and `default_precip_anom` (anomalies) are the palettes precipitation gets automatically, with the window picked from `aggregation_period`: under 2 days 0–50 mm (±50), under 10 days 0–200 (±200), under 40 days 0–400 (±300), longer 0–1000 (±500); weekly with no period. Name one in `meta.palette` to skip detection when an anomaly lost its precip name (e.g. after `difference`), an anomaly is all positive, a bias-corrected total has negative values, or totals and anomalies share a figure. To pin a window, name it: `ppt_daily` … `ppt_season`, `ppt_anom_daily` … `ppt_anom_season`. A `--theme-file` palette of the same name replaces the built-in one. For other named palettes (e.g. an agency's rainfall legend), check whether an installed skill provides a theme file and pass it with `--theme-file`.
 - **A whole color axis:** `layout.coloraxis` (or `coloraxis2`, …), e.g. `{"layout": {"coloraxis": {"colorbar": {"title": {"text": "Rain [mm]"}}}}}`.
 
 The colorbar label defaults to the variable's `long_name` and short units (`Total precipitation [mm]`). Dates belong in titles.
+
+Keep titles and colorbar labels short: a title names the subject in a few words (`CHIRPS weekly totals`), a colorbar label is the quantity and units (`Rain [mm]`). Methods, sources and caveats go in your reply, not the figure. Long text wraps and crowds side-by-side panels and colorbars.
 
 ## Command line
 

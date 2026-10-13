@@ -33,8 +33,8 @@ _META = {
     "along_color": "same (default; one color, one legend entry) or cycle",
     "band": "series with along: percentile pair such as [10, 90], shaded with the mean",
     "align": "series: dayofyear overlays years on one seasonal axis",
-    "palette": "class palette name (ppt_week, ppt_anom_month, spi, …), color list, or "
-    "{colors, bounds, under, over}; precipitation gets one automatically",
+    "palette": "class palette name (default_precip, default_precip_anom, ppt_week, spi, …), "
+    "color list, or {colors, bounds, under, over}; precipitation gets one automatically",
     "arrows": "arrows only: {step: thin to every Nth cell, scale: degrees per unit speed}",
 }
 

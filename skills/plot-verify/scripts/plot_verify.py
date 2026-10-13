@@ -3,12 +3,6 @@
 # dependencies = [
 #   "weather-skills-plotting",
 #   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
-#   "cf-xarray",
-#   "cftime",
-#   "numpy",
-#   "xarray",
-#   "zarr",
-#   "pint-xarray>=0.6",
 # ]
 #
 # [tool.uv.sources]
@@ -114,14 +108,12 @@ def _user_variable(user, uid):
 @weather_skill.argument(
     "--obs",
     type=Dataset("spatial"),
-    required=False,
     help="Observation Zarr for the verifying week (input id obs).",
 )
 @weather_skill.argument(
     "--forecast",
     type=Dataset("spatial"),
     action="append",
-    required=False,
     help="Forecast Zarr for that week at one lead; repeat, week-1 first "
     "(input ids forecast1, forecast2, …).",
 )
@@ -129,21 +121,15 @@ def _user_variable(user, uid):
     "--verify",
     type=Dataset("any"),
     action="append",
-    required=False,
     help="Verify Zarr from the verify skill, once per --forecast, same order.",
 )
-@weather_skill.argument("--spec", default=None, type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
+@weather_skill.argument("--spec", type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
 @weather_skill.argument(
     "--theme-file",
-    default=None,
     help="Theme JSON/TOML: {template: <Plotly template>, palettes: {…}}.",
 )
-@weather_skill.argument(
-    "--dump-spec", nargs="?", const="-", default=None, probe=True, help=DUMP_SPEC_HELP
-)
-def plot_verify(
-    obs, forecast, verify, output, spec=None, theme_file=None, dump_spec=None, **kwargs
-):
+@weather_skill.argument("--dump-spec", nargs="?", const="-", probe=True, help=DUMP_SPEC_HELP)
+def plot_verify(obs, forecast, verify, output, spec, theme_file, dump_spec, **kwargs):
     """Lead-week verification grid from obs, forecast, and pre-computed verify Zarrs."""
     forecasts, verifies = _as_list(forecast), _as_list(verify)
     if obs is None and spec is not None:

@@ -432,3 +432,26 @@ def test_cf_flag_field_gets_named_classes():
     assert bar["tickvals"] == [0, 1, 2]
     z = np.asarray(_data(fig, "heatmap")[0]["z"], float)
     assert sorted(set(z.ravel().tolist())) == [0.0, 1.0, 2.0]
+
+
+def test_default_precip_palette_names_follow_aggregation_window():
+    from weather_skills_plotting.palettes import load_theme, precip_nested_anomaly_palette
+
+    # An all-positive field with no precip name: detection would not call it an anomaly.
+    ds = make_gridded(n_time=1, name="diff", units="mm")
+    ds["diff"].values[:] = 12.0
+    ds["diff"].attrs["aggregation_period"] = "30 day"
+    spec = {"data": [_trace("a", meta={"palette": "Default_Precip_Anom"})]}
+    bar = _layout(compile(spec, {"a": ds}))["coloraxis"]["colorbar"]
+    month = precip_nested_anomaly_palette("ppt_anom_month")
+    assert bar["ticktext"] == [f"{b:g}" for b in month["bounds"]]
+
+    spec = {"data": [_trace("a", meta={"palette": "default_precip"})]}
+    bar = _layout(compile(spec, {"a": ds}))["coloraxis"]["colorbar"]
+    assert bar["ticktext"][-1] == "400"  # ppt_month window
+
+    # A theme palette of the same name replaces the built-in one.
+    theme = load_theme()
+    theme["palettes"]["default_precip"] = {"colors": ["#fff", "#00f"], "bounds": [0, 5, 10]}
+    bar = _layout(compile(spec, {"a": ds}, theme=theme))["coloraxis"]["colorbar"]
+    assert bar["ticktext"] == ["0", "5", "10"]

@@ -47,3 +47,9 @@ and transforms when those are available (for example a fetch skill,
   own grid; traces on the same axes are layers. Point traces at the same
   `coloraxis` to share a colorbar. Panel titles are annotations named
   `panel-title-N`. Spacing, fonts and margins are Plotly's defaults; change them with plain `layout` keys.
+- **Keep titles and colorbar labels short.** A title names the subject in a
+  few words (`CHIRPS weekly totals`, `Week 1`), not the pipeline that made
+  it; methods, sources and caveats go in your reply or the report text. A
+  colorbar label is the quantity and units (`Rain [mm]`), not a sentence.
+  Long text wraps, crowds multi-panel grids, and squeezes side-by-side
+  colorbars.

@@ -35,6 +35,7 @@ Columns follow the `--forecast` order, so **pass week-1 first**. Observation and
 - Traces are `obs`, `forecast1` … `forecastN` (axes `x`, `x2`, …) and `verify1` … `verifyN`, which sit in row 2.
 - Panel titles are annotations named `panel-title-N`. The metric label is `row-label-metric`.
 - Obs and forecasts share `coloraxis`; the verify maps use `coloraxis2`.
+- Keep the title, panel titles and colorbar labels short: the grid has many panels and two colorbars, and the week dates are already appended to the title.
 
 | Goal | `--spec` |
 | --- | --- |

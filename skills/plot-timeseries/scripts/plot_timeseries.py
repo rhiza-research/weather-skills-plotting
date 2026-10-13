@@ -3,12 +3,6 @@
 # dependencies = [
 #   "weather-skills-plotting",
 #   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
-#   "cf-xarray",
-#   "cftime",
-#   "numpy",
-#   "xarray",
-#   "zarr",
-#   "pint-xarray>=0.6",
 # ]
 #
 # [tool.uv.sources]
@@ -21,11 +15,16 @@ from pathlib import Path
 
 from weather_skills_core import Dataset, UsageError, weather_skill
 from weather_skills_core.cf import auto_variable
-from weather_skills_core.units import units_equal, variable_units
+from weather_skills_core.units import (
+    AGGREGATION_PERIOD_ATTR,
+    to_standard_units,
+    units_equal,
+    variable_units,
+)
 
 from weather_skills_plotting import parse_spec_arg
 from weather_skills_plotting.cli import input_path, letter, run, skeleton, spec_datasets, warn
-from weather_skills_plotting.display import dataset_display_label
+from weather_skills_plotting.display import dataset_display_label, precip_for_display
 from weather_skills_plotting.reference import install_spec_help
 from weather_skills_plotting.spec import DUMP_SPEC_HELP, SPEC_ARGUMENT_HELP, merge_spec
 
@@ -77,6 +76,48 @@ def inherit_from_first(spec: dict) -> dict:
     return spec
 
 
+def keep_mixed_precip_as_rates(spec: dict, datasets: dict) -> dict:
+    """Draw every precip series on a y-axis as a rate unless all become totals.
+
+    Series with an ``aggregation_period`` are drawn as period totals (mm);
+    one without stays a rate (mm/day). Mixed on one axis, a weekly 35 mm
+    total would read as 35 mm/day, so drop the period from those inputs.
+    """
+    by_axis = {}
+    for trace in spec.get("data") or []:
+        source = (trace.get("meta") or {}).get("source") or {}
+        key = str(source.get("input"))
+        ds = datasets.get(key)
+        if ds is None:
+            continue
+        var = source.get("variable") or auto_variable(ds)
+        if var not in ds:
+            continue
+        try:
+            rate = to_standard_units(ds, variables=[var])
+        except UsageError:
+            rate = ds
+        converted = precip_for_display(rate, var) is not rate
+        by_axis.setdefault(trace.get("yaxis") or "y", []).append((key, var, converted))
+    out = dict(datasets)
+    for items in by_axis.values():
+        converted = [c for _, _, c in items]
+        if not any(converted) or all(converted):
+            continue
+        for key, var, c in items:
+            if c:
+                ds = out[key].copy(deep=False)
+                ds[var] = ds[var].copy(deep=False)
+                ds[var].attrs.pop(AGGREGATION_PERIOD_ATTR, None)
+                out[key] = ds
+        warn(
+            "some precip inputs have no aggregation_period, so every series on a shared "
+            "y-axis is drawn as a rate (mm/day). Run aggregate-temporal on all inputs to "
+            'plot totals, or give each its own axis (yaxis "y2", or layout.grid).'
+        )
+    return out
+
+
 def warn_mixed_units(spec: dict, datasets: dict) -> None:
     """Series on one y-axis in different units are drawn on one scale; say so."""
     by_axis = {}
@@ -105,19 +146,15 @@ def warn_mixed_units(spec: dict, datasets: dict) -> None:
     "--input",
     type=Dataset("any"),
     action="append",
-    required=False,
     help="Input Zarr; repeat once per series (legend order; trace uids a, b, …).",
 )
-@weather_skill.argument("--spec", default=None, type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
+@weather_skill.argument("--spec", type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
 @weather_skill.argument(
     "--theme-file",
-    default=None,
     help="Theme JSON/TOML: {template: <Plotly template>, palettes: {…}}.",
 )
-@weather_skill.argument(
-    "--dump-spec", nargs="?", const="-", default=None, probe=True, help=DUMP_SPEC_HELP
-)
-def plot_timeseries(ds, output, spec=None, theme_file=None, dump_spec=None, **kwargs):
+@weather_skill.argument("--dump-spec", nargs="?", const="-", probe=True, help=DUMP_SPEC_HELP)
+def plot_timeseries(ds, output, spec, theme_file, dump_spec, **kwargs):
     """Overlay one series per input Zarr on a shared time axis."""
     files = [d for d in (ds or []) if d is not None]
     if len(files) > MAX_INPUTS:
@@ -140,6 +177,7 @@ def plot_timeseries(ds, output, spec=None, theme_file=None, dump_spec=None, **kw
     base = skeleton("plot-timeseries", datasets, data)
     user = spec.data if spec is not None else {}
     merged = inherit_from_first(merge_spec(base, user))
+    datasets = keep_mixed_precip_as_rates(merged, datasets)
     warn_mixed_units(merged, datasets)
     return run(merged, None, datasets, output, dump_spec, theme_file=theme_file)
 

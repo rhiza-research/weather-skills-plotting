@@ -35,7 +35,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot_mediogram.py -i <forecast.zarr> -i <mcli
 ```
 
 - `-i` — exactly twice: forecast first (input id `forecast`), then m-climate (`mclimate`).
-- `--spec` — must set `layout.meta.geo.point`. Titles, axes and size are plain Plotly `layout` keys.
+- `--spec` — must set `layout.meta.geo.point`. Titles, axes and size are plain Plotly `layout` keys. Keep the title to a few words (`Nairobi`).
 - `--dump-spec [PATH]` — print or write the merged spec and skip drawing.
 
 ## Example

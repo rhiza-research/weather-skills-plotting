@@ -3,12 +3,6 @@
 # dependencies = [
 #   "weather-skills-plotting",
 #   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
-#   "cf-xarray",
-#   "cftime",
-#   "numpy",
-#   "xarray",
-#   "zarr",
-#   "pint-xarray>=0.6",
 # ]
 #
 # [tool.uv.sources]
@@ -56,19 +50,15 @@ def _variable(ds, user, uid):
     "--input",
     type=Dataset("any"),
     action="append",
-    required=False,
     help="Pass twice: the forecast Zarr, then the m-climate Zarr (input ids forecast, mclimate).",
 )
-@weather_skill.argument("--spec", default=None, type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
+@weather_skill.argument("--spec", type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
 @weather_skill.argument(
     "--theme-file",
-    default=None,
     help="Theme JSON/TOML: {template: <Plotly template>, palettes: {…}}.",
 )
-@weather_skill.argument(
-    "--dump-spec", nargs="?", const="-", default=None, probe=True, help=DUMP_SPEC_HELP
-)
-def plot_mediogram(ds, output, spec=None, theme_file=None, dump_spec=None, **kwargs):
+@weather_skill.argument("--dump-spec", nargs="?", const="-", probe=True, help=DUMP_SPEC_HELP)
+def plot_mediogram(ds, output, spec, theme_file, dump_spec, **kwargs):
     """ECMWF-style mediogram: forecast vs m-climate ensemble distributions at a point."""
     files = [d for d in (ds or []) if d is not None]
     if not files and spec is not None:

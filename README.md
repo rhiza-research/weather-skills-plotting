@@ -20,6 +20,13 @@ The spec design (Plotly figure plus `meta` bindings) is documented in
 [`docs/plotting.md`](docs/plotting.md). PNG/JPG export needs Chrome: kaleido
 uses an installed one, or run `uv run plotly_get_chrome -y` once.
 
+Prefer short titles and colorbar labels. A title names the subject in a few
+words (`CHIRPS weekly totals`, `Week 1`), not the whole pipeline; put
+methods, sources and caveats in the caption or report text. A colorbar label
+is the quantity and its units (`Rain [mm]`), not a sentence. Long text wraps
+badly, crowds multi-panel grids, and squeezes the side-by-side colorbars
+along the bottom.
+
 ## Quick start
 
 ```bash

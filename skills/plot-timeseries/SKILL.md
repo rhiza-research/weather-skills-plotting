@@ -39,6 +39,8 @@ A leftover dim is an error that names the fix; nothing is averaged silently. For
 
 `align: "dayofyear"` puts every year on one calendar (labelled `1 Oct`, `15 Nov`, …), so dates line up across leap and non-leap years; 29 Feb folds onto 28 Feb. A season that crosses New Year (e.g. DJF) splits at 1 Jan.
 
+Keep the title and axis labels short: a few words for the title, the quantity and units for an axis (`Rain [mm]`). Methods and sources go in your reply.
+
 Series on one y-axis in different units print a warning and still render; give them separate panels or a second axis.
 
 ## Command line

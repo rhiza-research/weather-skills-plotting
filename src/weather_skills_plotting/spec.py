@@ -277,7 +277,11 @@ def _check_source(source, loc: str) -> None:
 
 
 def check_trace_meta(meta, loc: str) -> None:
-    from weather_skills_plotting.palettes import load_theme, parse_palette
+    from weather_skills_plotting.palettes import (
+        DEFAULT_PRECIP_PALETTES,
+        load_theme,
+        parse_palette,
+    )
 
     _check_keys(meta, TRACE_META_KEYS, loc)
     bind = meta.get("bind")
@@ -303,8 +307,9 @@ def check_trace_meta(meta, loc: str) -> None:
         )
     if meta.get("align") not in (None, "dayofyear"):
         raise UsageError(f"plot spec {loc}.align must be 'dayofyear'")
-    if meta.get("palette") is not None:
-        parse_palette(meta["palette"], loc=f"{loc}.palette", registry=load_theme()["palettes"])
+    palette = meta.get("palette")
+    if palette is not None and str(palette).lower() not in DEFAULT_PRECIP_PALETTES:
+        parse_palette(palette, loc=f"{loc}.palette", registry=load_theme()["palettes"])
 
 
 def check_layout_meta(meta) -> None:

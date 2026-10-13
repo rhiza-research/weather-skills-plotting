@@ -3,12 +3,6 @@
 # dependencies = [
 #   "weather-skills-plotting",
 #   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
-#   "cf-xarray",
-#   "cftime",
-#   "numpy",
-#   "xarray",
-#   "zarr",
-#   "pint-xarray>=0.6",
 # ]
 #
 # [tool.uv.sources]
@@ -120,7 +114,6 @@ def _layer_traces(layers):
     "--input",
     type=Dataset("any"),
     action="append",
-    required=False,
     help="Input Zarr. Repeat for side-by-side maps, one panel per file on its own grid "
     "(input ids a, b, … in order). Exclusive with --layer and --x/--y.",
 )
@@ -128,45 +121,37 @@ def _layer_traces(layers):
     "--x",
     dest="x_ds",
     type=Dataset("any"),
-    required=False,
-    default=None,
     help="X series Zarr for an xy scatter (input id x).",
 )
 @weather_skill.argument(
     "--y",
     dest="y_ds",
     type=Dataset("any"),
-    required=False,
-    default=None,
     help="Y series Zarr for an xy scatter (input id y).",
 )
 @weather_skill.argument(
     "--layer",
     action="append",
-    default=None,
     type=parse_layer,
     help="KIND:PATH layer drawn on one shared map; repeat to stack. Kinds: heatmap, contour, "
     "scatter (stations), quiver (u/v), outline (GeoJSON), mask (GeoJSON). Trace uids are a, b, … "
     "in order.",
 )
-@weather_skill.argument("--spec", default=None, type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
+@weather_skill.argument("--spec", type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
 @weather_skill.argument(
     "--theme-file",
-    default=None,
     help="Theme JSON/TOML: {template: <Plotly template>, palettes: {name: {colors, bounds}}}.",
 )
-@weather_skill.argument(
-    "--dump-spec", nargs="?", const="-", default=None, probe=True, help=DUMP_SPEC_HELP
-)
+@weather_skill.argument("--dump-spec", nargs="?", const="-", probe=True, help=DUMP_SPEC_HELP)
 def plot(
     ds,
     output,
-    layer=None,
-    x_ds=None,
-    y_ds=None,
-    spec=None,
-    theme_file=None,
-    dump_spec=None,
+    layer,
+    x_ds,
+    y_ds,
+    spec,
+    theme_file,
+    dump_spec,
     **kwargs,
 ):
     """Render a map, time series, xy scatter, or wind rose from weather-skills Zarrs."""
