@@ -15,6 +15,8 @@ from weather_skills_plotting.spec import (
     validate,
 )
 
+LARGE_HTML_MB = 50
+
 
 def input_path(ds) -> str | None:
     from weather_skills_core.decorator import INPUT_PATH_ATTR
@@ -42,8 +44,22 @@ def spec_datasets(spec_arg, cli: dict) -> dict:
     return spec_arg.opened() if spec_arg is not None else {}
 
 
-def run(skill_spec: dict, user_spec, datasets: dict, output, dump, *, theme_file=None, scale=None):
-    """Merge, then either dump the spec or draw it. Returns the output path or ``None``."""
+def run(
+    skill_spec: dict,
+    user_spec,
+    datasets: dict,
+    output,
+    dump,
+    *,
+    theme_file=None,
+    scale=None,
+    animate=False,
+):
+    """Merge, then either dump the spec or draw it. Returns the output path or ``None``.
+
+    ``animate`` turns the figure's map panels into frames of one animated panel
+    (``plot-video``); the output must then be HTML.
+    """
     from weather_skills_plotting import SpecArg, compile, export
     from weather_skills_plotting.palettes import load_theme
 
@@ -56,9 +72,31 @@ def run(skill_spec: dict, user_spec, datasets: dict, output, dump, *, theme_file
         return None
     if output is None:
         raise UsageError("--output is required unless --dump-spec is set")
+    if animate and Path(output).suffix.lower() not in (".html", ".htm"):
+        raise UsageError(
+            f"output {Path(output).name!r} must end in .html: an animation plays only in a "
+            "browser. For a still image of one time, use the plot skill"
+        )
     theme = load_theme(theme_file)
     fig = compile(merged, datasets, theme=theme)
-    export_meta = ((merged.get("layout") or {}).get("meta") or {}).get("export") or {}
+    layout_meta = (merged.get("layout") or {}).get("meta") or {}
+    if animate:
+        from weather_skills_plotting.animate import animate_figure, estimate_html_mb
+
+        fig = animate_figure(
+            fig, user_layout=user.get("layout") or {}, animation=layout_meta.get("animation")
+        )
+        size = estimate_html_mb(fig)
+        print(
+            f"plot-video: {len(fig.frames)} frames, {size:.1f} MB of figure data",
+            file=sys.stderr,
+        )
+        if size > LARGE_HTML_MB:
+            warn(
+                f"the HTML will be large (~{size:.0f} MB) and slow to open; select fewer frames "
+                "(meta.source.isel / sel) or a smaller layout.meta.geo.bbox"
+            )
+    export_meta = layout_meta.get("export") or {}
     return export(fig, Path(output), datasets=datasets, scale=scale or export_meta.get("scale"))
 
 

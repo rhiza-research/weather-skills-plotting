@@ -58,6 +58,8 @@ _LAYOUT_META = {
     "overlays": "true, false, or {coastline|borders|lakes|rivers|admin1: false or a scatter "
     'style such as {"line": {"width": 2}}}',
     "export.scale": "PNG/JPG pixel multiplier (Plotly's default 1)",
+    "animation": "plot-video only: {duration: ms per frame (500), transition: ms between "
+    "frames (0)}",
     "version / skill": "leave as dumped",
 }
 

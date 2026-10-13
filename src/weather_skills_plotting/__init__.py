@@ -98,7 +98,8 @@ def export(fig, output, *, datasets=None, scale=None):
         )
     output.parent.mkdir(parents=True, exist_ok=True)
     if suffix in (".html", ".htm"):
-        fig.write_html(output, include_plotlyjs=True, full_html=True)
+        # An animation opens paused on its first frame; the viewer presses Play.
+        fig.write_html(output, include_plotlyjs=True, full_html=True, auto_play=False)
         return output
     fig.write_image(output, scale=scale)
     from weather_skills_plotting.qa import report_figure
