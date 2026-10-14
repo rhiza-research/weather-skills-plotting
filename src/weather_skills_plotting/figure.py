@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import re
 
 import numpy as np
@@ -436,7 +437,7 @@ def _assemble_map(items, user_layout, lmeta, ctx):
         # An outline names the place of interest: frame it, with a margin.
         w, e = min(o[0] for o in outlines), max(o[1] for o in outlines)
         s, n_ = min(o[2] for o in outlines), max(o[3] for o in outlines)
-        pad = 0.1 * max(e - w, n_ - s)
+        pad = 0.04 * max(e - w, n_ - s)
         extents = [[w - pad, e + pad, s - pad, n_ + pad] if x else None for x in extents]
     if len(order) > 1 and ctx.bbox is None:
         # Side-by-side maps of the same region share one window, so a coarse
@@ -621,6 +622,8 @@ def _assemble_chart(items, user_layout):
             axis_titles.setdefault(f"xaxis{xs}", {"title": {"text": bound.axis_titles["x"]}})
         if bound.axis_titles.get("y") is not None:
             axis_titles.setdefault(f"yaxis{ys}", {"title": {"text": bound.axis_titles["y"]}})
+        if bound.axis_titles.get("y_nonnegative"):
+            axis_titles.setdefault(f"yaxis{ys}", {}).setdefault("rangemode", "nonnegative")
         if bound.x_tickformat:
             # Seasonal overlays sit on a stand-in year; show day and month only.
             axis = axis_titles.setdefault(f"xaxis{xs}", {})
@@ -634,11 +637,14 @@ def _assemble_chart(items, user_layout):
     named = [tr for tr in data if tr.get("name") and tr.get("showlegend") is not False]
     top = 60 if titled else 20
     # Legend order follows the inputs even with filled bands (Plotly reverses those).
-    layout["legend"] = {"traceorder": "normal"}
+    layout["legend"] = {**(layout.get("legend") or {}), "traceorder": "normal"}
     if len(named) < 2:
         layout["showlegend"] = False
     elif not any(tr.get("type") == "barpolar" for tr in data):
         layout["legend"].update(orientation="h", x=0, xanchor="left", y=1.02, yanchor="bottom")
-        top += 30
+        # One row of room per row the legend wraps to, so it never runs into the title.
+        plot_px = (user_layout.get("width") or 700) - 160
+        entries_px = sum(7 * len(str(tr["name"])) + 45 for tr in named)
+        top += 24 * max(1, math.ceil(entries_px / max(plot_px, 200)))
     layout["margin"] = {"t": top}
     return data, layout

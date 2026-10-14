@@ -163,7 +163,13 @@ def axis_suffix(p: int) -> str:
 
 def map_axes(p: int, extent, domain=None) -> tuple[dict, dict]:
     """Lon/lat axes for panel ``p`` over ``extent``, one degree the same length on both."""
-    common = {"constrain": "domain", "showgrid": False, "ticksuffix": "°", "ticks": "outside"}
+    common = {
+        "constrain": "domain",
+        "showgrid": False,
+        "zeroline": False,
+        "ticksuffix": "°",
+        "ticks": "outside",
+    }
     s = axis_suffix(p)
     xaxis = {"range": [extent[0], extent[1]], **common, "anchor": f"y{s}"}
     yaxis = {

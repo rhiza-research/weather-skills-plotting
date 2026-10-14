@@ -46,6 +46,7 @@ from weather_skills_plotting.palettes import (
     along_dim,
     along_member_label,
     continuous_colorscale,
+    is_precip,
     parse_palette,
 )
 from weather_skills_plotting.spec import DEFAULT_BIND
@@ -70,7 +71,10 @@ from weather_skills_plotting.wind import (
 )
 
 FACET_DIMS = ("step", "time", "valid_time")
-ARROW_LEN_SPACING = 1.5
+# A typical (95th percentile) arrow is this many arrow spacings long: under one, so
+# neighbours do not overlap.
+ARROW_LEN_SPACING = 0.9
+ARROWS_ACROSS = 25  # default thinning: about this many arrows across a panel
 ARROW_KEY_SPEED = 10.0
 
 
@@ -152,7 +156,14 @@ def _display(ds, variable):
         # Totals or anomalies can carry a rate/temperature standard_name that
         # the standard-units table would force into an incompatible target.
         pass
-    return precip_for_display(ds, variable)
+    out = precip_for_display(ds, variable)
+    if out is not ds:
+        print(
+            f"Note: {variable!r} is a rate with aggregation_period "
+            f"{ds[variable].attrs.get('aggregation_period')!r}; drawing period totals (mm)",
+            file=sys.stderr,
+        )
+    return out
 
 
 def _variable(ds, name, loc):
@@ -306,13 +317,13 @@ def _wrapped(ctx):
     return ctx.bbox is not None and ctx.bbox[1] > ctx.bbox[3]
 
 
-def _map_field(ctx, da, meta, loc, what):
+def _map_field(ctx, da, meta, loc, what, note=True):
     """Grid field ready to panel: subset, ensemble-mean, transposed."""
     lat, lon = _lonlat(da, what)
     if not _wrapped(ctx):
         da = ensure_normalized_longitude(da, lon)
     fdim = _facet_dim(meta, da, (lat, lon), loc)
-    if "number" in da.dims and fdim != "number":
+    if "number" in da.dims and fdim != "number" and note:
         print(
             f"Note: {loc}: drawing the ensemble mean of {da.sizes['number']} members; set "
             f'{loc}.facet "number" for one map per member',
@@ -327,9 +338,21 @@ def _map_field(ctx, da, meta, loc, what):
 def _slices(da, fdim):
     """``[(key, title, slice)]`` along the facet dim (one ``None`` slice without)."""
     if fdim is None:
+        # A time or step picked with isel/sel stays as a scalar coord: still date the map.
+        for dim in ("step", "time"):
+            if dim in da.coords and da[dim].ndim == 0 and dim not in da.dims:
+                value = da[dim].values
+                one = da.expand_dims(dim)
+                return [(None, panel_title(one, dim, value, [value]), da)]
         return [(None, None, da)]
     values = list(da[fdim].values)
-    return [(v, panel_title(da, fdim, v, values), da.isel({fdim: i})) for i, v in enumerate(values)]
+    out = [(v, panel_title(da, fdim, v, values), da.isel({fdim: i})) for i, v in enumerate(values)]
+    empty = [
+        title for _, title, part in out if not np.isfinite(np.asarray(part.values, float)).any()
+    ]
+    if empty:
+        print(f"Note: panels with no data (all NaN): {', '.join(map(str, empty))}", file=sys.stderr)
+    return out
 
 
 # --------------------------------------------------------------------- binders
@@ -406,8 +429,13 @@ def bind_arrows(trace, meta, ctx, loc):
     u_da = _reduce(_subset(ctx, source, _sel(plain(ds[u_name]), source, f"{loc}.source")), source)
     v_da = _reduce(_subset(ctx, source, _sel(plain(ds[v_name]), source, f"{loc}.source")), source)
     u_da, lat, lon, fdim = _map_field(ctx, u_da, meta, loc, "wind arrows")
-    v_da, *_ = _map_field(ctx, v_da, meta, loc, "wind arrows")
-    step = quiver_step(u_da[lat].values, u_da[lon].values, opts.get("step"))
+    v_da, *_ = _map_field(ctx, v_da, meta, loc, "wind arrows", note=False)
+    step = opts.get("step")
+    native = native_spacing_deg(u_da[lat].values, u_da[lon].values)
+    if step is None and native:
+        lons = np.asarray(u_da[lon].values, float)
+        step = max(1, round((np.nanmax(lons) - np.nanmin(lons)) / ARROWS_ACROSS / native))
+    step = quiver_step(u_da[lat].values, u_da[lon].values, step)
     scale = opts.get("scale")
     if scale is None:
         spacing = (native_spacing_deg(u_da[lat].values, u_da[lon].values) or 1.0) * step
@@ -439,6 +467,21 @@ def bind_arrows(trace, meta, ctx, loc):
             "showlegend": False,
             "line": {"color": "black"},
         }
+        # A white box behind the reference arrow so data arrows do not run through it.
+        box_x = [kx - 0.2 * span_x, extent[1] - 0.01 * span_x]
+        box_y = [ky - 0.04 * span_y, ky + 0.04 * span_y]
+        key_box = {
+            "type": "scatter",
+            "mode": "lines",
+            "x": [box_x[0], box_x[1], box_x[1], box_x[0], box_x[0]],
+            "y": [box_y[0], box_y[0], box_y[1], box_y[1], box_y[0]],
+            "fill": "toself",
+            "fillcolor": "rgba(255, 255, 255, 0.85)",
+            "line": {"width": 0},
+            "hoverinfo": "skip",
+            "showlegend": False,
+            "uid_suffix": "key-box",
+        }
         key_trace = {
             "type": "scatter",
             "mode": "lines+text",
@@ -451,7 +494,7 @@ def bind_arrows(trace, meta, ctx, loc):
             "line": {"color": "black"},
             "uid_suffix": "key",
         }
-        panels.append(Panel([arrows, key_trace], ptitle, key))
+        panels.append(Panel([arrows, key_box, key_trace], ptitle, key))
     return Bound(panels, is_map=True, extent=extent)
 
 
@@ -651,6 +694,12 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
         da = da.transpose(sdim, along)
         y = np.asarray(da.values, dtype=float)
         members = [along_member_label(v) for v in da[along].values]
+        if "name" in da.coords and da["name"].dims == (along,):
+            # Stations by id and name: "TA00057 Kibera".
+            members = [
+                f"{m} {n}" if str(n).strip() and str(n) != m else m
+                for m, n in zip(members, da["name"].values, strict=True)
+            ]
         band = meta.get("band")
         if band is not None:
             col = _color_name(trace, color)
@@ -692,6 +741,9 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
                     "fill": "tonexty",
                     "fillcolor": _rgba(col, 0.25),
                     "uid_suffix": "band-high",
+                    # The legend says what the shading is.
+                    "showlegend": True,
+                    "name": f"{band[0]:g}–{band[1]:g}%",
                 },
                 {
                     **base,
@@ -746,6 +798,11 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
                 }
             )
     titles = {"x": "" if is_date else axis_label(xname), "y": variable_label_for_display(da)}
+    finite = np.asarray(da.values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    if is_precip(da) and finite.size and finite.min() >= 0:
+        # Rainfall cannot go below zero; neither should its axis.
+        titles["y_nonnegative"] = True
     return Bound(
         [Panel(traces)],
         axis_titles=titles,
@@ -875,7 +932,8 @@ def bind_windrose(trace, meta, ctx, loc):
     if extra:
         raise UsageError(
             f"dimension {extra[0]!r} remains; a wind rose pools space, time and ensemble into "
-            f"samples — select a position with {loc}.source.isel"
+            f"samples — pick one value with {loc}.source.sel (e.g. a pressure level: "
+            f'{{"vertical": 850}}) or {loc}.source.isel'
         )
     u, v = flat_numeric(u_da), flat_numeric(v_da)
     if u.size != v.size:
@@ -892,14 +950,16 @@ def bind_windrose(trace, meta, ctx, loc):
     freq = 100.0 * hist / float(hist.sum())
     n = freq.shape[1]
     palette = meta.get("palette")
-    colors = (
-        parse_palette(palette, loc=f"{loc}.palette", registry=ctx.palettes)["colors"]
-        if palette
-        else WIND_SPEED_COLORS
-    )
-    from plotly.colors import sample_colorscale
+    if palette:
+        from plotly.colors import sample_colorscale
 
-    colors = sample_colorscale(continuous_colorscale(colors), [i / max(n - 1, 1) for i in range(n)])
+        colors = parse_palette(palette, loc=f"{loc}.palette", registry=ctx.palettes)["colors"]
+        colors = sample_colorscale(
+            continuous_colorscale(colors), [i / max(n - 1, 1) for i in range(n)]
+        )
+    else:
+        # One fixed colour per speed class, so 2–4 m/s looks the same on every rose.
+        colors = [WIND_SPEED_COLORS[min(i, len(WIND_SPEED_COLORS) - 1)] for i in range(n)]
     units = speed_units_display(u_da)
     theta = [i * 360.0 / WIND_ROSE_SECTORS for i in range(WIND_ROSE_SECTORS)]
     traces = [
@@ -921,7 +981,8 @@ def bind_windrose(trace, meta, ctx, loc):
                 "tickvals": [i * 45 for i in range(8)],
                 "ticktext": compass,
             },
-            "radialaxis": {"ticksuffix": "%", "angle": 90, "tickangle": 90},
+            # Radial labels along the NE diagonal, clear of the N label.
+            "radialaxis": {"ticksuffix": "%", "angle": 45, "tickangle": 45},
         },
         "legend": {"title": {"text": "Wind speed"}},
         "barmode": "stack",

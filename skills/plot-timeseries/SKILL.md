@@ -77,4 +77,4 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py -i /tmp/obs.zarr -i /tmp/c
 
 ## Output
 
-The figure at `--output`, at Plotly's default size. With two or more legend entries the legend sits in a row above the plot, in input order; one series gets no legend. The y-axis label is the variable's `long_name` plus short units. PNG/JPG print a pixel `plot hash` and `data: not null` / `NULL` (`NULL` means all-NaN input; run `inspect-zarr`). Look at the image rather than comparing hashes. Provenance is embedded in the PNG metadata or the HTML `<meta>` tag.
+The figure at `--output`, at Plotly's default size. With two or more legend entries the legend sits in rows above the plot, in input order (a band adds a `10–90%` entry); one plain series gets no legend. A rainfall axis does not go below zero. Bars `along` stations are named by id and `name`. The y-axis label is the variable's `long_name` plus short units. PNG/JPG print a pixel `plot hash` and `data: not null` / `NULL` (`NULL` means all-NaN input; run `inspect-zarr`). Look at the image rather than comparing hashes. Provenance is embedded in the PNG metadata or the HTML `<meta>` tag.

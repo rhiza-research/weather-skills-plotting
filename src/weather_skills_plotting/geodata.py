@@ -281,7 +281,8 @@ def point_dim(ds):
 OVERLAY_STYLES = {
     "admin1": {"line": {"color": "#737373", "width": 0.6}},
     "rivers": {"line": {"color": "#708090", "width": 0.6}},
-    "lakes": {"line": {"color": "#708090", "width": 0.6}, "fill": "toself", "fillcolor": "#708090"},
+    # Shoreline only: a filled lake hid the data over it (Lake Victoria is among the wettest cells).
+    "lakes": {"line": {"color": "#4d5b6b", "width": 0.9}},
     "borders": {"line": {"color": "#262626", "width": 1.2}},
     "coastline": {"line": {"color": "black", "width": 1.2}},
 }

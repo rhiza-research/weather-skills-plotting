@@ -40,7 +40,8 @@ _SKILL_VERSION = "0.0.3"
 
 VERIFY_VARS = {"hits": "event_hit", "bias": "bias", "mae": "mae"}
 METRIC_LABELS = {"hits": "Hits", "bias": "Bias", "mae": "MAE"}
-HITS_PALETTE = {"colors": ["#d73027", "#f0f0f0", "#1a9850"], "bounds": [-1.5, -0.5, 0.5, 1.5]}
+# "below" is white: the map's no-data grey must not read as a class.
+HITS_PALETTE = {"colors": ["#d73027", "#ffffff", "#1a9850"], "bounds": [-1.5, -0.5, 0.5, 1.5]}
 BIAS_COLORS = ["#053061", "#2166ac", "#4393c3", "#92c5de", "#d1e5f0", "#ffffff",
                "#fddbc7", "#f4a582", "#d6604d", "#b2182b", "#67001f"]  # fmt: skip
 # Rainfall bias: brown where the forecast is too dry, green where too wet (BrBG).
@@ -268,10 +269,18 @@ def plot_verify(obs, forecast, verify, output, spec, theme_file, dump_spec, **kw
                 "showarrow": False,
             }
         )
+    event_title = "Event"
+    try:
+        threshold = float(verifies[0].attrs.get("event_threshold"))
+    except (TypeError, ValueError):
+        threshold = None
+    if threshold is not None:
+        # Say what an event is: a 1 mm threshold on weekly totals is nearly always met.
+        event_title = f"Event (≥ {threshold:g} {units})" if units else f"Event (≥ {threshold:g})"
     if metric == "hits":
         axis2 = {
             "colorbar": {
-                "title": {"text": "Event"},
+                "title": {"text": event_title},
                 "tickvals": [0, 1, 2],
                 "ticktext": ["disagree", "below", "hit"],
             }

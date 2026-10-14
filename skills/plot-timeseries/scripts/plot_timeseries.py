@@ -70,9 +70,13 @@ def inherit_from_first(spec: dict, datasets: dict | None = None) -> dict:
     first = data[0].get("meta") or {}
     for trace in data[1:]:
         meta = trace.setdefault("meta", {})
-        ds = (datasets or {}).get(str((meta.get("source") or {}).get("input")))
+        source = meta.get("source") or {}
+        ds = (datasets or {}).get(str(source.get("input")))
         along = first.get("along")
-        lacks_along = along and ds is not None and along not in ds.dims
+        # The dims of the variable this trace draws, not of the whole file.
+        var = source.get("variable") or (first.get("source") or {}).get("variable")
+        dims = ds[var].dims if ds is not None and var in ds else getattr(ds, "dims", ())
+        lacks_along = along and ds is not None and along not in dims
         for key in INHERITED_META:
             if lacks_along and key in ("along", "along_color", "band"):
                 continue
@@ -160,9 +164,15 @@ def warn_mixed_units(spec: dict, datasets: dict) -> None:
             continue
         var = source.get("variable") or auto_variable(ds)
         units = variable_units(ds[var]) if var in ds else None
-        if units:
-            by_axis.setdefault(trace.get("yaxis") or "y", []).append((trace.get("uid"), units))
+        by_axis.setdefault(trace.get("yaxis") or "y", []).append((trace.get("uid"), units))
     for axis, items in by_axis.items():
+        unknown = [str(uid) for uid, u in items if not u]
+        items = [(uid, u) for uid, u in items if u]
+        if items and unknown:
+            warn(
+                f"series {', '.join(unknown)} on {axis} have no units attr but share an axis "
+                f"labelled in {items[0][1]!r}; check they are the same quantity"
+            )
         if any(not units_equal(items[0][1], u) for _, u in items[1:]):
             detail = ", ".join(f"{uid} units={u!r}" for uid, u in items)
             warn(

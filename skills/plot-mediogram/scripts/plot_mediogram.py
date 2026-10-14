@@ -108,7 +108,15 @@ def plot_mediogram(ds, output, spec, theme_file, dump_spec, **kwargs):
     lat, lon = cf_dim(da, "latitude"), cf_dim(da, "longitude")
     snapped = da.sel({lat: point["lat"], lon: point["lon"]}, method="nearest")
     qty = variable_label_for_display(da, include_units=False)
-    title = f"Mediogram: {qty} at lat={float(snapped[lat]):g}, lon={float(snapped[lon]):g}"
+    where = f"lat={float(snapped[lat]):g}, lon={float(snapped[lon]):g}"
+    mc = das["mclimate"]
+    mlat, mlon = cf_dim(mc, "latitude"), cf_dim(mc, "longitude")
+    msnap = mc.sel({mlat: point["lat"], mlon: point["lon"]}, method="nearest")
+    mwhere = f"lat={float(msnap[mlat]):g}, lon={float(msnap[mlon]):g}"
+    if mwhere != where:
+        # The m-climate sits on its own grid; say which cell it is.
+        where += f" (m-climate {mwhere})"
+    suffix = ""
     leads = [format_step(v) for v in da["step"].values[:n_steps]]
     xaxis = {"title": {"text": "Forecast step"}}
     init = da["time"].values if "time" in da.coords and da["time"].ndim == 0 else None
@@ -122,7 +130,16 @@ def plot_mediogram(ds, output, spec, theme_file, dump_spec, **kwargs):
             "tickvals": leads,
             "ticktext": [format_plot_date(d, year=False) for d in days],
         }
-        title += f" · init {format_plot_date(init)}"
+        suffix = f" · init {format_plot_date(init)}"
+    # A user title keeps the place and init date, as plot-verify keeps the week.
+    user_layout = user.get("layout") or {}
+    user_title = user_layout.get("title") or {}
+    user_title = user_title.get("text") if isinstance(user_title, dict) else user_title
+    if user_title:
+        title = f"{user_title} · {where}{suffix}"
+        user = {**user, "layout": {k: v for k, v in user_layout.items() if k != "title"}}
+    else:
+        title = f"Mediogram: {qty} at {where}{suffix}"
     layout = {"title": {"text": title}, "boxmode": "group", "xaxis": xaxis}
     if is_precip(da):
         layout["yaxis"] = {"rangemode": "nonnegative"}

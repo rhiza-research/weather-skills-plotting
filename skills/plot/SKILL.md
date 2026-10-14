@@ -1,6 +1,6 @@
 ---
 name: plot
-description: Render a map (heatmap, filled contour, stations, wind quiver), time series, xy scatter, or wind rose from weather-skills standard dataset Zarrs as PNG, JPG, or interactive HTML. The --spec is a standard Plotly figure JSON; dataset bindings go in each trace's meta. Side-by-side maps on different grids (CHIRPS 0.05° next to ECMWF 1.5°) are one -i per file, each on its own axes and grid; do not coarsen them onto one grid. --layer KIND:PATH stacks files on one map. --help lists the meta keys and recipes. Named places: get a bbox or polygon from resolve-region first. For precipitation, run aggregate-temporal then convert-to-totals first (meta.source.reduce averages; it never sums). For a lead-week verification grid, use plot-verify.
+description: Render a map (heatmap, filled contour, stations, wind quiver), time series, xy scatter, or wind rose from weather-skills standard dataset Zarrs as PNG, JPG, or interactive HTML. The --spec is a standard Plotly figure JSON; dataset bindings go in each trace's meta. Side-by-side maps on different grids (CHIRPS 0.05° next to ECMWF 1.5°) are one -i per file, each on its own axes and grid; do not coarsen them onto one grid. --layer KIND:PATH stacks files on one map. --help lists the meta keys and recipes. Named places: get a bbox or polygon from resolve-region first. For precipitation totals, run aggregate-temporal (then convert-to-totals, or let plot convert: a rate with an aggregation_period is drawn as period totals, and stderr says so). meta.source.reduce averages; it never sums. For a lead-week verification grid, use plot-verify.
 license: MIT
 compatibility: Requires Python 3.12 and uv. PNG/JPG export needs Chrome (installed, or `plotly_get_chrome -y`).
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py *)
@@ -23,13 +23,13 @@ The command builds a figure from the files you name, then merges `--spec` onto i
 - `layout.annotations` and `layout.shapes` merge by `name`. Everything else in `layout` is deep-merged.
 - Your values win.
 
-Run the same command with `--dump-spec -` in place of `-o` to print the figure it would draw, edit that JSON, and pass it back with `--spec`. A dumped spec replays on its own: the file paths are kept in `layout.meta.inputs`.
+Run the same command with `--dump-spec -` in place of `-o` to print the spec it builds (traces, bindings, inputs), edit that JSON, and pass it back with `--spec`. Defaults worked out from the data (palette, colorbar label, panel titles, size) are filled in at draw time and are not in the dump; set any of them in the spec to override. A dumped spec replays on its own: the file paths are kept in `layout.meta.inputs`.
 
 What the command builds from each file:
 
 | File | Trace |
 | --- | --- |
-| lat/lon grid | `heatmap`, one panel per `time` or `step` value. Ensemble `number` is averaged and stderr says so; `meta.facet: "number"` maps each member. |
+| lat/lon grid | `heatmap`, one panel per `time` or `step` value, titled with its date; a single map keeps the date of the time or step you picked. `meta.facet` panels another dim (`"vertical"` gives `850 hPa` panels; all-NaN panels are noted on stderr). Ensemble `number` is averaged and stderr says so; `meta.facet: "number"` maps each member. |
 | `station_id` / `point_id` data | `scatter` markers at the stations, colored by value (`meta.bind: "points"`) |
 | 1-D along time | `scatter` line (`meta.bind: "series"`) |
 | `--x` + `--y` | `scatter` of one series against the other (`meta.bind: "pair"`) |
@@ -42,7 +42,8 @@ What the command builds from each file:
 | Datasets drawn on top of each other | `--layer heatmap:a.zarr --layer scatter:stations.zarr --layer outline:kenya.geojson`. Every trace on the same axes stacks on one map. Layers of the same quantity share a colorbar. |
 | A boundary on `-i` maps | Add `--layer outline:PATH` (or `mask:PATH`) to `-i`: it is drawn on every panel. An outline frames the map (unless `geo.bbox` is set) and turns off Natural Earth's admin-1 lines. |
 | Several times or steps of one dataset | One `-i`. The trace panels its `time` / `step` dim. `layout.grid.rows` / `columns` shape the grid (default: the grid closest to a landscape page with no empty row, e.g. 10 panels → 5×2). |
-| Separate colorbars for side-by-side maps | Give one trace its own axis: `"coloraxis": "coloraxis2"`. Traces naming the same axis always share it. |
+| Separate colorbars for side-by-side maps | Give one trace its own axis: `"coloraxis": "coloraxis2"`. Traces naming the same axis always share it; a station trace names it as `marker.coloraxis`. |
+| Week N of a daily forecast | `meta.source.isel: {"step": [0, 1, 2, 3, 4, 5, 6]}` and `reduce: ["step"]` give the week's mean daily value (an arrows trace takes the same selection from its speed trace). For a weekly total, aggregate-temporal first. A field described as "in the last 24 hours" covers the day before each step, so its step 0 is empty: day 1 is step 1. |
 
 Panel titles are annotations named `panel-title-1`, `panel-title-2`, …. Rename one with `{"layout": {"annotations": [{"name": "panel-title-2", "text": "ECMWF"}]}}`. The canvas is sized from the maps: each panel is as large as its lon/lat shape allows (up to 760×560 px alone, 340×340 px in a grid), with fixed room for titles, ticks and colorbars, so there is no empty band around a map. `layout.width` / `height` fix the canvas and the maps shrink to fit; `layout.grid.xgap` / `ygap` set the gap between panels as a fraction of a panel. One colorbar stands on the right. Several stand beside the rows, or under the columns, they colour (totals row and anomalies row each get their own); otherwise they lie side by side along the bottom.
 
@@ -59,7 +60,7 @@ Do not `coarsen` or `downscale` just to draw a figure. Only `difference` and `ve
 | `facet` | The dim to panel (default `step` or `time`); `false` turns paneling off. |
 | `along`, `along_color`, `band` | Series: one line per value of a dim (`"number"` gives ensemble spaghetti). `along_color` is `same` (default) or `cycle`. `band: [10, 90]` shades a percentile band around the mean. |
 | `align` | Series: `"dayofyear"` overlays years on one seasonal axis. |
-| `pair_on`, `x`, `y` | Pair: the two sources and how they join (`time`, `year`, `index`). |
+| `pair_on`, `x`, `y` | Pair: `x` and `y` are full sources (`{input, variable, isel, sel, reduce}`), joined on `pair_on` (`time`, `year`, `index`). Leftover dims are an error, as for series. |
 | `palette` | Class palette: a name (`default_precip`, `default_precip_anom`, `ppt_daily`, `ppt_week`, `ppt_month`, `ppt_season`, `ppt_anom_*`, `spi`, `ppt_poa`, …), a color list, or `{colors, bounds, under, over}`. |
 | `arrows` | `{step, scale}`: thin to every Nth cell; degrees of arrow per unit of speed. |
 

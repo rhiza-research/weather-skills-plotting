@@ -287,6 +287,12 @@ def panel_title(da, sdim, step_value, all_steps):
         if spacing is not None and spacing < 86_400:
             return format_plot_time(step_value)
         return format_calendar_panel(step_value, calendar_bin_width(da, all_steps))
+    units = str(da[sdim].attrs.get("units") or "") if sdim in da.coords else ""
+    if not units and sdim in ("vertical", "level", "pressure_level", "isobaricInhPa"):
+        units = "hPa"
+    if units and value_arr.dtype.kind in "iuf":
+        # A pressure level reads "850 hPa", not "vertical=850".
+        return f"{float(value_arr):g} {units}"
     return f"{sdim}={format_step(step_value)}"
 
 

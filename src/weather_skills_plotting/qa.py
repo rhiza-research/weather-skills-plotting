@@ -103,13 +103,16 @@ def figure_counts(fig) -> list[tuple[str, int, int]]:
             raw = tr.marker.color
         elif getattr(tr, "y", None) is not None:
             raw = tr.y
+        elif getattr(tr, "r", None) is not None:
+            raw = tr.r
         else:
             continue
         try:
             values = np.asarray(raw, dtype=float).ravel()
         except (TypeError, ValueError):
             continue
-        name = uid.split("-p")[0] or "trace"
+        # One row per input: a, b … (not a-3 or a-1-station_id-TA00057).
+        name = uid.split("-")[0] or "trace"
         count = rows.setdefault(name, [0, 0])
         count[0] += int(np.isfinite(values).sum())
         count[1] += values.size

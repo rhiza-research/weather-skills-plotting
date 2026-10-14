@@ -324,7 +324,9 @@ def is_precip_anomaly(da) -> bool:
     name = f"{da.name or ''} {da.attrs.get('long_name') or ''}".lower()
     if "anomal" in name:
         return True
-    sample = np.asarray(da.values, dtype=float).ravel()
+    values = da.data
+    values = getattr(values, "magnitude", values)  # a pint quantity: its numbers
+    sample = np.asarray(values, dtype=float).ravel()
     finite = sample[np.isfinite(sample)]
     # Real negatives, not the -1e-6 rounding a deaccumulated total can carry.
     return bool(finite.size) and bool(np.nanmin(finite) < -0.01)
@@ -368,7 +370,11 @@ def named_precip_scale(da, *others) -> tuple[str, list[str], list[float]]:
     palettes remain available as ``ppt_total`` / ``ppt_short``. ``others``
     share the colorbar: the window widens to cover every one's period.
     """
-    days = [aggregation_days(d) for d in (da, *others)]
+    # A rate (mm/day) with no period is a daily amount: the daily window, not the weekly.
+    days = [
+        aggregation_days(d) or (1.0 if "day" in str(variable_units(d) or "") else None)
+        for d in (da, *others)
+    ]
     if is_spi(da):
         return "spi", list(SPI_COLORS), list(SPI_BOUNDS)
     if is_precip_poa(da):
