@@ -157,6 +157,8 @@ def wind_speed_da(u_da, v_da):
     u_da = plain(u_da)
     v_da = plain(v_da)
     speed = xr.apply_ufunc(np.hypot, u_da, v_da, keep_attrs=False)
+    # keep_attrs=False also strips coordinate attrs (an init time must stay one).
+    speed = speed.assign_coords({name: u_da[name] for name in speed.coords if name in u_da.coords})
     units = variable_units(u_da) or "m s-1"
     speed.name = "speed"
     speed.attrs.update(long_name="Wind speed", units=units, standard_name="wind_speed")

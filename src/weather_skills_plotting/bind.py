@@ -342,6 +342,12 @@ def _slices(da, fdim):
         for dim in ("step", "time"):
             if dim in da.coords and da[dim].ndim == 0 and dim not in da.dims:
                 value = da[dim].values
+                if (
+                    dim == "time"
+                    and da["time"].attrs.get("standard_name") == "forecast_reference_time"
+                ):
+                    # An init time whose steps were averaged away: not a valid date.
+                    return [(None, f"init {format_plot_date(value)}", da)]
                 one = da.expand_dims(dim)
                 return [(None, panel_title(one, dim, value, [value]), da)]
         return [(None, None, da)]
