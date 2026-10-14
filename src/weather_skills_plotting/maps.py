@@ -88,20 +88,13 @@ MIDRES_MAX_SPAN_DEG = 90.0
 # (#50a5f5 / #1e6eeb) look like rainfall; this grey-blue does not.
 LAKE_FACECOLOR = "#708090"
 ADMIN1_STYLE = {"facecolor": "none", "edgecolor": "0.45", "linewidth": 0.4, "zorder": 3}
-# Same slate as lakes, thinner than admin-1, drawn under the lake outline.
+# Same slate as lakes, thinner than admin-1, and drawn under the lake fill so
+# centerlines through Lake Victoria etc. are hidden.
 RIVERS_STYLE = {"facecolor": "none", "edgecolor": LAKE_FACECOLOR, "linewidth": 0.35, "zorder": 3.4}
 LAKES_STYLE = {
     "facecolor": LAKE_FACECOLOR,
     "edgecolor": LAKE_FACECOLOR,
     "linewidth": 0.4,
-    "zorder": 0.5,
-}
-# Lakes are filled *beneath* the data (seen only where a cell is missing) and
-# outlined above it, so Lake Victoria never hides forecast or obs cells.
-LAKES_OUTLINE_STYLE = {
-    "facecolor": "none",
-    "edgecolor": LAKE_FACECOLOR,
-    "linewidth": 0.6,
     "zorder": 3.5,
 }
 # Default ``outline`` layer colour: distinct from the near-black borders/coastline.
@@ -288,8 +281,6 @@ def load_geo_overlays(extent, overlays=None):
         add("physical", "rivers_lake_centerlines", RIVERS_STYLE)
     if choice.get("lakes", True):
         add("physical", "lakes", LAKES_STYLE)
-        if layers and layers[-1][1] is LAKES_STYLE:
-            layers.append((layers[-1][0], LAKES_OUTLINE_STYLE))
     if choice.get("borders", True):
         add("cultural", "admin_0_boundary_lines_land", BORDERS_STYLE)
     if choice.get("coastline", True):

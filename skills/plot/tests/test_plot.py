@@ -827,7 +827,7 @@ def test_lakes_overlay_is_filled_grey():
 def test_rivers_overlay_is_slate_lines_under_lakes():
     assert plot_maps.RIVERS_STYLE["facecolor"] == "none"
     assert plot_maps.RIVERS_STYLE["edgecolor"] == plot_maps.LAKE_FACECOLOR
-    assert plot_maps.RIVERS_STYLE["zorder"] < plot_maps.LAKES_OUTLINE_STYLE["zorder"]
+    assert plot_maps.RIVERS_STYLE["zorder"] < plot_maps.LAKES_STYLE["zorder"]
 
 
 def test_load_geo_overlays_skips_on_download_failure(monkeypatch, capsys):
@@ -2275,9 +2275,8 @@ def test_temperature_difference_plots_in_degc(tmp_path, plot_fn):
     assert format_units_for_display("delta_degC") == "°C"
 
 
-def test_lakes_fill_under_data_and_nan_cells_are_grey():
-    assert plot_maps.LAKES_STYLE["zorder"] < plot_maps._KIND_ZORDER["heatmap"]
-    assert plot_maps.LAKES_OUTLINE_STYLE["facecolor"] == "none"
+def test_lakes_fill_over_data_and_nan_cells_are_grey():
+    assert plot_maps.LAKES_STYLE["zorder"] > plot_maps._KIND_ZORDER["heatmap"]
     ds = make_gridded(n_time=1)
     ds["precip"][0, 0, 0] = np.nan
     fig = _compile_map(ws_spec.spec_from_flags(variable="precip", kind="heatmap"), {"a": ds})
