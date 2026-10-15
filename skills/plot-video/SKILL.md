@@ -31,7 +31,7 @@ Run with `--dump-spec -` in place of `-o` to print the figure it would draw, edi
 | Pick the variable | `{"data": [{"uid": "a", "meta": {"source": {"variable": "pm25"}}}]}` |
 | Fix one value of another dim | `{"data": [{"uid": "a", "meta": {"source": {"isel": {"level": 0}}}}]}` |
 
-Ensemble `number` is averaged unless it is the animated dim. Any other leftover dim is an error naming the fix; nothing else is averaged silently. The animated dim needs at least two values.
+The plotter never averages: a leftover dim (an ensemble `number` included) is an error naming the fix. Pick one value with `isel` / `sel`, or run summarize-dim first for an ensemble mean. The animated dim needs at least two values.
 
 ## Look and speed
 

@@ -1,6 +1,6 @@
 ---
 name: plot
-description: Render a map (heatmap, filled contour, stations, wind quiver), time series, xy scatter, or wind rose from weather-skills standard dataset Zarrs as PNG, JPG, or interactive HTML. The --spec is a standard Plotly figure JSON; dataset bindings go in each trace's meta. Side-by-side maps on different grids (CHIRPS 0.05° next to ECMWF 1.5°) are one -i per file, each on its own axes and grid; do not coarsen them onto one grid. --layer KIND:PATH stacks files on one map. --help lists the meta keys and recipes. Named places: get a bbox or polygon from resolve-region first. For precipitation totals, run aggregate-temporal (then convert-to-totals, or let plot convert: a rate with an aggregation_period is drawn as period totals, and stderr says so). meta.source.reduce averages; it never sums. For a lead-week verification grid, use plot-verify.
+description: Render a map (heatmap, filled contour, stations, wind quiver), time series, xy scatter, or wind rose from weather-skills standard dataset Zarrs as PNG, JPG, or interactive HTML. The --spec is a standard Plotly figure JSON; dataset bindings go in each trace's meta. Side-by-side maps on different grids (CHIRPS 0.05° next to ECMWF 1.5°) are one -i per file, each on its own axes and grid; do not coarsen them onto one grid. --layer KIND:PATH stacks files on one map. --help lists the meta keys and recipes. Named places: get a bbox or polygon from resolve-region first. For precipitation totals, run aggregate-temporal (then convert-to-totals, or let plot convert: a rate with an aggregation_period is drawn as period totals, and stderr says so). The plotter selects but never averages: run summarize-dim first for an ensemble or area mean. For a lead-week verification grid, use plot-verify.
 license: MIT
 compatibility: Requires Python 3.12 and uv. PNG/JPG export needs Chrome (installed, or `plotly_get_chrome -y`).
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py *)
@@ -47,7 +47,7 @@ What the command builds from each file:
 | Ensemble members as panels | `meta.facet: "number"` with `meta.source.isel: {"number": [0, 1, 2, 3]}`; panels are titled `Member 0`, `Member 1`, …. Without the `isel`, every member gets a panel. |
 | A station file with a `time` dim over a map | Select the day on the station trace: `{"uid": "b", "meta": {"source": {"sel": {"time": "2026-10-01"}}}}`. |
 | Separate colorbars for side-by-side maps | Give one trace its own axis: `"coloraxis": "coloraxis2"`. Traces naming the same axis always share it; a station trace names it as `marker.coloraxis`. |
-| Week N of a daily forecast | `meta.source.isel: {"step": [0, 1, 2, 3, 4, 5, 6]}` and `reduce: ["step"]` give the week's mean daily value (an arrows trace takes the same selection from its speed trace). For a weekly total, aggregate-temporal first. A field described as "in the last 24 hours" covers the day before each step, so its step 0 is empty: day 1 is step 1. |
+| Week N of a daily forecast | aggregate-temporal to weekly first (then convert-to-totals for a total), and pick the week with `meta.source.isel: {"step": 1}` (an arrows trace takes the same selection from its speed trace). A field described as "in the last 24 hours" covers the day before each step, so its step 0 is empty: day 1 is step 1. |
 
 A trace's `name` titles its panel. A trace with several panels gets annotations named `panel-title-1`, `panel-title-2`, … (numbered from 1); rename one with `{"layout": {"annotations": [{"name": "panel-title-2", "text": "ECMWF"}]}}`. The canvas is sized from the maps: each panel is as large as its lon/lat shape allows (up to 760×560 px alone, 340×340 px in a grid), with fixed room for titles, ticks and colorbars, so there is no empty band around a map. `layout.width` / `height` fix the canvas and the maps shrink to fit; `layout.grid.xgap` / `ygap` set the gap between panels as a fraction of a panel. One colorbar stands on the right. Several stand beside the rows, or under the columns, they colour (totals row and anomalies row each get their own); otherwise they lie side by side along the bottom.
 
@@ -62,11 +62,11 @@ Do not `coarsen` or `downscale` just to draw a figure. Only `difference` and `ve
 | Key | Meaning |
 | --- | --- |
 | `bind` | How the arrays are filled: `field` (grid → heatmap/contour), `speed` (wind speed from u/v), `arrows` (u/v arrows), `points` (stations), `geojson` (boundary lines), `series` (1-D line or bar), `pair` (xy), `samples` (box per step), `windrose` (barpolar). The default comes from the trace type. |
-| `source` | `{input, variable, isel, sel, reduce, u, v, geojson, mask_geojson, point}`. `isel` is 0-based positions (`-1` is the last), `sel` is coordinate labels. `variable` picks one field of a multi-variable file (unset: rainfall if present, and stderr names it). `reduce` lists dims to average. A dim of size 1 is dropped; any other leftover dim is an error naming the fix (the ensemble mean on maps is the one default average). `u` and `v` are found from CF `standard_name` (`eastward_wind` / `northward_wind`) or names such as `u10`/`v10`; they must be in the same input: merge separate u and v files into one Zarr first. |
+| `source` | `{input, variable, isel, sel, u, v, geojson, mask_geojson, point}`. `isel` is 0-based positions (`-1` is the last), `sel` is coordinate labels. `variable` picks one field of a multi-variable file (unset: rainfall if present, and stderr names it). A dim of size 1 is dropped; any other leftover dim is an error naming the fix. The plotter never averages: for an ensemble mean or area mean, run `summarize-dim` first. `u` and `v` are found from CF `standard_name` (`eastward_wind` / `northward_wind`) or names such as `u10`/`v10`; they must be in the same input: merge separate u and v files into one Zarr first. |
 | `facet` | The dim to panel (default `step` or `time`); `false` turns paneling off. |
 | `along`, `along_color`, `band`, `members` | Series: one line per value of a dim (`"number"` gives ensemble spaghetti). `along_color` is `same` (default) or `cycle`. `band: [10, 90]` shades a percentile band and draws the mean as a bold line (legend: `… ensemble mean`); the members stay as faint lines unless `members: false`. |
 | `align` | Series: `"dayofyear"` overlays years on one seasonal axis. |
-| `pair_on`, `x`, `y` | Pair: `x` and `y` are full sources (`{input, variable, isel, sel, reduce}`), joined on `pair_on` (`time`, `year`, `index`). Leftover dims are an error, as for series. |
+| `pair_on`, `x`, `y` | Pair: `x` and `y` are full sources (`{input, variable, isel, sel}`), joined on `pair_on` (`time`, `year`, `index`). Leftover dims are an error, as for series. |
 | `palette` | Class palette: a name (`default_precip`, `default_precip_anom`, `ppt_daily`, `ppt_week`, `ppt_month`, `ppt_season`, `ppt_anom_*`, `spi`, `ppt_poa`, …), a color list, or `{colors, bounds, under, over}`. `bounds` are class edges with one color per class, so 7 bounds take 6 colors; `under` / `over` color values outside the edges. It replaces the automatic precipitation palette. |
 | `arrows` | `{step, scale}`: `step: 3` draws an arrow on every 3rd cell; `scale` is arrow length in map degrees per unit of speed (default: the strongest winds span about one arrow spacing). |
 
@@ -167,9 +167,9 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/rain.zarr -o /tmp/cities.png 
 # Wind rose
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/wind.zarr -o /tmp/rose.png --spec '{"data": [{"uid": "a", "type": "barpolar"}]}'
 
-# Area-mean ensemble spaghetti with a 10–90% band
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/ens.zarr -o /tmp/ens.png --spec '{"data": [{"uid": "a", "type": "scatter",
-  "meta": {"bind": "series", "along": "number", "band": [10, 90], "source": {"reduce": ["latitude", "longitude"]}}}]}'
+# Area-mean ensemble spaghetti with a 10–90% band (ens_area.zarr from summarize-dim --dim latitude --dim longitude --method mean --lat-weighted)
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/ens_area.zarr -o /tmp/ens.png --spec '{"data": [{"uid": "a", "type": "scatter",
+  "meta": {"bind": "series", "along": "number", "band": [10, 90]}}]}'
 
 # September IOD against October rainfall, one point per year
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --x /tmp/iod_sep.zarr --y /tmp/rain_oct.zarr -o /tmp/iod.png \
@@ -178,7 +178,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --x /tmp/iod_sep.zarr --y /tmp/rain_o
 
 ## Output
 
-The figure is written at `--output`. For PNG/JPG, stdout prints a pixel `plot hash` and `data: not null (…)` or `data: NULL (…)`, counting the values each input actually draws. `NULL` means everything plotted is NaN: run `inspect-zarr` on the input. Notes about choices the command made (which variable, ensemble mean) go to stderr. A changed hash only proves the pixels changed. Always look at the image before choosing between layout options.
+The figure is written at `--output`. For PNG/JPG, stdout prints a pixel `plot hash` and `data: not null (…)` or `data: NULL (…)`, counting the values each input actually draws. `NULL` means everything plotted is NaN: run `inspect-zarr` on the input. Notes about choices the command made (which variable, totals conversion) go to stderr. A changed hash only proves the pixels changed. Always look at the image before choosing between layout options.
 
 Provenance (`weather_skills_history`) is embedded in the PNG metadata or the HTML `<meta>` tag. Read it with the `provenance` skill. A PNG/JPG whose chain is complete also gets a small red seal (a ring with a star) in the bottom-right corner: the weather-skills "provenance verified" stamp. It is expected; leave it in.
 

@@ -56,7 +56,7 @@ TRACE_META_KEYS = frozenset(
     }
 )
 SOURCE_KEYS = frozenset(
-    {"input", "variable", "isel", "sel", "reduce", "u", "v", "geojson", "mask_geojson", "point"}
+    {"input", "variable", "isel", "sel", "u", "v", "geojson", "mask_geojson", "point"}
 )
 ARROW_KEYS = frozenset({"step", "scale"})
 LAYOUT_META_KEYS = frozenset(
@@ -260,11 +260,6 @@ def _check_keys(obj, allowed, loc: str) -> None:
 
 def _check_source(source, loc: str) -> None:
     _check_keys(source, SOURCE_KEYS, loc)
-    reduce = source.get("reduce")
-    if reduce is not None and not (
-        isinstance(reduce, list) and all(isinstance(d, str) for d in reduce)
-    ):
-        raise UsageError(f"plot spec {loc}.reduce must be a list of dimension names")
     for key in ("isel", "sel"):
         if source.get(key) is not None and not isinstance(source[key], dict):
             raise UsageError(f"plot spec {loc}.{key} must be an object of dim: value")

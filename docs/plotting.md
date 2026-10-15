@@ -69,10 +69,11 @@ dumped spec replays without file flags.
 
 The default bind follows the trace type (`heatmap` → `field`, `barpolar` →
 `windrose`, …). Units go through `to_standard_units` and `precip_for_display`
-as before. Nothing is averaged silently: a size-1 dim is squeezed, and any
-other dim left over after `isel` / `sel` / `reduce` / `facet` / `along` is an
-error that names the fix. The one default average is the ensemble mean on
-maps, and stderr says so.
+as before. The plotter selects but never averages: a size-1 dim is squeezed,
+and any other dim left over after `isel` / `sel` / `facet` / `along` is an
+error that names the fix. Averages (area means, ensemble means, a week of
+daily steps) are made first with `summarize-dim` or `aggregate-temporal`, so
+each step is its own Zarr in the provenance chain.
 
 ## Assembly (`figure.py`)
 

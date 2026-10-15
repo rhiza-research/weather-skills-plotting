@@ -41,10 +41,9 @@ uv run skills/plot/scripts/plot.py -i /tmp/forecast.zarr -o /tmp/out.png \
 # The same figure, interactive
 uv run skills/plot/scripts/plot.py -i /tmp/forecast.zarr -o /tmp/out.html
 
-# A timeseries overlay of two area means
-uv run skills/plot-timeseries/scripts/plot_timeseries.py -i /tmp/a.zarr -i /tmp/b.zarr \
-  -o /tmp/timeseries.png \
-  --spec '{"data": [{"uid": "a", "meta": {"source": {"reduce": ["latitude", "longitude"]}}}]}' 
+# A timeseries overlay of two area means (each from summarize-dim --lat-weighted)
+uv run skills/plot-timeseries/scripts/plot_timeseries.py -i /tmp/a_area.zarr -i /tmp/b_area.zarr \
+  -o /tmp/timeseries.png
 
 # A lead-week verification grid
 uv run skills/plot-verify/scripts/plot_verify.py \

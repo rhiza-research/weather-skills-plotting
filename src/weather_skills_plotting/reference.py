@@ -25,7 +25,7 @@ _BINDS = {
 
 _META = {
     "bind": "how the trace's arrays are filled; see BINDS",
-    "source": "the data: {input, variable, isel, sel, reduce, u, v, geojson, mask_geojson, point}",
+    "source": "the data: {input, variable, isel, sel, u, v, geojson, mask_geojson, point}",
     "x / y": "pair only: a source each for the x and the y series",
     "pair_on": "pair only: time (default), year, or index",
     "facet": "dim to panel (default: step or time when present); false for none",
@@ -49,7 +49,6 @@ _SOURCE = {
     "isel": '0-based positions, e.g. {"number": 0, "step": [0, 1]}; -1 is the last. One '
     "integer picks one value (one map); a list keeps the dim (one panel each)",
     "sel": 'labels to select (nearest for numbers and dates), e.g. {"time": "2026-09-21"}',
-    "reduce": 'dims to average, e.g. ["latitude", "longitude"]; nothing is averaged silently',
     "u / v": "wind component variables (default: found by CF standard_name eastward_wind / "
     "northward_wind, or names such as u10/v10, u/v)",
     "geojson": "geojson bind: path to the boundary file",
@@ -149,9 +148,9 @@ _RECIPES = [
     ),
     ("Wind rose", '{"data": [{"uid": "a", "type": "barpolar"}]}'),
     (
-        "Area-mean time series of a grid",
-        '{"data": [{"uid": "a", "type": "scatter", "meta": {"bind": "series", '
-        '"source": {"reduce": ["latitude", "longitude"]}}}]}',
+        "Area-mean time series of a grid (summarize-dim --dim latitude --dim longitude "
+        "--method mean --lat-weighted first)",
+        '{"data": [{"uid": "a", "type": "scatter", "meta": {"bind": "series"}}]}',
     ),
     (
         "Ensemble spaghetti with a 10–90% band",

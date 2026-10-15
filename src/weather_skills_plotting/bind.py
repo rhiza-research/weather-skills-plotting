@@ -279,11 +279,6 @@ def _subset(ctx: Context, source: dict, da):
     return da
 
 
-def _reduce(da, source: dict):
-    dims = [d for d in (source.get("reduce") or []) if d in da.dims]
-    return da.mean(dims, keep_attrs=True) if dims else da
-
-
 def _facet_dim(meta: dict, da, keep: tuple, loc: str):
     """The dim that becomes one panel per value, or ``None``."""
     facet = meta.get("facet")
@@ -305,8 +300,8 @@ def _leftover_error(da, allowed, what, loc):
     if extra:
         raise UsageError(
             f"dimension {extra[0]!r} remains for {what}; select a position with "
-            f"{loc}.source.isel / sel, average it with {loc}.source.reduce, or panel it "
-            f"with {loc}.facet. Side-by-side maps are separate inputs on separate axes, "
+            f"{loc}.source.isel / sel, panel it with {loc}.facet, or average it first with "
+            f"summarize-dim. Side-by-side maps are separate inputs on separate axes, "
             f"not one dataset concatenated along {extra[0]!r}"
         )
 
@@ -325,19 +320,12 @@ def _wrapped(ctx):
     return ctx.bbox is not None and ctx.bbox[1] > ctx.bbox[3]
 
 
-def _map_field(ctx, da, meta, loc, what, note=True):
-    """Grid field ready to panel: subset, ensemble-mean, transposed."""
+def _map_field(ctx, da, meta, loc, what):
+    """Grid field ready to panel: subset, transposed."""
     lat, lon = _lonlat(da, what)
     if not _wrapped(ctx):
         da = ensure_normalized_longitude(da, lon)
     fdim = _facet_dim(meta, da, (lat, lon), loc)
-    if "number" in da.dims and fdim != "number" and note:
-        print(
-            f"Note: {loc}: drawing the ensemble mean of {da.sizes['number']} members; set "
-            f'{loc}.facet "number" for one map per member',
-            file=sys.stderr,
-        )
-        da = da.mean("number", keep_attrs=True)
     _leftover_error(da, {lat, lon, fdim}, what, loc)
     order = ([fdim] if fdim else []) + [lat, lon]
     return da.transpose(*order), lat, lon, fdim
@@ -378,18 +366,12 @@ def bind_field(trace, meta, ctx, loc, *, speed=False):
         ds = _dataset(ctx, source, f"{loc}.source")
         u_name, v_name = resolve_uv(ds, source.get("u"), source.get("v"))
         ds = to_standard_units(ds, variables=[u_name, v_name])
-        # reduce averages the wind vector; speed is that mean wind's speed.
-        u_da = _reduce(
-            _subset(ctx, source, _sel(plain(ds[u_name]), source, f"{loc}.source")), source
-        )
-        v_da = _reduce(
-            _subset(ctx, source, _sel(plain(ds[v_name]), source, f"{loc}.source")), source
-        )
+        u_da = _subset(ctx, source, _sel(plain(ds[u_name]), source, f"{loc}.source"))
+        v_da = _subset(ctx, source, _sel(plain(ds[v_name]), source, f"{loc}.source"))
         da = wind_speed_da(u_da, v_da)
         title = wind_speed_cbar_label(u_da)
     else:
         da, _ = select(ctx, source, f"{loc}.source")
-        da = _reduce(da, source)
         title = variable_label_for_display(da)
     da, lat, lon, fdim = _map_field(ctx, da, meta, loc, "a map")
     x, y = da[lon].values, da[lat].values
@@ -445,10 +427,10 @@ def bind_arrows(trace, meta, ctx, loc):
     u_units, v_units = variable_units(ds[u_name]), variable_units(ds[v_name])
     if u_units and v_units and not units_equal(u_units, v_units):
         raise UsageError(f"u units {u_units!r} do not match v units {v_units!r}")
-    u_da = _reduce(_subset(ctx, source, _sel(plain(ds[u_name]), source, f"{loc}.source")), source)
-    v_da = _reduce(_subset(ctx, source, _sel(plain(ds[v_name]), source, f"{loc}.source")), source)
+    u_da = _subset(ctx, source, _sel(plain(ds[u_name]), source, f"{loc}.source"))
+    v_da = _subset(ctx, source, _sel(plain(ds[v_name]), source, f"{loc}.source"))
     u_da, lat, lon, fdim = _map_field(ctx, u_da, meta, loc, "wind arrows")
-    v_da, *_ = _map_field(ctx, v_da, meta, loc, "wind arrows", note=False)
+    v_da, *_ = _map_field(ctx, v_da, meta, loc, "wind arrows")
     step = opts.get("step")
     native = native_spacing_deg(u_da[lat].values, u_da[lon].values)
     if step is None and native:
@@ -544,15 +526,7 @@ def bind_points(trace, meta, ctx, loc):
         raise UsageError(
             f"{loc}: no stations remain after layout.meta.geo.bbox / mask_geojson; nothing to plot"
         )
-    da = _reduce(da, source)
     fdim = _facet_dim(meta, da, (pdim,), loc)
-    if "number" in da.dims and fdim != "number":
-        print(
-            f"Note: {loc}: drawing the ensemble mean of {da.sizes['number']} members; set "
-            f'{loc}.facet "number" for one map per member',
-            file=sys.stderr,
-        )
-        da = da.mean("number", keep_attrs=True)
     _leftover_error(da, {pdim, fdim}, "station points", loc)
     if fdim:
         da = da.transpose(fdim, pdim)
@@ -667,7 +641,6 @@ def _rgba(color, alpha):
 def bind_series(trace, meta, ctx, loc, *, color=None):
     source = meta.get("source") or {}
     da, _ = select(ctx, source, f"{loc}.source")
-    da = _reduce(da, source)
     sdim = "step" if "step" in da.dims else cf_dim(da, "time")
     if sdim is None or sdim not in da.dims:
         if da.ndim == 1:
@@ -686,9 +659,9 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
     extra = [d for d in da.dims if d not in (sdim, along)]
     if extra:
         raise UsageError(
-            f"{loc}: dims {extra} remain besides {sdim!r}. Add them to {loc}.source.reduce "
-            f"(averaged), or set {loc}.along {extra[0]!r} for one line per value. Nothing is "
-            "averaged silently"
+            f"{loc}: dims {extra} remain besides {sdim!r}. Pick one value with "
+            f"{loc}.source.isel / sel, set {loc}.along {extra[0]!r} for one line per value, "
+            "or average them first with summarize-dim (--lat-weighted for an area mean)"
         )
     x, xname = timeseries_axis(da, sdim)
     x = np.asarray(x)
@@ -851,7 +824,6 @@ def seasonal_dates(coord, loc):
 
 def _xy_series(ctx, source, loc):
     da, _ = select(ctx, source, loc)
-    da = _reduce(da, source)
     sdim = "step" if "step" in da.dims else cf_dim(da, "time")
     if sdim is None or sdim not in da.dims:
         if da.ndim != 1:
@@ -862,8 +834,8 @@ def _xy_series(ctx, source, loc):
     rest = [d for d in da.dims if d != sdim]
     if rest:
         raise UsageError(
-            f"{loc}: dims {rest} remain besides {sdim!r}. Average them with {loc}.reduce "
-            f"{rest}, or pick one value with {loc}.isel / sel. Nothing is averaged silently"
+            f"{loc}: dims {rest} remain besides {sdim!r}. Pick one value with {loc}.isel / sel, "
+            "or average them first with summarize-dim (--lat-weighted for an area mean)"
         )
     axis, _ = timeseries_axis(da, sdim)
     return da, np.asarray(axis), np.asarray(da.values, dtype=float)
@@ -919,7 +891,6 @@ def bind_samples(trace, meta, ctx, loc):
             f'{loc}.source.point or layout.meta.geo.point ({{"lat": …, "lon": …}}) is '
             "required to take samples at a point"
         )
-    da = _reduce(da, source)
     cat = "step" if "step" in da.dims else cf_dim(da, "time")
     if cat is None or cat not in da.dims:
         raise UsageError(f"{loc}: samples need a step or time axis for the categories")
@@ -1046,8 +1017,8 @@ def bind_trace(trace: dict, ctx: Context, loc: str, *, color=None) -> Bound:
             f"{loc}: meta.bind {bind!r} draws as type {' or '.join(sorted(allowed))}, "
             f"not {ttype!r}"
             + (
-                '; for a 1-D series of a gridded field set meta.bind "series" and '
-                "average lat/lon with meta.source.reduce"
+                "; for a 1-D series of a gridded field, average lat/lon first with "
+                'summarize-dim --lat-weighted and set meta.bind "series"'
                 if bind == "field"
                 else ""
             )

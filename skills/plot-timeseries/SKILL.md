@@ -1,6 +1,6 @@
 ---
 name: plot-timeseries
-description: Overlay one series per input Zarr on a shared time axis, as lines or bars, to PNG or interactive HTML. Name files with repeatable -i. The --spec is a standard Plotly figure JSON; each input is a trace with uid a, b, … whose meta.source.reduce averages leftover dims and meta.along fans one out (number for ensemble spaghetti, with meta.band for a percentile band). Settings on the first trace apply to the rest. Nothing is averaged silently. --dump-spec prints the merged spec. For precipitation, run aggregate-temporal then convert-to-totals first.
+description: Overlay one series per input Zarr on a shared time axis, as lines or bars, to PNG or interactive HTML. Name files with repeatable -i. The --spec is a standard Plotly figure JSON; each input is a trace with uid a, b, … whose meta.source.isel / sel picks one value of a leftover dim and meta.along fans one out (number for ensemble spaghetti, with meta.band for a percentile band). Settings on the first trace apply to the rest. The plotter never averages: run summarize-dim first for an area or ensemble mean. --dump-spec prints the merged spec. For precipitation, run aggregate-temporal then convert-to-totals first.
 license: MIT
 compatibility: Requires Python 3.12 and uv. PNG/JPG export needs Chrome (installed, or `plotly_get_chrome -y`).
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py *)
@@ -13,7 +13,7 @@ metadata:
 
 Each `-i` becomes one trace on a shared time axis: uid `a`, `b`, … in order, named after the file (or the station id). `--spec` is a **standard Plotly figure** merged onto that, with traces matched by `uid`. Everything except `meta` is plain Plotly: `type: "bar"`, `line`, `marker`, `layout.barmode`, `layout.yaxis2`, `layout.grid`. The `-o` suffix picks `.png`, `.jpg`, or `.html`.
 
-**Settings on `data[0]` apply to every series that leaves them unset:** `meta.source.variable`, `meta.source.reduce`, `meta.along`, `meta.along_color`, `meta.band`, `meta.members`, `meta.align`. Set them once on trace `a`. `along` (with its band and colours) passes only to inputs that have that dim, so an ensemble's spread does not land on a climatology line. Set a key to `null` on a later trace to drop an inherited value.
+**Settings on `data[0]` apply to every series that leaves them unset:** `meta.source.variable`, `meta.along`, `meta.along_color`, `meta.band`, `meta.members`, `meta.align`. Set them once on trace `a`. `along` (with its band and colours) passes only to inputs that have that dim, so an ensemble's spread does not land on a climatology line. Set a key to `null` on a later trace to drop an inherited value.
 
 Two variables of one file are two `-i` of the same path, each with its own `meta.source.variable`.
 
@@ -21,11 +21,11 @@ Two variables of one file are two `-i` of the same path, each with its own `meta
 
 A series keeps one time axis, either `time` or a forecast `step`. A forecast is plotted against valid time (`init + step`). Every other dim must be:
 
-- **averaged:** `meta.source.reduce: ["latitude", "longitude"]`
+- **averaged first:** run `summarize-dim` (e.g. `--dim latitude --dim longitude --method mean --lat-weighted` for an area mean) and plot its output. The plotter never averages.
 - **selected:** `meta.source.isel: {"number": 0}`, or `meta.source.sel: {"latitude": -1.3}` (nearest)
 - **fanned out:** `meta.along: "number"`, one line per member. `along_color: "same"` gives one color and one legend entry; `"cycle"` gives each value its own color. `band: [10, 90]` shades the 10–90% range and draws the mean (legend `… ensemble mean`) over the faint members; `members: false` drops the members. With `type: "bar"`, `along` gives one bar series per value, named by it (e.g. one per `station_id`).
 
-A leftover dim is an error that names the fix; nothing is averaged silently. For 101 ensemble members use `along` on one input, not 101 `-i` files (at most 26 inputs).
+A leftover dim is an error that names the fix. For 101 ensemble members use `along` on one input, not 101 `-i` files (at most 26 inputs).
 
 ## Layout
 
@@ -57,20 +57,20 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py -i <a.zarr> --dump-spec -
 ## Examples
 
 ```bash
-# CHIRPS and IMERG area means, one panel each
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py -i /tmp/chirps.zarr -i /tmp/imerg.zarr -o /tmp/precip.png \
-    --spec '{"data": [{"uid": "a", "name": "CHIRPS", "meta": {"source": {"reduce": ["latitude", "longitude"]}}},
+# CHIRPS and IMERG area means (each from summarize-dim --lat-weighted), one panel each
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py -i /tmp/chirps_area.zarr -i /tmp/imerg_area.zarr -o /tmp/precip.png \
+    --spec '{"data": [{"uid": "a", "name": "CHIRPS"},
                       {"uid": "b", "name": "IMERG"}],
              "layout": {"grid": {"rows": 2, "columns": 1, "pattern": "coupled"}}}'
 
-# Every ensemble member, interactive
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py -i /tmp/ens_diff.zarr -o /tmp/members.html \
-    --spec '{"data": [{"uid": "a", "meta": {"along": "number", "source": {"reduce": ["latitude", "longitude"]}}}],
+# Every ensemble member of an area mean, interactive
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py -i /tmp/ens_diff_area.zarr -o /tmp/members.html \
+    --spec '{"data": [{"uid": "a", "meta": {"along": "number"}}],
              "layout": {"title": {"text": "Ensemble difference traces"}}}'
 
 # Observed bars with a dashed climatology line
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py -i /tmp/obs.zarr -i /tmp/clim.zarr -o /tmp/obs_vs_clim.png \
-    --spec '{"data": [{"uid": "a", "type": "bar", "meta": {"source": {"reduce": ["latitude", "longitude"]}}},
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py -i /tmp/obs_area.zarr -i /tmp/clim_area.zarr -o /tmp/obs_vs_clim.png \
+    --spec '{"data": [{"uid": "a", "type": "bar"},
                       {"uid": "b", "mode": "lines", "line": {"dash": "dash", "width": 2.5}}],
              "layout": {"title": {"text": "30-day precip vs climatology"}}}'
 ```

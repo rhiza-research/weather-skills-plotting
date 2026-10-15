@@ -83,7 +83,11 @@ def test_html_output(tmp_path, plot_fn):
 
 
 def test_series_of_a_forecast(tmp_path, plot_fn):
-    fc = write_zarr(make_forecast(members=3), tmp_path / "fc.zarr")
+    # An area mean, as summarize-dim --dim latitude --dim longitude writes it.
+    fc = write_zarr(
+        make_forecast(members=3).mean(["latitude", "longitude"], keep_attrs=True),
+        tmp_path / "fc.zarr",
+    )
     out = tmp_path / "ts.png"
     run_skill(
         plot_fn,
@@ -102,7 +106,6 @@ def test_series_of_a_forecast(tmp_path, plot_fn):
                             "bind": "series",
                             "along": "number",
                             "band": [10, 90],
-                            "source": {"reduce": ["latitude", "longitude"]},
                         },
                     }
                 ]
@@ -117,23 +120,19 @@ def test_xy_flags(tmp_path, plot_fn, capsys):
     y = write_zarr(make_gridded(n_time=3, fill=2.0), tmp_path / "y.zarr")
     spec = _dump(plot_fn, capsys, "--x", str(x), "--y", str(y))
     assert spec["data"][0]["meta"]["bind"] == "pair"
-    # Grids pair only once their lat/lon are averaged explicitly.
+    # Grids pair only once their lat/lon are averaged, with summarize-dim first.
     with pytest.raises(SystemExit):
         run_skill(plot_fn, "--x", str(x), "--y", str(y), "-o", str(tmp_path / "xy.png"))
-    assert "Nothing is averaged silently" in capsys.readouterr().err
-    area = {"reduce": ["latitude", "longitude"]}
-    user = {"data": [{"uid": "xy", "meta": {"x": area, "y": area}}]}
-    run_skill(
-        plot_fn,
-        "--x",
-        str(x),
-        "--y",
-        str(y),
-        "-o",
-        str(tmp_path / "xy.png"),
-        "--spec",
-        json.dumps(user),
+    assert "summarize-dim" in capsys.readouterr().err
+    xa = write_zarr(
+        make_gridded(n_time=3).mean(["latitude", "longitude"], keep_attrs=True),
+        tmp_path / "xa.zarr",
     )
+    ya = write_zarr(
+        make_gridded(n_time=3, fill=2.0).mean(["latitude", "longitude"], keep_attrs=True),
+        tmp_path / "ya.zarr",
+    )
+    run_skill(plot_fn, "--x", str(xa), "--y", str(ya), "-o", str(tmp_path / "xy.png"))
 
 
 def test_layers(tmp_path, plot_fn, capsys):

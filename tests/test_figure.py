@@ -115,9 +115,15 @@ def test_leftover_dim_is_an_error_with_hint():
         compile({"data": [_trace("a")]}, {"a": ds})
 
 
-def test_ensemble_mean_and_step_panels_for_forecast():
-    fig = compile({"data": [_trace("a")]}, {"a": make_forecast(n_number=3, n_step=4)})
+def test_step_panels_for_forecast():
+    fig = compile({"data": [_trace("a")]}, {"a": make_forecast(n_number=0, n_step=4)})
     assert len(_data(fig, "heatmap")) == 4
+
+
+def test_ensemble_map_is_not_averaged():
+    # The plotter selects but never averages: summarize-dim makes the ensemble mean.
+    with pytest.raises(UsageError, match="'number' remains.*summarize-dim"):
+        compile({"data": [_trace("a")]}, {"a": make_forecast(n_number=3, n_step=4)})
 
 
 def test_isel_and_bbox_subset():
@@ -200,8 +206,9 @@ def test_overlays_switch_off_and_restyle():
 
 
 def test_series_spaghetti_band_and_cycle():
-    ds = make_forecast(n_number=5, n_step=4)
-    src = {"reduce": ["latitude", "longitude"]}
+    # An area mean, as summarize-dim --dim latitude --dim longitude writes it.
+    ds = make_forecast(n_number=5, n_step=4).mean(["latitude", "longitude"], keep_attrs=True)
+    src = {}
     same = compile(
         {
             "data": [
@@ -258,28 +265,16 @@ def test_series_spaghetti_band_and_cycle():
     assert [t["name"] for t in _data(cycle)] == ["0", "1", "2", "3", "4"]
 
 
-def test_series_needs_reduce_or_along():
-    with pytest.raises(UsageError, match="Nothing is averaged silently"):
+def test_series_needs_select_or_along():
+    with pytest.raises(UsageError, match="remain besides.*summarize-dim"):
         compile(
             {"data": [_trace("a", type="scatter", meta={"bind": "series"})]}, {"a": make_gridded()}
         )
 
 
 def test_series_forecast_plots_valid_time():
-    ds = make_forecast(n_number=0, n_step=3)
-    fig = compile(
-        {
-            "data": [
-                _trace(
-                    "a",
-                    type="scatter",
-                    source={"reduce": ["latitude", "longitude"]},
-                    meta={"bind": "series"},
-                )
-            ]
-        },
-        {"a": ds},
-    )
+    ds = make_forecast(n_number=0, n_step=3).mean(["latitude", "longitude"], keep_attrs=True)
+    fig = compile({"data": [_trace("a", type="scatter", meta={"bind": "series"})]}, {"a": ds})
     assert _data(fig)[0]["x"][0].startswith("2026-01-01")
     assert "tickformat" not in _layout(fig)["xaxis"]  # Plotly's own date ticks
 

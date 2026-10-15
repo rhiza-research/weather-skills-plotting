@@ -34,7 +34,7 @@ _SKILL_VERSION = "0.0.2"
 MAX_INPUTS = 26
 # meta keys a later trace takes from data[0] when it leaves them unset.
 INHERITED_META = ("along", "along_color", "band", "members", "align")
-INHERITED_SOURCE = ("variable", "reduce")
+INHERITED_SOURCE = ("variable",)
 
 
 def _size1(ds, *names):

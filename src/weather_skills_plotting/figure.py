@@ -110,7 +110,7 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
             None,
         )
         for key, value in (((twin or {}).get("meta") or {}).get("source") or {}).items():
-            if key in ("sel", "isel", "reduce", "u", "v"):
+            if key in ("sel", "isel", "u", "v"):
                 source.setdefault(key, copy.deepcopy(value))
     for i, trace in enumerate(traces):
         bound = None
@@ -329,7 +329,7 @@ def _assemble_map(items, user_layout, lmeta, ctx):
             if not keys:
                 raise UsageError(
                     "layered traces share no time/step values to draw together; select one "
-                    "time per layer (meta.source.isel / sel), or reduce it (meta.source.reduce)"
+                    "time per layer (meta.source.isel / sel), or aggregate first"
                 )
             plan.append(keys)
         else:
