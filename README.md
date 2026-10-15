@@ -1,9 +1,10 @@
 # Plotting Skills
 
 General-purpose weather and climate data plotting: heatmaps, filled-contour
-maps, time series, xy scatter, wind roses, quiver, ECMWF-style mediograms,
-and lead-week event-verification grids, from weather-skills standard dataset
-Zarrs. Built on [`weather-skills-core`](https://github.com/rhiza-research/weather-skills-core)
+maps, station maps, time series, xy scatter, wind roses, quiver, ECMWF-style
+mediograms, lead-week event-verification grids, and animated maps, from weather-skills
+standard dataset Zarrs. Figures are Plotly: the `--spec` every skill takes is
+a standard Plotly figure JSON, and output is PNG, JPG, or interactive HTML. Built on [`weather-skills-core`](https://github.com/rhiza-research/weather-skills-core)
 for dataset loading, the CLI decorator, and a handful of shared utilities.
 
 ## Skills
@@ -12,17 +13,20 @@ for dataset loading, the CLI decorator, and a handful of shared utilities.
 | --- | --- |
 | [`plot`](skills/plot/) | Heatmap, contour, timeseries, xy scatter, wind-rose, quiver, or layered map, one dataset or several side by side |
 | [`plot-timeseries`](skills/plot-timeseries/) | One 1D trace per input Zarr overlaid on a shared time axis |
-| [`plot-verify`](skills/plot-verify/) | Lead-week verification grid of maps: one observation week, one forecast init per lead |
+| [`plot-verify`](skills/plot-verify/) | Lead-week event-verification grid of maps for one observation week |
 | [`plot-mediogram`](skills/plot-mediogram/) | ECMWF-style mediogram comparing a forecast ensemble against an m-climate ensemble |
+| [`plot-video`](skills/plot-video/) | Animated HTML map of one gridded Zarr, one frame per time or forecast step |
 
-The full `--spec` schema shared by all four skills is documented in
-[`docs/plotting.md`](docs/plotting.md).
+The spec design (Plotly figure plus `meta` bindings) is documented in
+[`docs/plotting.md`](docs/plotting.md). PNG/JPG export needs Chrome: kaleido
+uses an installed one, or run `uv run plotly_get_chrome -y` once.
 
 Prefer short titles and colorbar labels. A title names the subject in a few
 words (`CHIRPS weekly totals`, `Week 1`), not the whole pipeline; put
 methods, sources and caveats in the caption or report text. A colorbar label
 is the quantity and its units (`Rain [mm]`), not a sentence. Long text wraps
-onto extra lines and crowds multi-panel grids and their colorbars.
+badly, crowds multi-panel grids, and squeezes the side-by-side colorbars
+along the bottom.
 
 ## Quick start
 
@@ -30,24 +34,31 @@ onto extra lines and crowds multi-panel grids and their colorbars.
 uv sync --group dev
 uv run pytest
 
-# A single heatmap
+# A heatmap, one panel per step
 uv run skills/plot/scripts/plot.py -i /tmp/forecast.zarr -o /tmp/out.png \
-  --spec '{"inputs":[{"variable":"tp"}],"title":"S2S precip"}'
+  --spec '{"layout": {"title": {"text": "S2S precip"}}}'
 
-# A timeseries overlay
+# The same figure, interactive
+uv run skills/plot/scripts/plot.py -i /tmp/forecast.zarr -o /tmp/out.html
+
+# A timeseries overlay of two area means
 uv run skills/plot-timeseries/scripts/plot_timeseries.py -i /tmp/a.zarr -i /tmp/b.zarr \
-  -o /tmp/timeseries.png
+  -o /tmp/timeseries.png \
+  --spec '{"data": [{"uid": "a", "meta": {"source": {"reduce": ["latitude", "longitude"]}}}]}' 
 
-# A lead-week verification grid: one obs week, one init per lead (week-1 = latest
-# init), each forecast already paired with its `verify` Zarr
-uv run skills/plot-verify/scripts/plot_verify.py --obs /tmp/obs.zarr \
-  --forecast /tmp/wk1.zarr --verify /tmp/verify_wk1.zarr \
-  --forecast /tmp/wk2.zarr --verify /tmp/verify_wk2.zarr \
+# A lead-week verification grid
+uv run skills/plot-verify/scripts/plot_verify.py \
+  --obs /tmp/obs.zarr --forecast /tmp/wk1.zarr /tmp/wk2.zarr /tmp/wk3.zarr /tmp/wk4.zarr \
   -o /tmp/verify.png
 
 # A mediogram
 uv run skills/plot-mediogram/scripts/plot_mediogram.py \
-  -i /tmp/forecast.zarr -i /tmp/mclimate.zarr -o /tmp/medio.png
+  -i /tmp/forecast.zarr -i /tmp/mclimate.zarr -o /tmp/medio.png \
+  --spec '{"layout": {"meta": {"geo": {"point": {"lat": -1.3, "lon": 36.8}}}}}' 
+
+# An animated map (HTML only)
+uv run skills/plot-video/scripts/plot_video.py \
+  -i /tmp/forecast.zarr -o /tmp/forecast.html
 ```
 
 ## Install as a Claude plugin
