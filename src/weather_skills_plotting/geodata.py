@@ -75,7 +75,8 @@ def clip_ne_geoms(resolution, category, name, clip_geom):
 
     path = shpreader.natural_earth(resolution=resolution, category=category, name=name)
     geoms = []
-    for geom in shpreader.Reader(path).geometries():
+    # The bbox skips shapes outside the view without parsing them.
+    for geom in shpreader.Reader(path, bbox=clip_geom.bounds).geometries():
         if geom is None or geom.is_empty:
             continue
         try:
@@ -360,8 +361,14 @@ def overlay_geoms(extent, settings: dict):
 OVERLAY_NAMES_DRAW_ORDER = ("admin1", "rivers", "lakes", "borders", "coastline")
 
 
-def geoms_to_xy(geoms, *, rings_only=False):
-    """None-separated x/y polylines for shapely lines and polygon rings."""
+def geoms_to_xy(geoms, *, rings_only=False, tolerance=0.0):
+    """NaN-separated float32 x/y polylines for shapely lines and polygon rings.
+
+    ``tolerance`` (degrees) drops vertices closer than that to the simplified
+    line: Natural Earth 10m carries far more points than a map panel has pixels.
+    """
+    import numpy as np
+
     xs, ys = [], []
     for geom in geoms:
         for part in getattr(geom, "geoms", [geom]):
@@ -370,7 +377,9 @@ def geoms_to_xy(geoms, *, rings_only=False):
             else:
                 rings = [part]
             for ring in rings:
+                if tolerance > 0:
+                    ring = ring.simplify(tolerance)
                 x, y = ring.xy
-                xs += list(x) + [None]
-                ys += list(y) + [None]
-    return xs, ys
+                xs += [*x, np.nan]
+                ys += [*y, np.nan]
+    return np.array(xs, dtype="f4"), np.array(ys, dtype="f4")

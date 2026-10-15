@@ -11,6 +11,7 @@ unless the user's layout already sets ``updatemenus`` / ``sliders``.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import re
 
@@ -44,7 +45,14 @@ def _base_uid(uid: str) -> str:
 def _content(trace: dict) -> str:
     """Trace JSON without its identity and axes, to spot traces that repeat on every panel."""
     body = {k: v for k, v in trace.items() if k not in ("uid", "xaxis", "yaxis")}
-    return json.dumps(body, sort_keys=True, default=str)
+    # str() of a large numpy array shows only its corners; compare every value.
+    return json.dumps(body, sort_keys=True, default=_array_digest)
+
+
+def _array_digest(value) -> str:
+    if hasattr(value, "tobytes"):
+        return f"{value.dtype}{value.shape}{hashlib.sha1(value.tobytes()).hexdigest()}"
+    return str(value)
 
 
 def _to_panel_one(trace: dict) -> dict:

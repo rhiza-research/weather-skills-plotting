@@ -599,8 +599,13 @@ def _assemble_map(items, user_layout, lmeta, ctx):
                 }
             )
             continue
+        # A quarter of a panel pixel, in degrees: finer detail never shows.
+        panel_px = (domains[p][1] - domains[p][0]) * (
+            layout["width"] - layout["margin"]["l"] - layout["margin"]["r"]
+        )
+        tolerance = 0.25 * (extents[p][1] - extents[p][0]) / max(panel_px, 1.0)
         for name, geoms in overlay_geoms(extents[p], settings):
-            xs, ys = geoms_to_xy(geoms, rings_only=name == "lakes")
+            xs, ys = geoms_to_xy(geoms, rings_only=name == "lakes", tolerance=tolerance)
             style = copy.deepcopy(OVERLAY_STYLES[name])
             if isinstance(settings.get(name), dict):
                 style = deep_merge(style, settings[name])
