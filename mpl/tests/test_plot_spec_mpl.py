@@ -6,8 +6,8 @@ import json
 
 import numpy as np
 import pytest
-from conftest import make_forecast, make_gridded, make_station
 
+from conftest import make_forecast, make_gridded, make_station
 from weather_skills_plotting_mpl.spec import (
     PlotSpec,
     dump_spec,

@@ -31,7 +31,15 @@ dependencies = [
 dev = [
     "pytest>=9.1",
     "ruff>=0.16",
+    # The matplotlib skills (*-mpl) are tested from the same environment.
+    "weather-skills-plotting-mpl",
 ]
+
+[tool.uv.workspace]
+members = ["mpl"]
+
+[tool.uv.sources]
+weather-skills-plotting-mpl = { workspace = true }
 
 [tool.hatch.metadata]
 allow-direct-references = true
@@ -40,7 +48,7 @@ allow-direct-references = true
 packages = ["src/weather_skills_plotting"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "skills"]
+testpaths = ["tests", "mpl/tests", "skills"]
 pythonpath = ["tests"]
 markers = ["overlays: draw real Natural Earth overlays (downloads on first use)"]
 filterwarnings = [
@@ -51,6 +59,8 @@ filterwarnings = [
 
 [tool.ruff]
 line-length = 100
+# Both packages are first-party for import sorting.
+src = [".", "src", "mpl/src"]
 target-version = "py312"
 
 [tool.ruff.lint]

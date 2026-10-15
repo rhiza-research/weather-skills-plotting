@@ -3,10 +3,10 @@
 import json
 
 import numpy as np
-from conftest import make_forecast, make_gridded
 from weather_skills_core.errors import UsageError
 from weather_skills_core.units import PRECIP_AMOUNT_LONG_NAME, STANDARD
 
+from conftest import make_forecast, make_gridded
 from weather_skills_plotting_mpl import display as dl
 
 

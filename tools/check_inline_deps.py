@@ -31,8 +31,12 @@ IMPORT_TO_PACKAGE = {
 }
 
 
-def _parse_pep723_deps(src: str) -> list[str] | None:
-    """Return the list of declared deps, or None if this isn't a PEP 723 script."""
+def _parse_pep723_deps(src: str, script: Path) -> list[str] | None:
+    """Return the list of declared deps, or None if this isn't a PEP 723 script.
+
+    A dep sourced from a local path (``[tool.uv.sources] pkg = { path = ... }``)
+    also brings that project's own ``dependencies``, which the script may import.
+    """
     m = re.search(r"^# /// script\n(?P<body>(?:^#.*\n)*?)^# ///", src, re.MULTILINE)
     if not m:
         return None
@@ -45,7 +49,13 @@ def _parse_pep723_deps(src: str) -> list[str] | None:
         else:
             toml_lines.append(line.lstrip("#"))
     data = tomllib.loads("\n".join(toml_lines))
-    deps = data.get("dependencies") or []
+    deps = list(data.get("dependencies") or [])
+    for source in (data.get("tool", {}).get("uv", {}).get("sources") or {}).values():
+        if isinstance(source, dict) and source.get("path"):
+            pyproject = script.parent / source["path"] / "pyproject.toml"
+            if pyproject.is_file():
+                project = tomllib.loads(pyproject.read_text()).get("project") or {}
+                deps += project.get("dependencies") or []
     # Strip version specifiers, extras, environment markers.
     out = []
     for d in deps:
@@ -83,7 +93,7 @@ def _is_declared(imp_norm: str, declared: set[str]) -> bool:
 
 def check(path: Path) -> list[str]:
     src = path.read_text()
-    deps = _parse_pep723_deps(src)
+    deps = _parse_pep723_deps(src, path)
     if deps is None:
         return []
     tree = ast.parse(src, filename=str(path))

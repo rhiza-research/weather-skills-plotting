@@ -2,9 +2,9 @@
 
 import numpy as np
 import pytest
-from conftest import make_gridded
 from PIL import Image
 
+from conftest import make_gridded
 from weather_skills_plotting_mpl.qa import data_status, hash_png_pixels, report_figure
 
 
