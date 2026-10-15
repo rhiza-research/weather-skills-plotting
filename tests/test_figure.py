@@ -75,13 +75,14 @@ def test_layout_coloraxis_override_wins():
     assert _layout(compile(spec, {"a": ds}))["coloraxis"]["colorbar"]["len"] == 0.3
 
 
-def test_side_by_side_inputs_get_their_own_grid_and_scale():
+def test_side_by_side_inputs_get_their_own_grid_and_one_scale_per_quantity():
     a = make_gridded(n_time=1)
     b = make_gridded(n_time=1, name="tp", lats=(1.5, 2.5), lons=(10.5, 12.5), fill=3.0)
     spec = {"data": [_trace("a"), _trace("b", xaxis="x2", yaxis="y2", name="ECMWF")]}
     fig = compile(spec, {"a": a, "b": b})
     heat = _data(fig, "heatmap")
-    assert [t["coloraxis"] for t in heat] == ["coloraxis", "coloraxis2"]
+    # Two rainfall rates under different variable names are one quantity: one bar.
+    assert [t["coloraxis"] for t in heat] == ["coloraxis", "coloraxis"]
     assert list(heat[1]["x"]) == [10.5, 12.5]
     titles = [a["text"] for a in _layout(fig)["annotations"]]
     assert "ECMWF" in titles
@@ -226,6 +227,21 @@ def test_series_spaghetti_band_and_cycle():
     )
     # Faint members, the band's two edges, then the mean line.
     assert [t["fill"] for t in _data(band)] == [None, None, "tonexty", None]
+    assert _data(band)[-1]["name"].endswith("ensemble mean")
+    bare = compile(
+        {
+            "data": [
+                _trace(
+                    "a",
+                    type="scatter",
+                    source=src,
+                    meta={"bind": "series", "along": "number", "band": [10, 90], "members": False},
+                )
+            ]
+        },
+        {"a": ds},
+    )
+    assert [t["fill"] for t in _data(bare)] == [None, "tonexty", None]
     cycle = compile(
         {
             "data": [
@@ -476,3 +492,59 @@ def test_spread_from_summarize_dim_is_not_drawn_as_rain_totals():
     # A continuous scale (no class ticks) and a label that says what it is.
     assert "ticktext" not in axis["colorbar"]
     assert axis["colorbar"]["title"]["text"] == "Precipitation std. dev. (number) [mm]"
+
+
+def test_member_panels_titled_and_bad_panel_title_named():
+    ds = make_forecast(n_number=3, n_step=1).isel(step=0)
+    fig = compile({"data": [_trace("a", meta={"facet": "number"})]}, {"a": ds})
+    titles = [
+        a["text"] for a in _layout(fig)["annotations"] if a.get("name", "").startswith("panel")
+    ]
+    assert titles == ["Member 0", "Member 1", "Member 2"]
+    with pytest.raises(
+        UsageError, match="panel-title-0.*panel-title-1, panel-title-2, panel-title-3"
+    ):
+        compile(
+            {
+                "data": [_trace("a", meta={"facet": "number"})],
+                "layout": {"annotations": [{"name": "panel-title-0", "text": "x"}]},
+            },
+            {"a": ds},
+        )
+
+
+def test_string_bbox_and_horizontal_colorbar_below():
+    ds = make_gridded(n_time=2)
+    fig = compile(
+        {
+            "data": [_trace("a")],
+            "layout": {
+                "coloraxis": {"colorbar": {"orientation": "h"}},
+                "meta": {"geo": {"bbox": "1/10/0/11"}},
+            },
+        },
+        {"a": ds},
+    )
+    bar = _layout(fig)["coloraxis"]["colorbar"]
+    assert bar["orientation"] == "h" and bar["yref"] == "container"
+
+
+def test_same_standard_name_shares_a_bar_and_small_bbox_keeps_overlapped_cells():
+    grid = make_gridded(n_time=1, lats=(-1.5, 0.0, 1.5), lons=(36.0, 37.5, 39.0), name="t2m")
+    grid["t2m"].attrs.update(standard_name="air_temperature", long_name="2 m temperature")
+    stations = make_station(n_station=3, n_time=1).rename(precip="temperature")
+    stations["temperature"].attrs.update(
+        standard_name="air_temperature", long_name="Surface air temperature"
+    )
+    for ds in (grid, stations):
+        ds[list(ds.data_vars)[0]].attrs["units"] = "degree_Celsius"
+    spec = {
+        "data": [_trace("a"), _trace("b", type="scatter", meta={"bind": "points"})],
+        # Smaller than one 1.5° cell and centred on none.
+        "layout": {"meta": {"geo": {"bbox": [0.2, 36.5, -0.6, 37.1]}}},
+    }
+    fig = compile(spec, {"a": grid, "b": stations})
+    field = next(t for t in _data(fig) if t["uid"].startswith("a"))
+    assert np.asarray(field["z"]).size > 0
+    points = next(t for t in _data(fig) if t["uid"].startswith("b"))
+    assert points["marker"]["coloraxis"] == field["coloraxis"]

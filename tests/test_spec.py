@@ -31,11 +31,6 @@ def test_load_rejects_non_object_and_bad_json():
         load_spec("missing.json")
 
 
-def test_version_2_spec_is_rejected_with_pointer():
-    with pytest.raises(UsageError, match="retired version-2 spec.*standard Plotly figure"):
-        load_spec({"inputs": [{"variable": "tp"}], "traces": [{"kind": "heatmap"}]})
-
-
 def test_unknown_top_level_key():
     with pytest.raises(UsageError, match="top-level key"):
         load_spec({"data": [], "frames": []})
@@ -137,3 +132,13 @@ def test_plotly_validates_everything_else():
 @pytest.mark.parametrize("name", ["weather_skills", "colorblind", "plotly_white+presentation"])
 def test_named_templates_validate(name):
     assert validate({"layout": {"template": name}})
+
+
+def test_hints_for_common_misplaced_keys():
+    with pytest.raises(UsageError, match='nested path: write {"export": {"scale"'):
+        check_meta({"layout": {"meta": {"export.scale": 2}}})
+    with pytest.raises(UsageError, match="plain x/y axes"):
+        check_meta({"data": [{"type": "scattermap"}]})
+    with pytest.raises(UsageError, match="coloraxis"):
+        validate({"layout": {"colorbar": {}}})
+    check_meta({"layout": {"meta": {"geo": {"bbox": "5/33/-5/42"}}}})

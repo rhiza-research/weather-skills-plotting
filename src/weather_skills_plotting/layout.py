@@ -30,6 +30,13 @@ def register_templates(user_template: dict | None = None) -> None:
     for name, colorway in (("weather_skills", DEEP), ("colorblind", COLORBLIND)):
         base = copy.deepcopy(pio.templates["seaborn"])
         base.layout.colorway = colorway
+        # seaborn's shapes have no line and a blue fill, so a box given only a line
+        # color draws as a tinted patch. A shape is an outline unless it sets a fill.
+        base.layout.shapedefaults = {
+            "fillcolor": "rgba(0,0,0,0)",
+            "line": {"width": 2, "color": "#333333"},
+            "opacity": 1,
+        }
         if user_template:
             try:
                 base.update(go.layout.Template(user_template))

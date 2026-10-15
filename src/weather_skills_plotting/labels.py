@@ -293,6 +293,8 @@ def panel_title(da, sdim, step_value, all_steps):
     if units and value_arr.dtype.kind in "iuf":
         # A pressure level reads "850 hPa", not "vertical=850".
         return f"{float(value_arr):g} {units}"
+    if sdim == "number":
+        return f"Member {format_step(step_value)}"
     return f"{sdim}={format_step(step_value)}"
 
 

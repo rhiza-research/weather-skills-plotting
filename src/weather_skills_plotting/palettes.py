@@ -505,7 +505,7 @@ def deep_merge(base: dict, overlay: dict) -> dict:
     return out
 
 
-def check_color_bound_counts(colors, bounds, under=None, over=None, *, loc="theme.colormap"):
+def check_color_bound_counts(colors, bounds, under=None, over=None, *, loc="palette"):
     """``colors`` is one per class, or under+classes+over packed in one list."""
     n_bins = len(bounds) - 1
     if n_bins < 1:

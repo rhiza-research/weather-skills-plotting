@@ -33,7 +33,7 @@ _SKILL_VERSION = "0.0.2"
 
 MAX_INPUTS = 26
 # meta keys a later trace takes from data[0] when it leaves them unset.
-INHERITED_META = ("along", "along_color", "band", "align")
+INHERITED_META = ("along", "along_color", "band", "members", "align")
 INHERITED_SOURCE = ("variable", "reduce")
 
 
@@ -78,7 +78,7 @@ def inherit_from_first(spec: dict, datasets: dict | None = None) -> dict:
         dims = ds[var].dims if ds is not None and var in ds else getattr(ds, "dims", ())
         lacks_along = along and ds is not None and along not in dims
         for key in INHERITED_META:
-            if lacks_along and key in ("along", "along_color", "band"):
+            if lacks_along and key in ("along", "along_color", "band", "members"):
                 continue
             if key in first and key not in meta:
                 meta[key] = copy.deepcopy(first[key])

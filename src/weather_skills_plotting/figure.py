@@ -126,6 +126,18 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
     else:
         data, layout = _assemble_chart(items, user_layout)
     layout.setdefault("template", DEFAULT_TEMPLATE)
+    built = {a.get("name") for a in layout.get("annotations") or []}
+    for ann in user_layout.get("annotations") or []:
+        name = str(ann.get("name") or "")
+        if name.startswith("panel-title-") and name not in built:
+            have = sorted(
+                (n for n in built if n and n.startswith("panel-title-")),
+                key=lambda n: int(n.rsplit("-", 1)[1]),
+            )
+            raise UsageError(
+                f"layout.annotations name {name!r} matches no panel; this figure's panel titles "
+                f"are {', '.join(have) or 'none'} (numbered from 1)"
+            )
     out_layout = merge_spec({"layout": layout}, {"layout": user_layout})["layout"]
     try:
         return go.Figure({"data": data, "layout": out_layout})
@@ -400,8 +412,22 @@ def _assemble_map(items, user_layout, lmeta, ctx):
                 else (spec_trace.get("marker") or {}).get("coloraxis")
             )
             if not name:
+                # One quantity is one CF standard_name in one unit: station "Surface air
+                # temperature" and a forecast's "2 m temperature" share a bar. Anomalies
+                # and spreads of it do not.
+                title = bound.color_title or ""
+                sn = (
+                    bound.color_da.attrs.get("standard_name")
+                    if bound.color_da is not None
+                    else None
+                )
+                quantity = (
+                    (sn, title.rpartition("[")[2], "anomaly" in title, "std. dev." in title)
+                    if sn
+                    else title
+                )
                 key = (
-                    bound.color_title,
+                    json.dumps(quantity),
                     json.dumps((spec_trace.get("meta") or {}).get("palette"), sort_keys=True),
                     json.dumps(spec_trace.get("colorscale"), sort_keys=True),
                     bound.color_da is not None and is_precip_anomaly(bound.color_da),
@@ -475,6 +501,12 @@ def _assemble_map(items, user_layout, lmeta, ctx):
         ]
     panels_of = dict(sorted(panels_of.items(), key=lambda item: min(item[1])))
     mode = colorbar_mode(panels_of, cols)
+    if mode in ("right", "rows") and any(
+        ((user_layout.get(name) or {}).get("colorbar") or {}).get("orientation") == "h"
+        for name in panels_of
+    ):
+        # A horizontal bar asked for in the spec gets room under the maps.
+        mode = "below"
     layout, domains = map_layout(
         rows,
         cols,
@@ -526,6 +558,17 @@ def _assemble_map(items, user_layout, lmeta, ctx):
         )
         if name in slots:
             fill_defaults(axis["colorbar"], slots[name])
+            bar = axis["colorbar"]
+            user_bar = (user_layout.get(name) or {}).get("colorbar") or {}
+            if bar.get("orientation") == "h" and bar.get("ticktext") and "ticktext" not in user_bar:
+                # Class edges crowd a short horizontal bar: label every k-th edge.
+                room = bar.get("len", 1) * layout.get("width", 800) / len(bar["ticktext"])
+                widest = max(len(t) for t in bar["ticktext"]) * 7 + 8
+                k = math.ceil(widest / room)
+                if k > 1:
+                    bar["ticktext"] = [
+                        t if i % k == 0 else "" for i, t in enumerate(bar["ticktext"])
+                    ]
         else:
             axis["showscale"] = False
         lifted = {}
@@ -574,6 +617,9 @@ def _assemble_map(items, user_layout, lmeta, ctx):
             panel_traces[p].append((_MAP_RANK["overlay"], tr, None, None))
         for _, tr, _, _ in sorted(panel_traces[p], key=lambda item: item[0]):
             tr["xaxis"], tr["yaxis"] = f"x{s}", f"y{s}"
+            if not tr.get("name"):
+                # An unnamed added trace (city markers, a box) would read "trace 6".
+                tr.setdefault("showlegend", False)
             data.append(tr)
     return data, layout
 

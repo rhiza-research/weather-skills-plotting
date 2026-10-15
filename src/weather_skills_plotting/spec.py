@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 
 from weather_skills_core.errors import UsageError
+from weather_skills_core.standard_utils import parse_bbox
 
 SPEC_VERSION = 3
 
@@ -48,6 +49,7 @@ TRACE_META_KEYS = frozenset(
         "along",
         "along_color",
         "band",
+        "members",
         "align",
         "palette",
         "arrows",
@@ -97,7 +99,10 @@ def load_spec(value) -> dict:
             except OSError:
                 is_file = False
             if not is_file:
-                raise UsageError(f"plot spec {raw!r} is not a file or a JSON object")
+                raise UsageError(
+                    f"plot spec {raw!r} is not a file or a JSON object; pass inline JSON "
+                    "or a plain file path (no @)"
+                )
             raw = path.read_text(encoding="utf-8")
         try:
             data = json.loads(raw)
@@ -119,26 +124,13 @@ def parse_plot_spec(value):
         raise argparse.ArgumentTypeError(f"{exc}. {SPEC_HELP_HINT}") from None
 
 
-_OLD_TOP_KEYS = frozenset(
-    {"inputs", "traces", "layers", "subplots", "theme", "geo", "axes", "title", "vmin", "vmax"}
-)
-
-
 def check_shape(data: dict) -> None:
-    """Top level is ``data`` / ``layout`` only; a version-2 spec is rejected."""
-    old = sorted(set(data) & _OLD_TOP_KEYS)
-    if old:
-        raise UsageError(
-            f"plot spec keys {', '.join(old)} are from the retired version-2 spec. "
-            "The spec is now a standard Plotly figure: traces go in data[], titles, axes, "
-            "annotations and shapes in layout, and the dataset bindings in each trace's "
-            "meta. " + SPEC_HELP_HINT
-        )
+    """Top level is ``data`` / ``layout`` only."""
     unknown = sorted(set(data) - TOP_KEYS)
     if unknown:
         raise UsageError(
-            f"plot spec top-level key(s) {', '.join(unknown)} are not allowed; "
-            "a spec has data (list of traces) and layout (object)"
+            f"plot spec top-level key(s) {', '.join(unknown)} are not allowed; a spec is a "
+            'Plotly figure {"data": [traces], "layout": {…}}'
         )
     if not isinstance(data.get("data", []), list):
         raise UsageError("plot spec data must be a list of trace objects")
@@ -252,7 +244,10 @@ def _check_keys(obj, allowed, loc: str) -> None:
         if key in allowed:
             continue
         hint = ""
-        if loc.endswith("geo") and key in _PLACE_NAME_KEYS:
+        if "." in key:
+            head, _, rest = key.partition(".")
+            hint = f'; a dotted name is a nested path: write {{"{head}": {{"{rest}": …}}}}'
+        elif loc.endswith("geo") and key in _PLACE_NAME_KEYS:
             hint = (
                 "; geo takes coordinates only — run resolve-region for a named place and "
                 "pass its bbox as layout.meta.geo.bbox or its polygon as mask_geojson"
@@ -308,6 +303,8 @@ def check_trace_meta(meta, loc: str) -> None:
         raise UsageError(
             f"plot spec {loc}.band needs {loc}.along (the dim to take percentiles over)"
         )
+    if meta.get("members") not in (None, True, False):
+        raise UsageError(f"plot spec {loc}.members must be true or false")
     if meta.get("align") not in (None, "dayofyear"):
         raise UsageError(f"plot spec {loc}.align must be 'dayofyear'")
     palette = meta.get("palette")
@@ -333,8 +330,11 @@ def check_layout_meta(meta) -> None:
     if geo is not None:
         _check_keys(geo, GEO_KEYS, "layout.meta.geo")
         bbox = geo.get("bbox")
-        if bbox is not None and not (isinstance(bbox, list) and len(bbox) == 4):
-            raise UsageError("plot spec layout.meta.geo.bbox must be [N, W, S, E]")
+        if isinstance(bbox, str):
+            # resolve-region prints "N/W/S/E"; take it as printed.
+            parse_bbox(bbox)
+        elif bbox is not None and not (isinstance(bbox, list) and len(bbox) == 4):
+            raise UsageError('plot spec layout.meta.geo.bbox must be [N, W, S, E] or "N/W/S/E"')
         point = geo.get("point")
         if point is not None and (not isinstance(point, dict) or set(point) != {"lat", "lon"}):
             raise UsageError('plot spec layout.meta.geo.point must be {"lat": …, "lon": …}')
@@ -384,6 +384,14 @@ def check_meta(spec: dict) -> None:
             if uid in seen:
                 raise UsageError(f"plot spec data[] uid {uid!r} appears more than once")
             seen.add(uid)
+        if str(trace.get("type", "")).startswith(
+            ("scattergeo", "scattermap", "choropleth", "densitymap")
+        ):
+            raise UsageError(
+                f"plot spec data[{i}].type {trace['type']!r}: maps here are plain x/y axes "
+                '(x = longitude, y = latitude). Use "type": "scatter" with x / y for markers '
+                "and lines, and layout.shapes for boxes"
+            )
         meta = trace.get("meta")
         if meta is not None:
             check_trace_meta(meta, f"data[{i}].meta")
@@ -406,6 +414,11 @@ def plotly_error(exc: Exception, loc: str = "") -> UsageError:
         msg += f"\nAllowed here: {', '.join(names)}"
     elif len(lines) > 12:
         msg += "\n…"
+    if "'colorbar'" in head and "Layout" in head:
+        msg += (
+            '\nA colorbar belongs to a color axis: {"layout": {"coloraxis": {"colorbar": {…}}}} '
+            "(coloraxis2, … for a second bar)"
+        )
     prefix = f"plot spec {loc}: " if loc else "plot spec: "
     return UsageError(
         prefix + msg + "\nKeys are standard Plotly: https://plotly.com/python/reference/"

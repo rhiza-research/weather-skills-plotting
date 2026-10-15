@@ -261,7 +261,15 @@ def _subset(ctx: Context, source: dict, da):
         return da
     lat, lon = cf_dim(da, "latitude"), cf_dim(da, "longitude")
     if lat in da.dims and lon in da.dims:
-        da, _ = subset_spatial(da, lat, lon, ctx.bbox, polygon, None)
+        bbox = ctx.bbox
+        spacing = native_spacing_deg(da[lat].values, da[lon].values) if bbox else None
+        if spacing:
+            # Keep every cell the window overlaps, not only the cells centred in it:
+            # a zoom smaller than a 1.5° cell still shows that cell.
+            north, west, south, east = bbox
+            half = spacing / 2
+            bbox = (north + half, west - half, south - half, east + half)
+        da, _ = subset_spatial(da, lat, lon, bbox, polygon, None)
         if da.sizes[lat] == 0 or da.sizes[lon] == 0:
             raise UsageError(
                 "no grid cells remain after layout.meta.geo.bbox / mask_geojson; nothing to plot"
@@ -385,6 +393,11 @@ def bind_field(trace, meta, ctx, loc, *, speed=False):
         title = variable_label_for_display(da)
     da, lat, lon, fdim = _map_field(ctx, da, meta, loc, "a map")
     x, y = da[lon].values, da[lat].values
+    if len(x) == 1 or len(y) == 1:
+        # Plotly cannot size a cell from one centre: give that axis the cell edges.
+        half = (native_spacing_deg(y, x) or 1.0) / 2
+        x = np.array([x[0] - half, x[0] + half]) if len(x) == 1 else x
+        y = np.array([y[0] - half, y[0] + half]) if len(y) == 1 else y
     panels, values = [], []
     hover = "%{x:.2f}°, %{y:.2f}°: %{customdata:.4g}<extra></extra>"
     for key, ptitle, part in _slices(da, fdim):
@@ -709,8 +722,8 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
         band = meta.get("band")
         if band is not None:
             col = _color_name(trace, color)
-            # Members stay visible under the band: the spread is the point.
-            if ttype == "scatter":
+            # Members stay visible under the band unless meta.members is false.
+            if ttype == "scatter" and meta.get("members", True):
                 gx, gy = [], []
                 for j in range(y.shape[1]):
                     gx += xs + [None]
@@ -753,6 +766,9 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
                 },
                 {
                     **base,
+                    # The legend says the bold line is the mean, not one member.
+                    "name": trace.get("name")
+                    or f"{label} {'ensemble mean' if along == 'number' else 'mean'}",
                     "x": xs,
                     "y": np.nanmean(y, axis=1),
                     "mode": "lines",

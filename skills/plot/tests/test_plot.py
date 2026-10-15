@@ -175,7 +175,7 @@ def test_bad_layer_flag(plot_fn, capsys, argv, match):
 def test_errors_are_actionable(tmp_path, plot_fn, capsys):
     grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
     bad = [
-        ('{"inputs": [{"variable": "tp"}]}', "retired version-2 spec"),
+        ('{"inputs": [{"variable": "tp"}]}', "are not allowed"),
         ('{"data": [{"uid": "a", "colorscal": "Blues"}]}', "Did you mean"),
         ('{"layout": {"meta": {"geo": {"region": "Kenya"}}}}', "resolve-region"),
     ]
