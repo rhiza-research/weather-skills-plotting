@@ -33,12 +33,14 @@ The plot type follows the data: a lat/lon grid is a colored map, stations are co
 - `--layer` — `KIND:PATH` to stack on one map; repeat. Kinds: `heatmap`, `contour`, `scatter` (stations), `quiver` (wind u/v), `outline` and `mask` (GeoJSON). `outline` and `mask` also work with `-i`.
 - `--x`, `--y` — two series for an xy scatter.
 - `--spec` — Plotly figure JSON, inline or a file path.
-- `--theme-file` — JSON/TOML with a Plotly `template` and named `palettes`.
+- `--theme-file` — house style for every figure: a Plotly `template` (fonts, background, colors) and named `palettes` to use with `meta.palette`; a palette named like a built-in one replaces it. Default: `$WEATHER_SKILLS_PLOT_THEME` or `~/.config/weather-skills/plot.json` / `.toml`, if present.
 - `--dump-spec` — print (`-`) or save (a path) the spec the tool would draw, without drawing.
 - `--output`, `-o` — `.png`, `.jpg`, or `.html` (interactive).
 
 ### Customizing with `--spec`
-`--spec` is a [Plotly figure](https://plotly.com/python/reference/) laid over the one the tool builds; anything you leave out keeps its default. Each file is a trace with an id: `a`, `b`, … in `-i` / `--layer` order, `xy` for `--x` / `--y`. Use that id as `uid` to change a trace.
+The tool picks sensible defaults; `--spec` changes them. It takes [Plotly figure](https://plotly.com/python/reference/) JSON, `{"data": [...], "layout": {...}}`, and you write only the parts you want to change.
+
+Each input file is one entry in `data`, named `a`, `b`, `c`, … in the order you passed them (`xy` for `--x` / `--y`). Put that name in `"uid"` to say which file a change applies to.
 
 | To | `--spec` |
 | --- | --- |
