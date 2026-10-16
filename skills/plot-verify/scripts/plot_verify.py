@@ -3,6 +3,7 @@
 # dependencies = [
 #   "weather-skills-plotting",
 #   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
+#   "numpy",
 # ]
 #
 # [tool.uv.sources]

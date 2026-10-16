@@ -537,19 +537,23 @@ def bind_points(trace, meta, ctx, loc):
     for key, ptitle, part in _slices(da, fdim):
         vals = np.asarray(part.values, dtype=float)
         values.append(vals)
+        keep = np.ones(vals.shape, bool)
+        if "markers" not in (trace.get("mode") or "markers"):
+            # A text-only trace prints values: "NaN" says nothing, so skip those points.
+            keep = np.isfinite(vals)
         panels.append(
             Panel(
                 [
                     {
                         "mode": "markers",
-                        "x": lon,
-                        "y": lat,
-                        "text": names,
-                        "customdata": vals,
+                        "x": lon[keep],
+                        "y": lat[keep],
+                        "text": [n for n, k in zip(names, keep, strict=True) if k],
+                        "customdata": vals[keep],
                         # An outline keeps a station visible when its class is white.
                         # A few stations read as dots, not specks; a dense network stays small.
                         "marker": {
-                            "color": vals,
+                            "color": vals[keep],
                             "size": 13 if vals.size <= 50 else 8,
                             "line": {"width": 1},
                         },

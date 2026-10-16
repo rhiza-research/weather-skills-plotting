@@ -27,6 +27,8 @@ with a relative `path`, not a git URL, so a script and the library it calls
 always move together in one commit. See any `skills/*/scripts/*.py` header
 for the exact form.
 
+Design rule: [plotting computes as little as possible](docs/plotting.md#plotting-computes-as-little-as-possible).
+
 ## Skill correctness tests
 
 Per-skill tests live in `skills/<name>/tests/`. Library-level tests (spec

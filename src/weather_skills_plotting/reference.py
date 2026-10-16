@@ -74,6 +74,16 @@ _RECIPES = [
     ("Title and font size", '{"layout": {"title": {"text": "Week 1"}, "font": {"size": 20}}}'),
     ("Contour instead of heatmap", '{"data": [{"uid": "a", "type": "contour"}]}'),
     (
+        "MSLP chart: --layer heatmap:ANOM --layer contour:MSLP --layer scatter:HIGHS "
+        "--layer scatter:LOWS (HIGHS / LOWS from local-extrema); black isobars every 4 hPa, "
+        "H / L with the central value",
+        '{"data": [{"uid": "b", "contours": {"coloring": "none", "showlabels": true, '
+        '"start": 900, "end": 1080, "size": 4}}, {"uid": "c", "mode": "text", '
+        '"texttemplate": "<b>H</b><br>%{customdata:.0f}", "textfont": {"color": "#1f4fbf"}}, '
+        '{"uid": "d", "mode": "text", "texttemplate": "<b>L</b><br>%{customdata:.0f}", '
+        '"textfont": {"color": "#c8102e"}}]}',
+    ),
+    (
         "Color limits and colorscale (continuous)",
         '{"data": [{"uid": "a", "zmin": 0, "zmax": 50, "colorscale": "YlGnBu"}]}',
     ),

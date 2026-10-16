@@ -197,6 +197,17 @@ def _lift_color(spec_trace: dict, color_key: str) -> dict:
     return out
 
 
+def _uncolored(spec_trace: dict) -> bool:
+    """No color scale to show: a contour drawn as plain lines (``contours.coloring: none``),
+    or a scatter drawn without markers (``mode: "text"``, ``"lines"``)."""
+    if spec_trace.get("type") == "contour":
+        return (spec_trace.get("contours") or {}).get("coloring") == "none"
+    mode = spec_trace.get("mode")
+    return (
+        spec_trace.get("type") in ("scatter", "scattergl") and bool(mode) and "markers" not in mode
+    )
+
+
 def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
     """Fill ``layout.<name>`` for the bound traces in ``members``.
 
@@ -404,7 +415,7 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     auto = {}
     for g in order:
         for _, spec_trace, bound in groups[g]:
-            if bound is None or not bound.color_values:
+            if bound is None or not bound.color_values or _uncolored(spec_trace):
                 continue
             name = (
                 spec_trace.get("coloraxis")
@@ -440,6 +451,11 @@ def _assemble_map(items, user_layout, lmeta, ctx):
             axis_of[id(spec_trace)] = name
     for p in range(n):
         for _, tr, spec_trace, bound in panel_traces[p]:
+            if _uncolored(spec_trace):
+                if tr.get("type") == "contour":
+                    # Isobars over shading: plain black lines, no colorbar of their own.
+                    fill_defaults(tr, {"showscale": False, "line": {"color": "black", "width": 1}})
+                continue
             if bound is None or id(spec_trace) not in axis_of:
                 continue
             name = axis_of[id(spec_trace)]

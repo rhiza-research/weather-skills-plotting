@@ -147,6 +147,81 @@ def test_contour_uses_class_edges_as_levels():
     assert tr["autocontour"] is False
 
 
+def _pressure():
+    """MSLP in hPa: a 1030 high at (10N, 20E) and a 990 low at (-10N, 60E)."""
+    lats, lons = np.arange(-30.0, 30.5, 1.0), np.arange(0.0, 80.5, 1.0)
+    lat, lon = np.meshgrid(lats, lons, indexing="ij")
+    z = (
+        1010
+        + 20 * np.exp(-((lat - 10) ** 2 + (lon - 20) ** 2) / 50)
+        - 20 * np.exp(-((lat + 10) ** 2 + (lon - 60) ** 2) / 50)
+    )
+    ds = xr.Dataset(
+        {"msl": (("latitude", "longitude"), z)}, coords={"latitude": lats, "longitude": lons}
+    )
+    ds["msl"].attrs.update(units="hPa", standard_name="air_pressure_at_mean_sea_level")
+    return ds
+
+
+def test_line_only_contour_over_shading_keeps_the_shading_colorbar():
+    spec = {
+        "data": [
+            _trace("a"),
+            _trace(
+                "iso", input="a", type="contour", contours={"coloring": "none"}, showscale=False
+            ),
+        ]
+    }
+    fig = compile(spec, {"a": _pressure()})
+    iso = _data(fig, "contour")[0]
+    assert iso["coloraxis"] is None
+    assert iso["showscale"] is False and iso["line"]["color"] == "black"
+    layout = _layout(fig)
+    assert layout["coloraxis"].get("showscale") is not False
+    assert "coloraxis2" not in layout
+
+
+def test_text_only_points_have_no_colorbar_and_keep_customdata_in_images(tmp_path, monkeypatch):
+    import plotly.io as pio
+
+    from weather_skills_plotting import export
+
+    stations = make_station(n_station=3, n_time=1).isel(time=0)
+    spec = {
+        "data": [
+            _trace("a"),
+            _trace(
+                "c",
+                type="scatter",
+                mode="text",
+                texttemplate="<b>H</b><br>%{customdata:.0f}",
+                meta={"bind": "points"},
+            ),
+        ]
+    }
+    fig = compile(spec, {"a": _pressure(), "c": stations})
+    text = next(t for t in fig.data if t["uid"] == "c")
+    assert text["marker"]["coloraxis"] is None
+    layout = _layout(fig)
+    assert "coloraxis2" not in layout and "orientation" not in layout["coloraxis"]["colorbar"]
+    # A PNG drops the heatmap's hover copy but keeps what a texttemplate prints.
+    written = {}
+    monkeypatch.setattr(pio, "write_image", lambda image, *a, **k: written.update(image))
+    monkeypatch.setattr("weather_skills_plotting.qa.report_figure", lambda *a, **k: None)
+    export(fig, tmp_path / "map.png")
+    kept = {t["uid"]: "customdata" in t for t in written["data"] if t["uid"] in ("a", "c")}
+    assert kept == {"a": False, "c": True}
+
+
+def test_text_only_points_skip_nan_but_markers_keep_them():
+    stations = make_station(n_station=3, n_time=1).isel(time=0)
+    stations["precip"].values[1] = np.nan
+    for mode, n in (("text", 2), ("markers", 3)):
+        spec = {"data": [_trace("c", type="scatter", mode=mode, meta={"bind": "points"})]}
+        trace = next(t for t in compile(spec, {"c": stations}).data if t["uid"] == "c")
+        assert len(trace["x"]) == n and len(trace["customdata"]) == n
+
+
 def test_non_precip_gets_continuous_scale_symmetric_when_diverging():
     ds = make_gridded(n_time=1, name="t2m", units="degree_Celsius")
     ds["t2m"].values[:] = np.linspace(-2, 4, 12).reshape(1, 3, 4)
