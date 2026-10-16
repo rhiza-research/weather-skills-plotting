@@ -4,7 +4,7 @@ General-purpose weather and climate data plotting: heatmaps, filled-contour
 maps, station maps, time series, xy scatter, wind roses, quiver, ECMWF-style
 mediograms, lead-week event-verification grids, and animated maps, from weather-skills
 standard dataset Zarrs. Figures are Plotly: the `--spec` every skill takes is
-a standard Plotly figure JSON, and output is PNG, JPG, or interactive HTML. Built on [`weather-skills-core`](https://github.com/rhiza-research/weather-skills-core)
+a standard Plotly figure JSON, and output is PNG, JPG, or interactive HTML. Built on [`weather-skills-core`](https://github.com/weather-skills/weather-skills-core)
 for dataset loading, the CLI decorator, and a handful of shared utilities.
 
 ## Skills
