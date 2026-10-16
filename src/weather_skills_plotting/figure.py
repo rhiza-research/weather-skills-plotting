@@ -472,15 +472,20 @@ def _assemble_map(items, user_layout, lmeta, ctx):
         if extents[p] is None:
             raise UsageError("a map panel has no data extent; set layout.meta.geo.bbox")
     if len(order) > 1:
-        # Side by side, a panel is named for its dataset (trace name, else file name).
+        # Side by side, a panel is named for its dataset (trace name, else file name),
+        # and keeps its date too when the panels show different dates.
+        dates = [t for t in panel_titles if t]
+        differ = len(set(dates)) > 1
         for p, (gi, _) in enumerate(panels):
             if gi is None:
                 continue
             bound_items = [
                 (t, b) for _, t, b in groups[order[gi]] if b is not None and not b.static
             ]
-            if bound_items:
-                panel_titles[p] = _input_label(ctx, bound_items[0][0]) or panel_titles[p]
+            name = _input_label(ctx, bound_items[0][0]) if bound_items else None
+            if name:
+                date = panel_titles[p]
+                panel_titles[p] = f"{name} · {date}" if differ and date else name
 
     # Color axes: explicit coloraxis wins; else traces showing the same quantity
     # (color title, palette, anomaly or not) share one, side by side included.

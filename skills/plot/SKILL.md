@@ -119,8 +119,8 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -o mslp.png \
   --layer heatmap:msl_anom.zarr --layer contour:msl.zarr=MSLP \
   --layer scatter:highs.zarr=HIGHS --layer scatter:lows.zarr=LOWS --spec '{"data": [
   {"uid": "MSLP", "contours": {"coloring": "none", "showlabels": true, "start": 900, "end": 1080, "size": 4}},
-  {"uid": "HIGHS", "mode": "text", "texttemplate": "<b>H</b><br>%{customdata:.0f}", "textfont": {"color": "#1f4fbf"}},
-  {"uid": "LOWS", "mode": "text", "texttemplate": "<b>L</b><br>%{customdata:.0f}", "textfont": {"color": "#c8102e"}}]}'
+  {"uid": "HIGHS", "mode": "text", "texttemplate": "<b>H</b><br>%{customdata:.0f}", "textfont": {"color": "#1f4fbf", "shadow": "0 0 3px white"}},
+  {"uid": "LOWS", "mode": "text", "texttemplate": "<b>L</b><br>%{customdata:.0f}", "textfont": {"color": "#c8102e", "shadow": "0 0 3px white"}}]}'
 # Tropical Tidbits look: --theme-file tropical_tidbits adds TT's palettes (tt_precip_rate in
 # mm/h, tt_precip_total, tt_pwat, tt_wind, tt_z500 in dam). --help RECIPES has MSLP & precip,
 # MSLP & 10 m wind, total precip, MSLP & PWAT, and 500 mb height & MSLP.

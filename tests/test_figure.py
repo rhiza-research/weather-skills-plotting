@@ -875,3 +875,9 @@ def test_wind_speed_classes_are_one_ramp():
         for c in WIND_SPEED_COLORS
     ]
     assert lum == sorted(lum, reverse=True)
+
+
+def test_isel_range_picks_every_nth_position():
+    ds = make_gridded(n_time=6)
+    spec = {"data": [_trace("a", source={"isel": {"time": {"start": 0, "stop": 6, "step": 2}}})]}
+    assert len(_data(compile(spec, {"a": ds}), "heatmap")) == 3

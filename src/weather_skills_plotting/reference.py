@@ -47,7 +47,8 @@ _SOURCE = {
     "input": "input id: NAME from -i PATH=NAME, else the position 0, 1, … (obs, forecast1 … for plot-verify)",
     "variable": "data variable (default: auto-detected)",
     "isel": '0-based positions, e.g. {"number": 0, "step": [0, 1]}; -1 is the last. One '
-    "integer picks one value (one map); a list keeps the dim (one panel each)",
+    "integer picks one value (one map); a list keeps the dim (one panel each); a range is "
+    '{"start": 0, "stop": 12, "step": 3} (stop excluded)',
     "sel": 'labels to select (nearest for numbers and dates), e.g. {"time": "2026-09-21"}',
     "u / v": "wind component variables (default: found by CF standard_name eastward_wind / "
     "northward_wind, or names such as u10/v10, u/v)",
@@ -80,9 +81,9 @@ _RECIPES = [
         "H / L with the central value",
         '{"data": [{"uid": "MSLP", "contours": {"coloring": "none", "showlabels": true, '
         '"start": 900, "end": 1080, "size": 4}}, {"uid": "HIGHS", "mode": "text", '
-        '"texttemplate": "<b>H</b><br>%{customdata:.0f}", "textfont": {"color": "#1f4fbf"}}, '
+        '"texttemplate": "<b>H</b><br>%{customdata:.0f}", "textfont": {"color": "#1f4fbf", "shadow": "0 0 3px white"}}, '
         '{"uid": "LOWS", "mode": "text", "texttemplate": "<b>L</b><br>%{customdata:.0f}", '
-        '"textfont": {"color": "#c8102e"}}]}',
+        '"textfont": {"color": "#c8102e", "shadow": "0 0 3px white"}}]}',
     ),
     (
         "Tropical Tidbits MSLP & precip (--theme-file tropical_tidbits; precip: aggregate-temporal "
@@ -92,9 +93,9 @@ _RECIPES = [
         '{"data": [{"uid": "PRECIP", "meta": {"palette": "tt_precip_rate"}}, {"uid": "MSLP", '
         '"contours": {"coloring": "none", "showlabels": true, "start": 900, "end": 1080, '
         '"size": 2}}, {"uid": "HIGHS", "mode": "text", "texttemplate": '
-        '"<b>%{customdata:.0f}</b><br><b>H</b>", "textfont": {"color": "#1f3fbf"}}, '
+        '"<b>%{customdata:.0f}</b><br><b>H</b>", "textfont": {"color": "#1f3fbf", "shadow": "0 0 3px white"}}, '
         '{"uid": "LOWS", "mode": "text", "texttemplate": "<b>%{customdata:.0f}</b><br><b>L</b>", '
-        '"textfont": {"color": "#b5121b"}}]}',
+        '"textfont": {"color": "#b5121b", "shadow": "0 0 3px white"}}]}',
     ),
     (
         "Tropical Tidbits MSLP & 10 m wind (--theme-file tropical_tidbits colors the speed): "

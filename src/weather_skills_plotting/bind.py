@@ -223,6 +223,16 @@ def _sel(da, source: dict, loc: str):
                 f"{loc}.isel dimension {dim!r} is not in the data (dims: {list(da.dims)})"
             )
         size = da.sizes[dim]
+        if isinstance(idx, dict):
+            # A range: {"start": 0, "stop": 12, "step": 3} (stop excluded, like Python).
+            unknown = set(idx) - {"start", "stop", "step"}
+            if unknown:
+                raise UsageError(
+                    f"{loc}.isel {dim} range takes start, stop, step; got {sorted(unknown)}"
+                )
+            idx = list(range(size))[slice(idx.get("start"), idx.get("stop"), idx.get("step"))]
+            if not idx:
+                raise UsageError(f"{loc}.isel {dim} range selects nothing (size {size})")
         for pos in idx if isinstance(idx, list) else [idx]:
             if isinstance(pos, bool) or not isinstance(pos, int) or not -size <= pos < size:
                 raise UsageError(f"{loc}.isel {dim}={pos!r} is out of range (size {size})")
