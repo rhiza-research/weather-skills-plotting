@@ -22,7 +22,7 @@ def _forecast(step_hours, **attrs):
 def test_selected_six_hour_mean_names_its_window_and_lead():
     da = _forecast([18], aggregation_period="6 hour", data_interval="6 hour")
     step = da.step.values[0]
-    assert panel_title(da, "step", step, [step]) == "16 Oct '26 18:00–00:00 (+18h)"
+    assert panel_title(da, "step", step, [step]) == "16 Oct '26 18:00–00:00 (+18–24h)"
 
 
 def test_selected_hourly_instant_names_its_valid_time_and_lead():

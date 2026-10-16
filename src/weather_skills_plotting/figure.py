@@ -268,6 +268,12 @@ def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
         if palette.get("colorscale"):
             axis["colorscale"] = palette["colorscale"]
             palette = None
+    if palette and palette.get("bounds") and stretch:
+        print(
+            f"Warning: zmin/zmax turn the class palette {palette.get('name') or ''} into a "
+            "continuous scale; drop them to keep its classes, or set bounds in the palette",
+            file=sys.stderr,
+        )
     if palette and palette.get("bounds") and not stretch and "colorscale" not in user:
         for _, bound, traces in members:
             for tr in traces:

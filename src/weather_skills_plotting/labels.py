@@ -275,7 +275,10 @@ def panel_title(da, sdim, step_value, all_steps):
             if days is not None and days < 1:
                 # A sub-daily mean (6 hour precip): its window, then the lead it starts at.
                 end = start + dt
-                return f"{format_plot_time(start)}–{str(end.astype('datetime64[m]'))[11:16]} ({_hours(step_value)})"
+                lead = f"{_hours(step_value)[:-1]}–{_hours(np.asarray(step_value) + dt)[1:]}"
+                return (
+                    f"{format_plot_time(start)}–{str(end.astype('datetime64[m]'))[11:16]} ({lead})"
+                )
             if (spacing is not None and spacing < 86_400) or dt < np.timedelta64(1, "D"):
                 return f"{format_plot_time(start)} ({_hours(step_value)})"
             if _TRAILING.search(str(da.attrs.get("long_name") or "")):
