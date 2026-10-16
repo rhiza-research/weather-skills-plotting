@@ -19,8 +19,8 @@ for dataset loading, the CLI decorator, and a handful of shared utilities.
 The matplotlib renderers these replaced stay available as
 [`plot-mpl`](skills/plot-mpl/), [`plot-timeseries-mpl`](skills/plot-timeseries-mpl/),
 [`plot-verify-mpl`](skills/plot-verify-mpl/) and
-[`plot-mediogram-mpl`](skills/plot-mediogram-mpl/). They write PNG only and
-take their own `--spec` format, documented in
+[`plot-mediogram-mpl`](skills/plot-mediogram-mpl/), for machines without Chrome.
+They write PNG only, need no Chrome, and take their own `--spec` format, documented in
 [`mpl/docs/plotting.md`](mpl/docs/plotting.md).
 
 The spec design (Plotly figure plus `meta` bindings) is documented in

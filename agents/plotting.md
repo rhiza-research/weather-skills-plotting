@@ -31,8 +31,9 @@ and transforms when those are available (for example a fetch skill,
 
 - **Use the Plotly skills by default.** `plot-mpl`, `plot-timeseries-mpl`,
   `plot-verify-mpl` and `plot-mediogram-mpl` are the older matplotlib
-  renderers. Use them only when the user asks for matplotlib or a figure the
-  Plotly skills cannot draw. Their `--spec` is a different format (see their
+  renderers. Use them only when the user asks for matplotlib, when Chrome is
+  not available for PNG export (the Plotly skills need it for PNG/JPG; the
+  `-mpl` skills do not), or for a figure the Plotly skills cannot draw. Their `--spec` is a different format (see their
   `--help`), so never pass a Plotly spec to an `-mpl` skill or the reverse.
 
 - **`plot`** is the general-purpose renderer: heatmap, contour, timeseries,
