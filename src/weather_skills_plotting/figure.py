@@ -29,8 +29,6 @@ from weather_skills_plotting.geodata import (
     overlay_settings,
 )
 from weather_skills_plotting.layout import (
-    COLORBAR_BELOW,
-    COLORBAR_RIGHT,
     DEFAULT_TEMPLATE,
     axis_suffix,
     choose_grid,
@@ -548,8 +546,8 @@ def _assemble_map(items, user_layout, lmeta, ctx):
         aspect,
         titled=bool((user_layout.get("title") or {}).get("text")),
         panel_titles=any(panel_titles),
-        right=COLORBAR_RIGHT if panels_of and mode in ("right", "rows") else 0,
-        below=COLORBAR_BELOW if panels_of and mode in ("columns", "below") else 0,
+        right=bool(panels_of) and mode in ("right", "rows"),
+        below=bool(panels_of) and mode in ("columns", "below"),
         user={**user_layout, "grid": grid_in},
     )
     slots = place_colorbars(mode, panels_of, domains)

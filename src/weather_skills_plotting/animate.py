@@ -17,7 +17,7 @@ import re
 
 from weather_skills_core.errors import UsageError
 
-from weather_skills_plotting.layout import COLORBAR_BELOW, COLORBAR_RIGHT, map_layout
+from weather_skills_plotting.layout import map_layout
 
 DEFAULT_DURATION_MS = 500
 DEFAULT_TRANSITION_MS = 0
@@ -152,9 +152,10 @@ def animate_figure(fig, *, user_layout: dict | None = None, animation: dict | No
         aspect,
         titled=bool((out_layout.get("title") or {}).get("text")),
         panel_titles=True,
-        right=0 if horizontal or not bars else COLORBAR_RIGHT,
+        right=bool(bars) and not horizontal,
+        below=horizontal,
         # Room under the map for the play button and slider.
-        below=90 + (COLORBAR_BELOW if horizontal else 0),
+        below_lines=6,
         user=user_layout,
     )
     out_layout.update(sized)

@@ -1,10 +1,9 @@
 """Plotly templates and map-panel helpers.
 
-Charts keep Plotly's layout. Maps do not: Plotly's default canvas and grid
-cells know nothing about a map's shape, so equal-degree maps float small in
-mostly empty cells. ``map_layout`` instead sizes each panel from the map's
-lon/lat aspect, adds fixed pixel room for titles, tick labels and colorbars,
-and places every panel with an explicit axis domain.
+Charts keep Plotly's layout. Maps size the canvas from the map's lon/lat
+aspect, so equal-degree maps fill it, and place every panel with an explicit
+axis domain. Plotly still grows the margins to fit tick labels, titles and
+colorbars.
 """
 
 from __future__ import annotations
@@ -84,40 +83,57 @@ def choose_grid(n: int, aspect: float, rows=None, columns=None) -> tuple[int, in
     return best[1], best[2]
 
 
-# Pixel room around map panels.
-MAP_BOX_SINGLE = (760, 560)  # largest map area for a one-panel figure
-MAP_BOX_PANEL = (340, 340)  # largest map area per panel in a grid
+# Largest map area, in pixels, for one panel alone and per panel in a grid.
+MAP_BOX_SINGLE = (760, 560)
+MAP_BOX_PANEL = (340, 340)
 MAX_PLOT_WIDTH = 1400  # panels shrink so the panel area fits this width
-TICK_LEFT = 46  # y tick labels left of each map
-TICK_BELOW = 24  # x tick labels under each map
-PANEL_TITLE = 24  # panel title above each map
-FIGURE_TITLE = 50
-COLORBAR_RIGHT = 110  # a vertical colorbar with its title turned along it
-COLORBAR_BELOW = 80  # a row of horizontal colorbars
+# Room around map panels, in multiples of the font size. This only sizes the
+# canvas and the gaps between panels: Plotly grows the outer margins itself
+# (autoexpand) when tick labels, titles or colorbars need more.
+TICK_ROOM = 4  # y tick labels left of a map, such as "-10°"
+LINE = 2  # one line of text: x tick labels, a panel title, the figure title
+COLORBAR_ROOM = 8  # a colorbar with its title
+
+
+def font_size(user: dict | None) -> float:
+    """The figure's font size: the spec's, else the template's, else Plotly's 12."""
+    import plotly.io as pio
+
+    user = user or {}
+    size = (user.get("font") or {}).get("size")
+    template = user.get("template", DEFAULT_TEMPLATE)
+    if size is None and isinstance(template, str) and template in pio.templates:
+        size = pio.templates[template].layout.font.size
+    elif size is None and isinstance(template, dict):
+        size = ((template.get("layout") or {}).get("font") or {}).get("size")
+    return float(size or 12)
 
 
 def map_layout(
-    rows, cols, aspect, *, titled, panel_titles, right=0, below=0, user=None
+    rows, cols, aspect, *, titled, panel_titles, right=False, below=False, below_lines=0, user=None
 ) -> tuple[dict, list[tuple[float, float, float, float]]]:
     """Canvas, margins and per-panel ``(x0, x1, y0, y1)`` domains for a map grid.
 
-    ``right`` / ``below`` are extra pixels for colorbars. ``user`` is the
-    spec layout: its ``width`` / ``height`` fix the canvas (maps shrink to
-    fit), and ``grid.xgap`` / ``grid.ygap`` are gaps as a fraction of a panel.
+    ``right`` / ``below`` say a colorbar stands there; ``below_lines`` is more
+    room under the maps, in lines of text. ``user`` is the spec layout: its
+    ``width`` / ``height`` fix the canvas (maps shrink to fit), and
+    ``grid.xgap`` / ``grid.ygap`` are gaps as a fraction of a panel.
     """
     user = user or {}
     grid = user.get("grid") or {}
+    em = font_size(user)
     box_w, box_h = MAP_BOX_SINGLE if rows * cols == 1 else MAP_BOX_PANEL
     w = min(box_w, box_h * aspect)
     h = w / aspect
-    title_px = PANEL_TITLE if panel_titles else 0
-    ml, mr = TICK_LEFT, 16 + right
-    mt = (FIGURE_TITLE if titled else 12) + title_px
-    mb = TICK_BELOW + 8 + below
+    title_lines = LINE if panel_titles else 0
+    ml = TICK_ROOM * em
+    mr = (COLORBAR_ROOM if right else 1) * em
+    mt = ((LINE if titled else 0) + title_lines + 1) * em
+    mb = (LINE + (COLORBAR_ROOM if below else 0) + below_lines) * em
 
     def gaps(w, h):
-        gx = grid["xgap"] * w if grid.get("xgap") is not None else TICK_LEFT + 12
-        gy = grid["ygap"] * h if grid.get("ygap") is not None else TICK_BELOW + title_px + 12
+        gx = grid["xgap"] * w if grid.get("xgap") is not None else (TICK_ROOM + 1) * em
+        gy = grid["ygap"] * h if grid.get("ygap") is not None else (LINE + title_lines + 1) * em
         return gx, gy
 
     gx, gy = gaps(w, h)
@@ -154,7 +170,7 @@ def map_layout(
     layout = {
         "width": round(width),
         "height": round(height),
-        "margin": {"l": ml, "r": mr, "t": mt, "b": mb, "autoexpand": False},
+        "margin": {"l": round(ml), "r": round(mr), "t": round(mt), "b": round(mb)},
     }
     return layout, domains
 
@@ -172,6 +188,8 @@ def map_axes(p: int, extent, domain=None) -> tuple[dict, dict]:
         "zeroline": False,
         "ticksuffix": "°",
         "ticks": "outside",
+        # Tick labels push the figure margin rather than being clipped.
+        "automargin": True,
     }
     s = axis_suffix(p)
     xaxis = {"range": [extent[0], extent[1]], **common, "anchor": f"y{s}"}

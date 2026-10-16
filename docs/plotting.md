@@ -82,7 +82,8 @@ average is made upstream with `summarize-dim` or `aggregate-temporal`.
   expands into one panel per value, and static layers repeat on every panel.
 - **Map axes.** Equal-degree lon/lat axes (`scaleanchor`), not Plotly geo
   subplots, which cannot hold a heatmap. Each panel is sized from its lon/lat
-  aspect, with fixed room for titles, ticks and colorbars.
+  aspect. Room for titles, ticks and colorbars is a starting size in multiples
+  of the font size, and Plotly grows the margins when labels need more.
 - **Color axes.** Each color-scaled trace gets a `coloraxis`. Traces of the
   same quantity share one, and trace-level `colorscale`, `zmin`/`zmax` and
   `colorbar` are lifted onto it.
