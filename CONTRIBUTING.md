@@ -27,13 +27,18 @@ with a relative `path`, not a git URL, so a script and the library it calls
 always move together in one commit. See any `skills/*/scripts/*.py` header
 for the exact form.
 
+The `*-mpl` skills use the matplotlib engine instead:
+`mpl/src/weather_skills_plotting_mpl/`, its own project `mpl/pyproject.toml`
+(`weather-skills-plotting-mpl`), sourced as `path = "../../../mpl"`. It is a
+uv workspace member, so `uv sync --group dev` installs both engines.
+
 Design rule: [plotting computes as little as possible](docs/plotting.md#plotting-computes-as-little-as-possible).
 
 ## Skill correctness tests
 
 Per-skill tests live in `skills/<name>/tests/`. Library-level tests (spec
 merge and validation, palettes, figure assembly, QA) live in the top-level
-`tests/`. Run everything with `uv sync --group dev && uv run pytest`. Tests
+`tests/` (Plotly) and `mpl/tests/` (matplotlib). Run everything with `uv sync --group dev && uv run pytest`. Tests
 that write PNGs need Chrome for kaleido (`uv run plotly_get_chrome -y`).
 Natural Earth overlays are stubbed by the root `conftest.py`; mark a test
 `@pytest.mark.overlays` to draw the real ones.

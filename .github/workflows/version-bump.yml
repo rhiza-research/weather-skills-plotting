@@ -230,10 +230,13 @@ jobs:
           cp agents/plotting.md "$stage/agents/plotting.md"
           cp LICENSE "$stage/LICENSE"
           cp -R skills "$stage/skills"
-          # Skill scripts install the plotting package from the plugin root
-          # (../../..), so ship the project with them.
+          # Skill scripts install the plotting packages from paths relative to
+          # the plugin root (../../.. and ../../../mpl), so ship both projects.
           cp pyproject.toml README.md "$stage/"
           cp -R src "$stage/src"
+          mkdir -p "$stage/mpl"
+          cp mpl/pyproject.toml "$stage/mpl/pyproject.toml"
+          cp -R mpl/src "$stage/mpl/src"
           find "$stage" -name __pycache__ -type d -prune -exec rm -rf {} +
 
           worktree="${RUNNER_TEMP}/plugin-dist-wt"
