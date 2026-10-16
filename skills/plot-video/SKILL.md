@@ -17,7 +17,7 @@ It draws the same map `plot` draws for that file: the same palettes (precipitati
 
 ## How a spec is built
 
-The command builds one trace, uid `a`, a `heatmap` bound to the `-i` file, then merges `--spec` onto it. `--spec` is a **standard Plotly figure** (`{"data": [...], "layout": {...}}`); every key outside `meta` is Plotly's own ([reference](https://plotly.com/python/reference/)). `--help` lists the `meta` keys and recipes, which are shared with `plot`.
+The command builds one trace, uid `0`, a `heatmap` bound to the `-i` file, then merges `--spec` onto it. `--spec` is a **standard Plotly figure** (`{"data": [...], "layout": {...}}`); every key outside `meta` is Plotly's own ([reference](https://plotly.com/python/reference/)). `--help` lists the `meta` keys and recipes, which are shared with `plot`.
 
 Run with `--dump-spec -` in place of `-o` to print the figure it would draw, edit it, and pass it back with `--spec`.
 
@@ -25,11 +25,11 @@ Run with `--dump-spec -` in place of `-o` to print the figure it would draw, edi
 
 | Goal | `--spec` |
 | --- | --- |
-| Animate a dim other than time / step (e.g. `number`, `level`) | `{"data": [{"uid": "a", "meta": {"facet": "number"}}]}` |
-| A subset of frames, by position | `{"data": [{"uid": "a", "meta": {"source": {"isel": {"step": [0, 8, 16, 24]}}}}]}` |
-| A subset of frames, by label | `{"data": [{"uid": "a", "meta": {"source": {"sel": {"time": ["2025-10-31", "2025-11-01"]}}}}]}` |
-| Pick the variable | `{"data": [{"uid": "a", "meta": {"source": {"variable": "pm25"}}}]}` |
-| Fix one value of another dim | `{"data": [{"uid": "a", "meta": {"source": {"isel": {"level": 0}}}}]}` |
+| Animate a dim other than time / step (e.g. `number`, `level`) | `{"data": [{"uid": "0", "meta": {"facet": "number"}}]}` |
+| A subset of frames, by position | `{"data": [{"uid": "0", "meta": {"source": {"isel": {"step": [0, 8, 16, 24]}}}}]}` |
+| A subset of frames, by label | `{"data": [{"uid": "0", "meta": {"source": {"sel": {"time": ["2025-10-31", "2025-11-01"]}}}}]}` |
+| Pick the variable | `{"data": [{"uid": "0", "meta": {"source": {"variable": "pm25"}}}]}` |
+| Fix one value of another dim | `{"data": [{"uid": "0", "meta": {"source": {"isel": {"level": 0}}}}]}` |
 
 The plotter never averages: a leftover dim (an ensemble `number` included) is an error naming the fix. Pick one value with `isel` / `sel`, or run summarize-dim first for an ensemble mean. The animated dim needs at least two values.
 
@@ -40,9 +40,9 @@ The plotter never averages: a leftover dim (an ensemble `number` included) is an
 | Title | `{"layout": {"title": {"text": "NO2 forecast"}}}` |
 | Map window | `{"layout": {"meta": {"geo": {"bbox": [33, 72, 23, 85]}}}}` (`[N, W, S, E]`; named places: run `resolve-region`) |
 | Frame speed | `{"layout": {"meta": {"animation": {"duration": 300, "transition": 0}}}}` (milliseconds per frame, default 500, and between frames, default 0) |
-| Color limits / scale | `{"data": [{"uid": "a", "zmin": 0, "zmax": 30, "colorscale": "YlOrRd"}]}` |
+| Color limits / scale | `{"data": [{"uid": "0", "zmin": 0, "zmax": 30, "colorscale": "YlOrRd"}]}` |
 | Colorbar label | `{"layout": {"coloraxis": {"colorbar": {"title": {"text": "NO2 [ppb]"}}}}}` |
-| Contours instead of cells | `{"data": [{"uid": "a", "type": "contour"}]}` |
+| Contours instead of cells | `{"data": [{"uid": "0", "type": "contour"}]}` |
 | Base-map layers | `{"layout": {"meta": {"overlays": {"rivers": false, "admin1": true}}}}` |
 | Boundary outline or city markers | Add a trace with a new uid (see `plot`'s recipes); it shows on every frame |
 | Size | `{"layout": {"width": 900}}` (height follows the map's shape) |
@@ -77,11 +77,11 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot_video.py -i /tmp/cams_india_no2.zarr -o 
 
 # EAC4 PM2.5 over north India, faster playback
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot_video.py -i /tmp/eac4_india.zarr -o /tmp/pm25.html \
-    --spec '{"data": [{"uid": "a", "meta": {"source": {"variable": "pm25"}}}],
+    --spec '{"data": [{"uid": "0", "meta": {"source": {"variable": "pm25"}}}],
              "layout": {"title": {"text": "PM2.5"}, "meta": {"geo": {"bbox": [33, 72, 23, 85]},
                         "animation": {"duration": 300}}}}'
 
 # Daily CHIRPS totals for a month with the precipitation class palette
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot_video.py -i /tmp/chirps_daily_mm.zarr -o /tmp/chirps.html \
-    --spec '{"data": [{"uid": "a", "meta": {"palette": "ppt_daily"}}]}'
+    --spec '{"data": [{"uid": "0", "meta": {"palette": "ppt_daily"}}]}'
 ```

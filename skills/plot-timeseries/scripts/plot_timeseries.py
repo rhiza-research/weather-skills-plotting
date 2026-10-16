@@ -13,7 +13,7 @@
 import copy
 from pathlib import Path
 
-from weather_skills_core import Dataset, UsageError, weather_skill
+from weather_skills_core import UsageError, weather_skill
 from weather_skills_core.cf import auto_variable
 from weather_skills_core.units import (
     AGGREGATION_PERIOD_ATTR,
@@ -23,7 +23,15 @@ from weather_skills_core.units import (
 )
 
 from weather_skills_plotting import parse_spec_arg
-from weather_skills_plotting.cli import input_path, letter, run, skeleton, spec_datasets, warn
+from weather_skills_plotting.cli import (
+    input_ids,
+    input_path,
+    parse_input,
+    run,
+    skeleton,
+    spec_datasets,
+    warn,
+)
 from weather_skills_plotting.display import dataset_display_label, precip_for_display
 from weather_skills_plotting.reference import install_spec_help
 from weather_skills_plotting.spec import DUMP_SPEC_HELP, SPEC_ARGUMENT_HELP, merge_spec
@@ -186,9 +194,11 @@ def warn_mixed_units(spec: dict, datasets: dict) -> None:
 @weather_skill.argument(
     "-i",
     "--input",
-    type=Dataset("any"),
+    dest="inputs",
+    type=parse_input,
     action="append",
-    help="Input Zarr; repeat once per series (legend order; trace uids a, b, …).",
+    help="Input Zarr as PATH or PATH=NAME; repeat once per series, in legend order. In --spec "
+    "the series is uid NAME, else its position: 0, 1, ….",
 )
 @weather_skill.argument("--spec", type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
 @weather_skill.argument(
@@ -196,15 +206,18 @@ def warn_mixed_units(spec: dict, datasets: dict) -> None:
     help="Theme JSON/TOML: {template: <Plotly template>, palettes: {…}}.",
 )
 @weather_skill.argument("--dump-spec", nargs="?", const="-", probe=True, help=DUMP_SPEC_HELP)
-def plot_timeseries(ds, output, spec, theme_file, dump_spec, **kwargs):
+def plot_timeseries(inputs, output, spec, theme_file, dump_spec, **kwargs):
     """Overlay one series per input Zarr on a shared time axis."""
-    files = [d for d in (ds or []) if d is not None]
+    inputs = list(inputs or [])
+    files = [x.ds for x in inputs]
     if len(files) > MAX_INPUTS:
         raise UsageError(
             f"--input may be passed at most {MAX_INPUTS} times; got {len(files)}. "
             'For ensemble members use meta.along "number" on one input'
         )
-    datasets = spec_datasets(spec, {letter(i): d for i, d in enumerate(files)})
+    datasets = spec_datasets(
+        spec, dict(zip(input_ids([x.name for x in inputs]), files, strict=True))
+    )
     if not datasets:
         raise UsageError("pass -i/--input, or a --spec with layout.meta.inputs")
     data = [

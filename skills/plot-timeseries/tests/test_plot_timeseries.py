@@ -27,7 +27,7 @@ def test_one_series_per_input_named_by_file(tmp_path, ts_fn, capsys):
     a = write_zarr(make_gridded(n_time=3), tmp_path / "chirps.zarr")
     b = write_zarr(make_gridded(n_time=3, fill=2.0), tmp_path / "imerg.zarr")
     spec = _dump(ts_fn, capsys, "-i", str(a), "-i", str(b))
-    assert [(t["uid"], t["name"]) for t in spec["data"]] == [("a", "chirps"), ("b", "imerg")]
+    assert [(t["uid"], t["name"]) for t in spec["data"]] == [("0", "chirps"), ("1", "imerg")]
     assert all(t["meta"]["bind"] == "series" for t in spec["data"])
 
 
@@ -36,8 +36,8 @@ def test_first_trace_settings_apply_to_the_rest(tmp_path, ts_fn, capsys):
     b = write_zarr(_area(make_gridded(n_time=3)), tmp_path / "b.zarr")
     user = {
         "data": [
-            {"uid": "a", "meta": {"source": {"variable": "precip"}}},
-            {"uid": "b", "type": "bar"},
+            {"uid": "0", "meta": {"source": {"variable": "precip"}}},
+            {"uid": "1", "type": "bar"},
         ]
     }
     spec = _dump(ts_fn, capsys, "-i", str(a), "-i", str(b), "--spec", json.dumps(user))
@@ -59,7 +59,7 @@ def test_first_trace_settings_apply_to_the_rest(tmp_path, ts_fn, capsys):
 def test_spaghetti_html(tmp_path, ts_fn):
     fc = write_zarr(_area(make_forecast(members=4)), tmp_path / "fc.zarr")
     out = tmp_path / "ens.html"
-    user = {"data": [{"uid": "a", "meta": {"along": "number"}}]}
+    user = {"data": [{"uid": "0", "meta": {"along": "number"}}]}
     run_skill(ts_fn, "-i", str(fc), "-o", str(out), "--spec", json.dumps(user))
     assert "Plotly.newPlot" in out.read_text()
 

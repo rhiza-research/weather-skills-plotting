@@ -31,19 +31,52 @@ def test_dump_spec_defaults_by_data_shape(tmp_path, plot_fn, capsys):
     pts = write_zarr(make_point_obs(), tmp_path / "pts.zarr")
     spec = _dump(plot_fn, capsys, "-i", str(grid), "-i", str(pts))
     a, b = spec["data"]
-    assert a == {"uid": "a", "type": "heatmap", "meta": {"source": {"input": "a"}}}
+    assert a == {"uid": "0", "type": "heatmap", "meta": {"source": {"input": "0"}}}
     assert b["meta"]["bind"] == "points" and b["xaxis"] == "x2"
     meta = spec["layout"]["meta"]
     assert meta["version"] == 3 and meta["skill"] == "plot"
-    assert meta["inputs"] == {"a": str(grid), "b": str(pts)}
+    assert meta["inputs"] == {"0": str(grid), "1": str(pts)}
+
+
+def test_inputs_named_on_the_command_line(tmp_path, plot_fn, capsys):
+    grid = write_zarr(make_gridded(), tmp_path / "grid.zarr")
+    pts = write_zarr(make_point_obs(), tmp_path / "pts.zarr")
+    spec = _dump(plot_fn, capsys, "-i", f"{grid}=OBS", "-i", str(pts))
+    assert [t["uid"] for t in spec["data"]] == ["OBS", "1"]
+    assert spec["data"][0]["meta"] == {"source": {"input": "OBS"}}
+    assert spec["layout"]["meta"]["inputs"] == {"OBS": str(grid), "1": str(pts)}
+
+    spec = _dump(plot_fn, capsys, "--layer", f"heatmap:{grid}=RAIN", "--layer", f"scatter:{pts}")
+    assert [t["uid"] for t in spec["data"]] == ["RAIN", "1"]
+
+
+@pytest.mark.parametrize(
+    ("argv", "match"),
+    [
+        (["-i", "x.zarr=bad-name"], "PATH=NAME"),
+        (["-i", "=OBS"], "PATH=NAME"),
+        (["--layer", "heatmap:x.zarr=a.b"], "PATH=NAME"),
+    ],
+)
+def test_bad_input_name(plot_fn, capsys, argv, match):
+    with pytest.raises(SystemExit):
+        run_skill(plot_fn, *argv, "-o", "x.png")
+    assert match in capsys.readouterr().err
+
+
+def test_duplicate_input_names(tmp_path, plot_fn, capsys):
+    grid = write_zarr(make_gridded(), tmp_path / "grid.zarr")
+    with pytest.raises(SystemExit):
+        run_skill(plot_fn, "-i", f"{grid}=1", "-i", str(grid), "-o", str(tmp_path / "x.png"))
+    assert "two inputs have the id '1'" in capsys.readouterr().err
 
 
 def test_dump_merges_user_spec(tmp_path, plot_fn, capsys):
     grid = write_zarr(make_gridded(), tmp_path / "grid.zarr")
-    user = {"data": [{"uid": "a", "type": "contour"}], "layout": {"title": {"text": "Hi"}}}
+    user = {"data": [{"uid": "0", "type": "contour"}], "layout": {"title": {"text": "Hi"}}}
     spec = _dump(plot_fn, capsys, "-i", str(grid), "--spec", json.dumps(user))
     assert spec["data"][0]["type"] == "contour"
-    assert spec["data"][0]["meta"] == {"source": {"input": "a"}}
+    assert spec["data"][0]["meta"] == {"source": {"input": "0"}}
     assert spec["layout"]["title"] == {"text": "Hi"}
 
 
@@ -68,7 +101,7 @@ def test_png_render_with_provenance_and_qa(tmp_path, plot_fn, capsys):
         '{"layout": {"title": {"text": "Precip"}}}',
     )
     text = capsys.readouterr().out
-    assert "plot hash:" in text and "data: not null (a 24/24 finite)" in text
+    assert "plot hash:" in text and "data: not null (0 24/24 finite)" in text
     history = load_figure_history(out)
     assert history and history[-1]["skill"] == "plot"
 
@@ -100,7 +133,7 @@ def test_series_of_a_forecast(tmp_path, plot_fn):
             {
                 "data": [
                     {
-                        "uid": "a",
+                        "uid": "0",
                         "type": "scatter",
                         "meta": {
                             "bind": "series",
@@ -153,7 +186,7 @@ def test_layers(tmp_path, plot_fn, capsys):
         f"mask:{edge}",
     ]
     spec = _dump(plot_fn, capsys, *argv)
-    assert [t["uid"] for t in spec["data"]] == ["a", "b", "c"]
+    assert [t["uid"] for t in spec["data"]] == ["0", "1", "2"]
     assert spec["layout"]["meta"]["geo"]["mask_geojson"] == str(edge)
     run_skill(plot_fn, *argv, "-o", str(tmp_path / "layers.png"))
 
@@ -175,7 +208,7 @@ def test_errors_are_actionable(tmp_path, plot_fn, capsys):
     grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
     bad = [
         ('{"inputs": [{"variable": "tp"}]}', "are not allowed"),
-        ('{"data": [{"uid": "a", "colorscal": "Blues"}]}', "Did you mean"),
+        ('{"data": [{"uid": "0", "colorscal": "Blues"}]}', "Did you mean"),
         ('{"layout": {"meta": {"geo": {"region": "Kenya"}}}}', "resolve-region"),
     ]
     for spec, match in bad:

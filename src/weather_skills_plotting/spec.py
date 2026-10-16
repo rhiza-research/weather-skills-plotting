@@ -319,7 +319,7 @@ def check_layout_meta(meta) -> None:
         isinstance(inputs, dict) and all(isinstance(v, str) for v in inputs.values())
     ):
         raise UsageError(
-            'plot spec layout.meta.inputs must map input ids to paths: {"a": "x.zarr"}'
+            'plot spec layout.meta.inputs must map input ids to paths: {"0": "x.zarr"}'
         )
     geo = meta.get("geo")
     if geo is not None:
@@ -450,7 +450,7 @@ SPEC_ARGUMENT_HELP = (
     "Plotly figure JSON (inline or a path), deep-merged onto the figure built from the "
     "input files. data[] merges by uid (else position); layout.annotations / shapes merge "
     "by name. Dataset bindings live in each trace's meta. Example: "
-    '{"data": [{"uid": "a", "type": "contour"}], "layout": {"title": {"text": "Week 1"}}}'
+    '{"data": [{"uid": "0", "type": "contour"}], "layout": {"title": {"text": "Week 1"}}}'
 )
 
 

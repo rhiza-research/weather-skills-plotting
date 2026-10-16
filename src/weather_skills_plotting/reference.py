@@ -44,7 +44,7 @@ _META = {
 }
 
 _SOURCE = {
-    "input": "input id: a, b, … in -i order (x / y for --x / --y; obs, forecast1 … for plot-verify)",
+    "input": "input id: NAME from -i PATH=NAME, else the position 0, 1, … (x / y for --x / --y; obs, forecast1 … for plot-verify)",
     "variable": "data variable (default: auto-detected)",
     "isel": '0-based positions, e.g. {"number": 0, "step": [0, 1]}; -1 is the last. One '
     "integer picks one value (one map); a list keeps the dim (one panel each)",
@@ -72,31 +72,31 @@ _LAYOUT_META = {
 
 _RECIPES = [
     ("Title and font size", '{"layout": {"title": {"text": "Week 1"}, "font": {"size": 20}}}'),
-    ("Contour instead of heatmap", '{"data": [{"uid": "a", "type": "contour"}]}'),
+    ("Contour instead of heatmap", '{"data": [{"uid": "0", "type": "contour"}]}'),
     (
         "Color limits and colorscale (continuous)",
-        '{"data": [{"uid": "a", "zmin": 0, "zmax": 50, "colorscale": "YlGnBu"}]}',
+        '{"data": [{"uid": "0", "zmin": 0, "zmax": 50, "colorscale": "YlGnBu"}]}',
     ),
-    ("Class palette", '{"data": [{"uid": "a", "meta": {"palette": "ppt_month"}}]}'),
+    ("Class palette", '{"data": [{"uid": "0", "meta": {"palette": "ppt_month"}}]}'),
     (
         "Your own class palette (6 classes on 7 edges, plus a color above 100)",
-        '{"data": [{"uid": "a", "meta": {"palette": {"colors": ["#ffffff", "#d1ffbe", '
+        '{"data": [{"uid": "0", "meta": {"palette": {"colors": ["#ffffff", "#d1ffbe", '
         '"#55ff00", "#73dfff", "#00a9e6", "#ffaa00"], "bounds": [0, 1, 10, 20, 50, 70, 100], '
         '"over": "#ff5500"}}}]}',
     ),
-    ("Latest time only", '{"data": [{"uid": "a", "meta": {"source": {"isel": {"time": -1}}}}]}'),
+    ("Latest time only", '{"data": [{"uid": "0", "meta": {"source": {"isel": {"time": -1}}}}]}'),
     (
         "First two forecast weeks as two panels",
-        '{"data": [{"uid": "a", "meta": {"source": {"isel": {"step": [0, 1]}}}}]}',
+        '{"data": [{"uid": "0", "meta": {"source": {"isel": {"step": [0, 1]}}}}]}',
     ),
     (
         "First 4 ensemble members, 2x2",
-        '{"data": [{"uid": "a", "meta": {"facet": "number", "source": {"isel": '
+        '{"data": [{"uid": "0", "meta": {"facet": "number", "source": {"isel": '
         '{"number": [0, 1, 2, 3]}}}}], "layout": {"grid": {"rows": 2, "columns": 2}}}',
     ),
     (
         "One day of a station file drawn over a map (--layer heatmap:… --layer scatter:…)",
-        '{"data": [{"uid": "b", "marker": {"size": 14}, "meta": {"source": {"sel": '
+        '{"data": [{"uid": "1", "marker": {"size": 14}, "meta": {"source": {"sel": '
         '{"time": "2026-10-01"}}}}]}',
     ),
     (
@@ -120,11 +120,11 @@ _RECIPES = [
     ("Base-map layers", '{"layout": {"meta": {"overlays": {"rivers": false, "admin1": true}}}}'),
     (
         "Separate colorbars for side-by-side maps (same quantity shares one by default)",
-        '{"data": [{"uid": "b", "coloraxis": "coloraxis2"}]}',
+        '{"data": [{"uid": "1", "coloraxis": "coloraxis2"}]}',
     ),
     (
         "Rainfall variable of a multi-variable station file",
-        '{"data": [{"uid": "b", "meta": {"source": {"variable": "precip"}}}]}',
+        '{"data": [{"uid": "1", "meta": {"source": {"variable": "precip"}}}]}',
     ),
     (
         "Boundary outline",
@@ -143,26 +143,26 @@ _RECIPES = [
     ),
     (
         "Wind quiver map (or --layer quiver:PATH), an arrow every 3rd cell",
-        '{"data": [{"uid": "a", "meta": {"bind": "speed"}}, {"uid": "arrows", "type": "scatter", '
-        '"meta": {"bind": "arrows", "source": {"input": "a"}, "arrows": {"step": 3}}}]}',
+        '{"data": [{"uid": "0", "meta": {"bind": "speed"}}, {"uid": "arrows", "type": "scatter", '
+        '"meta": {"bind": "arrows", "source": {"input": "0"}, "arrows": {"step": 3}}}]}',
     ),
-    ("Wind rose", '{"data": [{"uid": "a", "type": "barpolar"}]}'),
+    ("Wind rose", '{"data": [{"uid": "0", "type": "barpolar"}]}'),
     (
         "Area-mean time series of a grid (summarize-dim --dim latitude --dim longitude "
         "--method mean --lat-weighted first)",
-        '{"data": [{"uid": "a", "type": "scatter", "meta": {"bind": "series"}}]}',
+        '{"data": [{"uid": "0", "type": "scatter", "meta": {"bind": "series"}}]}',
     ),
     (
         "Ensemble spaghetti with a 10–90% band",
-        '{"data": [{"uid": "a", "meta": {"along": "number", "band": [10, 90]}}]}',
+        '{"data": [{"uid": "0", "meta": {"along": "number", "band": [10, 90]}}]}',
     ),
     (
         "Bars instead of lines; stacked",
-        '{"data": [{"uid": "a", "type": "bar"}], "layout": {"barmode": "stack"}}',
+        '{"data": [{"uid": "0", "type": "bar"}], "layout": {"barmode": "stack"}}',
     ),
     (
         "Second series on a right-hand axis",
-        '{"data": [{"uid": "b", "yaxis": "y2"}], "layout": {"yaxis2": {"overlaying": "y", "side": "right"}}}',
+        '{"data": [{"uid": "1", "yaxis": "y2"}], "layout": {"yaxis2": {"overlaying": "y", "side": "right"}}}',
     ),
     (
         "One stacked panel per series",
