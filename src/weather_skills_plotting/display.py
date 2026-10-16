@@ -22,6 +22,7 @@ from weather_skills_core.units import (
     classify_variable,
     format_cell_methods,
     looks_like_rate_display_name,
+    parse_aggregation_period,
     rate_to_total,
     units_equal,
     ureg,
@@ -245,7 +246,7 @@ def precip_for_display(ds, name: str):
     """In-memory precip rate → period total for plotting.
 
     Uses stamped ``aggregation_period`` (from ``aggregate-temporal``). No-op
-    when the variable is not a precip rate, has no period, or the time axis
+    when the variable is not a precip rate, has no period or a sub-daily one, or the time axis
     would overlap (same gates as convert-to-totals). Plotters call this so
     precip defaults to ``mm`` totals without a separate Zarr. The period attr
     is kept so colormap selection can stay period-aware.
@@ -259,6 +260,13 @@ def precip_for_display(ds, name: str):
         return ds
     period = da.attrs.get(AGGREGATION_PERIOD_ATTR)
     if not (isinstance(period, str) and period.strip()):
+        return ds
+    try:
+        days = float(parse_aggregation_period(period).to("day").magnitude)
+    except Exception:  # noqa: BLE001 — calendar periods (1 month, 1 dekad) are a day or more
+        days = None
+    if days is not None and days < 1:
+        # Sub-daily means (a 6 hour rate) read as rates, the way forecast charts show them.
         return ds
     dim = "step" if "step" in da.dims else "time" if "time" in da.dims else None
     if dim is None:
