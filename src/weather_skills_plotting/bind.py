@@ -690,8 +690,13 @@ def bind_geojson(trace, meta, ctx, loc):
         "y": ys,
         "hoverinfo": "skip",
         "showlegend": False,
-        # One boundary stands out; dozens of county lines would smother the data.
-        "line": {"color": "black", "width": 2 if parts <= 5 else 0.8},
+        # One boundary stands out; dozens of county lines would smother the data, so they
+        # take the theme's admin-1 style (KMSA: dark grey).
+        "line": (
+            {"color": "black", "width": 2}
+            if parts <= 5
+            else dict((ctx.theme["overlays"].get("admin1") or {}).get("line") or {"width": 0.8})
+        ),
     }
     return Bound([Panel([line])], is_map=True, static=True, extent=[w, e, s, n])
 

@@ -705,7 +705,7 @@ def parse_palette(value, *, loc="meta.palette", registry: dict | None = None) ->
                 f"{loc} {value!r} is not a known palette; known: "
                 f"{', '.join(sorted({*palettes, *DEFAULT_PRECIP_PALETTES}))}. "
                 "For a Plotly colorscale name (Viridis, RdBu, YlGn, …) set the trace's "
-                "colorscale instead"
+                "colorscale instead; a palette from a theme file needs that --theme-file"
             )
         return {"name": key, **parse_palette(palettes[key], loc=f"{loc} {key!r}", registry={})}
     if isinstance(value, list):
