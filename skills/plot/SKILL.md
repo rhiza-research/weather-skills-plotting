@@ -106,6 +106,15 @@ The file's history (`weather_skills_history`) is embedded in the PNG metadata or
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -o nairobi.png \
   --layer heatmap:imerg.zarr --layer scatter:tahmo.zarr=STATIONS --layer outline:nairobi.geojson \
   --spec '{"data": [{"uid": "STATIONS", "marker": {"size": 14}}]}'
+# MSLP chart: anomaly shading, labeled black isobars every 4 hPa, and H / L with the
+# central pressure (highs / lows from local-extrema). For a forecast, pick the same step
+# on every layer with "meta": {"source": {"isel": {"step": N}}}.
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -o mslp.png \
+  --layer heatmap:msl_anom.zarr --layer contour:msl.zarr=MSLP \
+  --layer scatter:highs.zarr=HIGHS --layer scatter:lows.zarr=LOWS --spec '{"data": [
+  {"uid": "MSLP", "contours": {"coloring": "none", "showlabels": true, "start": 900, "end": 1080, "size": 4}},
+  {"uid": "HIGHS", "mode": "text", "texttemplate": "<b>H</b><br>%{customdata:.0f}", "textfont": {"color": "#1f4fbf"}},
+  {"uid": "LOWS", "mode": "text", "texttemplate": "<b>L</b><br>%{customdata:.0f}", "textfont": {"color": "#c8102e"}}]}'
 # Ensemble members as lines with a 10–90% band
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i ens_area_mean.zarr -o ens.png \
   --spec '{"data": [{"uid": "0", "meta": {"along": "number", "band": [10, 90]}}]}'
