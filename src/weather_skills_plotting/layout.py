@@ -14,7 +14,7 @@ import math
 import numpy as np
 from weather_skills_core.errors import UsageError
 
-from weather_skills_plotting.palettes import COLORBLIND, default_theme
+from weather_skills_plotting.themes import COLORBLIND, default_theme
 
 DEFAULT_TEMPLATE = "weather_skills"
 

@@ -43,7 +43,6 @@ from weather_skills_plotting.layout import (
     register_templates,
 )
 from weather_skills_plotting.palettes import (
-    DEEP,
     DEFAULT_PRECIP_PALETTES,
     STANDARD_SEA_LEVEL_PRESSURE_HPA,
     _class_slots,
@@ -51,12 +50,10 @@ from weather_skills_plotting.palettes import (
     continuous_colorscale,
     default_palette,
     default_precip_window,
-    default_theme,
     discretize,
     is_precip_anomaly,
     is_sea_level_pressure,
     is_temperature,
-    load_theme,
     parse_palette,
 )
 from weather_skills_plotting.spec import (
@@ -66,6 +63,7 @@ from weather_skills_plotting.spec import (
     plotly_error,
     validate,
 )
+from weather_skills_plotting.themes import DEEP, default_theme, load_theme
 
 # Draw order inside a map panel: fields under overlays, then arrows, stations, outlines.
 NO_DATA_COLOR = "#cccccc"  # map background, seen where cells are NaN

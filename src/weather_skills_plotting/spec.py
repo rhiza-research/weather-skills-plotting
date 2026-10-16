@@ -313,7 +313,11 @@ def check_trace_meta(meta, loc: str, palettes: dict | None = None) -> None:
         raise UsageError(f"plot spec {loc}.align must be 'dayofyear'")
     palette = meta.get("palette")
     if palette is not None and str(palette).lower() not in DEFAULT_PRECIP_PALETTES:
-        # Names resolve against the theme in use (built-ins when none is given).
+        # Names resolve against the theme in use (the standard theme when none is given).
+        if palettes is None:
+            from weather_skills_plotting.themes import default_theme
+
+            palettes = default_theme()["palettes"]
         parse_palette(palette, loc=f"{loc}.palette", registry=palettes)
 
 

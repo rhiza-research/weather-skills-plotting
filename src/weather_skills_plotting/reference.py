@@ -270,7 +270,7 @@ def spec_reference(recipes=None) -> str:
         "  JSON or TOML with any of four sections, layered on the standard look:",
         "  template  Plotly template (fonts, colorway, backgrounds)",
         "  palettes  name -> {colors, bounds[, under, over, labels]} or a color list; adds to the",
-        "            built-ins ppt_daily / ppt_week / ppt_month / ppt_season, ppt_anom_*, ppt_total,",
+        "            standard ppt_daily / ppt_week / ppt_month / ppt_season, ppt_anom_*, ppt_total,",
         "            ppt_poa, ppt_spp, spi, rocket (a theme entry of the same name replaces one)",
         "  defaults  field kind -> palette or Plotly colorscale: precip, precip_anomaly, precip_poa,",
         "            spi, wind_speed, diverging, sea_level_pressure, temperature, sequential",

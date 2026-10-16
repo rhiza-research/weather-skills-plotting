@@ -40,22 +40,28 @@ Named palettes for a trace's `meta.palette` and for `defaults`:
   bounds (optional `under`, `over`, `labels`).
 - `{"colors": [...]}`, or a plain list, draws a continuous scale.
 
-`default.json` adds none. These are built in (in `palettes.py`, from CHC IDL
-tables):
+The standard palettes come from two places. Fixed tables are listed in
+`default.json`, so a copy of it shows them:
 
 | Names | Use |
 |---|---|
-| `ppt_daily`, `ppt_week`, `ppt_month`, `ppt_season` | Precipitation totals |
-| `ppt_anom_daily`, `ppt_anom_week`, `ppt_anom_month`, `ppt_anom_season` | Precipitation anomalies |
-| `ppt_total` | Historical CHC rainbow scale (0 … 2500 mm) |
-| `ppt_poa` | Precipitation as percent of normal |
-| `ppt_spp` | Seasonal rainfall performance probability classes |
-| `spi` | Standardized Precipitation Index |
-| `rocket` | Default sequential scale |
+| `ppt_poa` | Precipitation as percent of normal (CHC `ppt_poa_cmap.pro`) |
+| `ppt_spp` | Seasonal rainfall performance probability classes (CHC `ppt_spp_cmap.pro`) |
+| `spi` | Standardized Precipitation Index (CHC `spi_cmap.pro`) |
+| `rocket` | Default sequential scale (seaborn "rocket", light to dark) |
+
+Palettes that are computed are built in `palettes.py`. A theme can still use
+or replace them by name:
+
+| Names | Use |
+|---|---|
+| `ppt_daily`, `ppt_week`, `ppt_month`, `ppt_season` | Precipitation totals, each cropped from one master so a color means the same millimetres on every window |
+| `ppt_anom_daily`, `ppt_anom_week`, `ppt_anom_month`, `ppt_anom_season` | Precipitation anomalies, cropped the same way |
+| `ppt_total` | Historical CHC rainbow scale (0 … 2500 mm), the source of the totals master |
 
 `default_precip` and `default_precip_anom` are not palettes of their own:
 they pick `ppt_daily` … `ppt_season` (or `ppt_anom_*`) from the field's
-`aggregation_period`. A theme palette adds a name, or replaces a built-in one
+`aggregation_period`. A theme palette adds a name, or replaces a standard one
 of the same name, `default_precip` included.
 
 ## `defaults`

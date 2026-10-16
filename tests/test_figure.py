@@ -556,7 +556,8 @@ def test_cf_flag_field_gets_named_classes():
 
 
 def test_default_precip_palette_names_follow_aggregation_window():
-    from weather_skills_plotting.palettes import load_theme, precip_nested_anomaly_palette
+    from weather_skills_plotting.palettes import precip_nested_anomaly_palette
+    from weather_skills_plotting.themes import load_theme
 
     # An all-positive field with no precip name: detection would not call it an anomaly.
     ds = make_gridded(n_time=1, name="diff", units="mm")
@@ -647,7 +648,7 @@ def test_same_standard_name_shares_a_bar_and_small_bbox_keeps_overlapped_cells()
 
 
 def test_theme_file_sets_palette_colorway_and_overlays(tmp_path):
-    from weather_skills_plotting.palettes import load_theme
+    from weather_skills_plotting.themes import load_theme
 
     path = tmp_path / "theme.json"
     path.write_text(
@@ -681,7 +682,7 @@ def test_theme_file_sets_palette_colorway_and_overlays(tmp_path):
 
 
 def test_colorblind_template_keeps_its_colorway_under_a_theme(tmp_path):
-    from weather_skills_plotting.palettes import COLORBLIND, load_theme
+    from weather_skills_plotting.themes import COLORBLIND, load_theme
 
     path = tmp_path / "theme.json"
     path.write_text(json.dumps({"template": {"layout": {"colorway": ["#123456", "#654321"]}}}))
@@ -696,10 +697,12 @@ def test_colorblind_template_keeps_its_colorway_under_a_theme(tmp_path):
 
 
 def test_partial_theme_dict_gets_the_standard_keys():
-    from weather_skills_plotting.palettes import builtin_palettes
+    from weather_skills_plotting.themes import default_theme
 
     ds = make_gridded(n_time=1)
-    fig = compile({"data": [_trace("a")]}, {"a": ds}, theme={"palettes": builtin_palettes()})
+    fig = compile(
+        {"data": [_trace("a")]}, {"a": ds}, theme={"palettes": default_theme()["palettes"]}
+    )
     assert any(str(t["uid"]).startswith("overlay-borders") for t in _data(fig, "scatter"))
 
 

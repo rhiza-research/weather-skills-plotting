@@ -12,7 +12,36 @@
       }
     }
   },
-  "palettes": {},
+  "palettes": {
+    "ppt_poa": {
+      "colors": [
+        "#e1beb4", "#c00000", "#ff3200", "#ffa000", "#ffe878", "#ffffff",
+        "#c8ffbe", "#78f573", "#1eb41e", "#96d2fa", "#2882f0"
+      ],
+      "bounds": [30, 45, 60, 75, 90, 110, 125, 150, 200, 300]
+    },
+    "ppt_spp": {
+      "colors": [
+        "#dcdcdc", "#ffffff", "#ffe878", "#ffa000", "#ff3200", "#c00000",
+        "#c8ffbe", "#96f58c", "#37d23c", "#0fa00f", "#b4f0fa", "#78b9fa",
+        "#2882f0", "#1464d2"
+      ],
+      "bounds": [0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 12.5]
+    },
+    "spi": {
+      "colors": [
+        "#730000", "#e70000", "#ffaa00", "#ffd37b", "#ffff00", "#ffffff",
+        "#bdebff", "#73b2ff", "#0071ff", "#004dad", "#ad00e7"
+      ],
+      "bounds": [-2.5, -2, -1.5, -1.2, -0.7, -0.5, 0.5, 0.7, 1.2, 1.5, 2, 2.5]
+    },
+    "rocket": {
+      "colors": [
+        "#f7ccaf", "#f6ab83", "#f58860", "#f06043", "#e43841", "#cb1b4f",
+        "#a8185a", "#841e5a", "#611f53", "#3f1b43", "#20122e"
+      ]
+    }
+  },
   "defaults": {
     "precip": "default_precip",
     "precip_anomaly": "default_precip_anom",

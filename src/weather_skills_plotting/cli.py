@@ -102,7 +102,7 @@ def run(
     (``plot-animation``); the output must then be HTML.
     """
     from weather_skills_plotting import SpecArg, compile, export
-    from weather_skills_plotting.palettes import load_theme
+    from weather_skills_plotting.themes import load_theme
 
     user = user_spec.data if isinstance(user_spec, SpecArg) else (user_spec or {})
     merged = merge_spec(skill_spec, user)
