@@ -43,11 +43,11 @@ from weather_skills_plotting.layout import (
     axis_suffix,
     choose_grid,
     colorbar_mode,
+    layout_value,
     map_axes,
     map_layout,
     panel_title_annotation,
     place_colorbars,
-    register_templates,
 )
 from weather_skills_plotting.palettes import (
     DEFAULT_PRECIP_PALETTES,
@@ -65,7 +65,7 @@ from weather_skills_plotting.spec import (
     plotly_error,
     validate,
 )
-from weather_skills_plotting.themes import DEEP, default_theme, load_theme
+from weather_skills_plotting.themes import load_theme
 
 # Draw order inside a map panel: fields under overlays, then arrows, stations, outlines.
 NO_DATA_COLOR = "#cccccc"  # map background, seen where cells are NaN
@@ -80,10 +80,8 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
     """Return a validated ``plotly.graph_objects.Figure``."""
     import plotly.graph_objects as go
 
-    # A theme dict missing keys (e.g. only template and palettes) gets the standard ones.
-    theme = {**default_theme(), **theme} if theme else load_theme()
-    spec = validate(copy.deepcopy(spec), theme["palettes"])
-    register_templates(theme.get("template"))
+    theme = theme or load_theme()
+    spec = validate(copy.deepcopy(spec), theme)
     user_layout = copy.deepcopy(spec.get("layout") or {})
     lmeta = user_layout.pop("meta", None) or {}
     geo = lmeta.get("geo") or {}
@@ -102,7 +100,9 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
         polygon=polygon_from_geojson(geo["mask_geojson"]) if geo.get("mask_geojson") else None,
         point=geo.get("point"),
     )
-    colorway = _template_colorway(user_layout.get("template", DEFAULT_TEMPLATE))
+    colorway = list(
+        layout_value(user_layout, "colorway") or theme["template"]["layout"]["colorway"]
+    )
 
     items = []
     n_colored = 0
@@ -323,37 +323,6 @@ def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
 
 
 # ------------------------------------------------------------------- map figure
-
-
-def _template_colorway(template) -> list:
-    """Series colors from the figure's template (a theme file may set its colorway)."""
-    import plotly.io as pio
-
-    if isinstance(template, str):
-        try:
-            colorway = pio.templates[template].layout.colorway
-        except (KeyError, ValueError):
-            colorway = None
-    else:
-        colorway = ((template or {}).get("layout") or {}).get("colorway")
-    return list(colorway or DEEP)
-
-
-def _page_color(user_layout: dict) -> str:
-    """The figure's background colour: the user's, else the template's, else Plotly's white."""
-    import plotly.io as pio
-
-    if user_layout.get("paper_bgcolor"):
-        return user_layout["paper_bgcolor"]
-    template = user_layout.get("template", DEFAULT_TEMPLATE)
-    if isinstance(template, str):
-        try:
-            color = pio.templates[template].layout.paper_bgcolor
-        except (KeyError, ValueError):
-            color = None
-    else:
-        color = ((template or {}).get("layout") or {}).get("paper_bgcolor")
-    return color or "white"
 
 
 def _anchor(trace: dict) -> int:
@@ -647,7 +616,7 @@ def _assemble_map(items, user_layout, lmeta, ctx):
                     "x1": 1,
                     "y0": 0,
                     "y1": 1,
-                    "fillcolor": _page_color(user_layout),
+                    "fillcolor": layout_value(user_layout, "paper_bgcolor") or "white",
                     "opacity": 1,
                     "line": {"width": 0},
                     "layer": "above",

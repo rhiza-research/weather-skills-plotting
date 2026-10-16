@@ -14,6 +14,9 @@ from weather_skills_plotting.spec import (
     merge_traces,
     validate,
 )
+from weather_skills_plotting.themes import default_theme
+
+PALETTES = default_theme()["palettes"]
 
 
 def test_load_inline_and_file(tmp_path):
@@ -97,25 +100,25 @@ def test_deep_merge_and_fill_defaults():
 )
 def test_trace_meta_errors(meta, match):
     with pytest.raises(UsageError, match=match):
-        check_meta({"data": [{"type": "heatmap", "meta": meta}]})
+        check_meta({"data": [{"type": "heatmap", "meta": meta}]}, PALETTES)
 
 
 def test_layout_meta_errors():
     with pytest.raises(UsageError, match="resolve-region"):
-        check_meta({"layout": {"meta": {"geo": {"country": "KEN"}}}})
+        check_meta({"layout": {"meta": {"geo": {"country": "KEN"}}}}, PALETTES)
     with pytest.raises(UsageError, match="bbox must be"):
-        check_meta({"layout": {"meta": {"geo": {"bbox": [1, 2]}}}})
+        check_meta({"layout": {"meta": {"geo": {"bbox": [1, 2]}}}}, PALETTES)
     with pytest.raises(UsageError, match="not a known overlay"):
-        check_meta({"layout": {"meta": {"overlays": {"roads": False}}}})
+        check_meta({"layout": {"meta": {"overlays": {"roads": False}}}}, PALETTES)
     with pytest.raises(UsageError, match="version 2 is not supported"):
-        check_meta({"layout": {"meta": {"version": 2}}})
+        check_meta({"layout": {"meta": {"version": 2}}}, PALETTES)
     with pytest.raises(UsageError, match="geojson"):
-        check_meta({"layout": {"meta": {"geo": {"mask_geojson": {"line": 1}}}}})
+        check_meta({"layout": {"meta": {"geo": {"mask_geojson": {"line": 1}}}}}, PALETTES)
 
 
 def test_duplicate_uid():
     with pytest.raises(UsageError, match="more than once"):
-        check_meta({"data": [{"uid": "a"}, {"uid": "a"}]})
+        check_meta({"data": [{"uid": "a"}, {"uid": "a"}]}, PALETTES)
 
 
 def test_plotly_validates_everything_else():
@@ -137,9 +140,9 @@ def test_named_templates_validate(name):
 
 def test_hints_for_common_misplaced_keys():
     with pytest.raises(UsageError, match='nested path: write {"export": {"scale"'):
-        check_meta({"layout": {"meta": {"export.scale": 2}}})
+        check_meta({"layout": {"meta": {"export.scale": 2}}}, PALETTES)
     with pytest.raises(UsageError, match="plain x/y axes"):
-        check_meta({"data": [{"type": "scattermap"}]})
+        check_meta({"data": [{"type": "scattermap"}]}, PALETTES)
     with pytest.raises(UsageError, match="coloraxis"):
         validate({"layout": {"colorbar": {}}})
-    check_meta({"layout": {"meta": {"geo": {"bbox": "5/33/-5/42"}}}})
+    check_meta({"layout": {"meta": {"geo": {"bbox": "5/33/-5/42"}}}}, PALETTES)

@@ -14,22 +14,20 @@ import math
 import numpy as np
 from weather_skills_core.errors import UsageError
 
-from weather_skills_plotting.themes import COLORBLIND, default_theme
+from weather_skills_plotting.themes import COLORBLIND
 
 DEFAULT_TEMPLATE = "weather_skills"
 
 
-def register_templates(template: dict | None = None) -> None:
+def register_templates(template: dict) -> None:
     """``weather_skills`` and ``colorblind``: Plotly's ``seaborn`` with the theme's template.
 
-    ``template`` is the theme's (``themes/default.json`` when None).
+    ``template`` is the theme's.
     ``colorblind`` keeps its own colorway, since picking it is an accessibility choice.
     """
     import plotly.graph_objects as go
     import plotly.io as pio
 
-    if template is None:
-        template = default_theme()["template"]
     for name in ("weather_skills", "colorblind"):
         base = copy.deepcopy(pio.templates["seaborn"])
         try:
@@ -100,18 +98,23 @@ SEAL_CLEAR_Y = 0.06  # vertical colorbars start above it (plot-height fraction)
 WIDE_MAP = 2.5  # a map wider than this (lon / lat span) gets its colorbar below
 
 
-def font_size(user: dict | None) -> float:
-    """The figure's font size: the spec's, else the template's, else Plotly's 12."""
+def layout_value(user_layout: dict, path: str):
+    """``layout.<path>`` (``"font.size"``) from the spec, else from its template, else None.
+
+    The template is the spec's ``layout.template``, a registered name or a dict.
+    """
     import plotly.io as pio
 
-    user = user or {}
-    size = (user.get("font") or {}).get("size")
-    template = user.get("template", DEFAULT_TEMPLATE)
-    if size is None and isinstance(template, str) and template in pio.templates:
-        size = pio.templates[template].layout.font.size
-    elif size is None and isinstance(template, dict):
-        size = ((template.get("layout") or {}).get("font") or {}).get("size")
-    return float(size or 12)
+    template = user_layout.get("template", DEFAULT_TEMPLATE)
+    if isinstance(template, str):
+        template = pio.templates[template] if template in pio.templates else {}
+        template = template.to_plotly_json() if template else {}
+    for obj in (user_layout, (template or {}).get("layout") or {}):
+        for part in path.split("."):
+            obj = obj.get(part) if isinstance(obj, dict) else None
+        if obj is not None:
+            return obj
+    return None
 
 
 def map_layout(
@@ -126,7 +129,7 @@ def map_layout(
     """
     user = user or {}
     grid = user.get("grid") or {}
-    em = font_size(user)
+    em = float(layout_value(user, "font.size") or 12)
     if rows * cols == 1:
         box_w, box_h = MAP_BOX_SINGLE
         w = min(box_w, box_h * aspect)
