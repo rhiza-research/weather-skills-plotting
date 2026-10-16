@@ -785,7 +785,18 @@ def default_palette(da, *others, theme: dict | None = None, diverging: bool = Fa
     if flags is not None:
         return flags
     theme = theme or default_theme()
-    value = theme["defaults"][default_kind(da, diverging=diverging)]
+    kind = default_kind(da, diverging=diverging)
+    if kind == "precip_anomaly" and theme["defaults"][kind] == "default_precip_anom":
+        from weather_skills_core.units import classify_variable
+
+        rate = classify_variable(
+            da.name or "", units=variable_units(da), standard_name=da.attrs.get("standard_name")
+        )
+        if rate == "precip" and not aggregation_days(da):
+            # A change in rate (a CMIP6 future-minus-historical, mm/day) is not a period
+            # total: the mm anomaly classes would leave it all in the white ±10 class.
+            return {"name": "BrBG", "colorscale": "BrBG"}
+    value = theme["defaults"][kind]
     palettes = theme["palettes"]
     key = value.lower() if isinstance(value, str) else None
     if key in DEFAULT_PRECIP_PALETTES and not any(k.lower() == key for k in palettes):

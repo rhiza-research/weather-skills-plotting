@@ -69,6 +69,7 @@ from weather_skills_plotting.spec import (
 )
 
 # Draw order inside a map panel: fields under overlays, then arrows, stations, outlines.
+NO_DATA_COLOR = "#cccccc"  # map background, seen where cells are NaN
 MANY_PANELS = 24  # more map panels than this get a warning
 _MAP_RANK = {"field": 0, "speed": 0, "overlay": 1, "arrows": 2, "points": 3, "geojson": 4, None: 5}
 _TRACE_COLOR_KEYS = ("colorscale", "reversescale", "showscale", "colorbar")
@@ -297,6 +298,12 @@ def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
         )
         m = max(abs(lo - mid), abs(hi - mid))
         lo, hi = mid - m, mid + m
+    probability = bool(color_das) and all(
+        "probab" in f"{d.name} {d.attrs.get('long_name') or ''}".lower() for d in color_das
+    )
+    if not stretch and probability and 0 <= lo and hi <= 1:
+        # A probability reads against its whole range: 0.85 is not "the maximum".
+        lo, hi = 0.0, 1.0
     if lo == hi:
         lo, hi = lo - 1, hi + 1
     axis.setdefault("cmin", lo)
@@ -602,7 +609,9 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     )
     slots = place_colorbars(mode, panels_of, domains)
     # No-data cells show the plot background: a neutral grey, not the template's tint.
-    layout["plot_bgcolor"] = "#ebebeb"
+    # Darker than the near-white of a diverging zero or a dry class, so a missing cell
+    # never reads as zero.
+    layout["plot_bgcolor"] = NO_DATA_COLOR
     layout["annotations"] = []
     for p in range(n):
         s = axis_suffix(p)

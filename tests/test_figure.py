@@ -829,3 +829,16 @@ def test_upside_down_bbox_and_several_leftover_dims_are_named():
     cube = make_gridded(n_time=1).expand_dims(number=[0, 1], vertical=[500, 850])
     with pytest.raises(UsageError, match="dimensions 'number', 'vertical' remain"):
         compile({"data": [_trace("a")]}, {"a": cube})
+
+
+def test_probability_spans_zero_to_one_and_precip_rate_change_is_brbg():
+    prob = make_gridded(n_time=1, name="probability", fill=0.4, units="1")
+    prob["probability"].values[..., 0] = 0.1
+    axis = _layout(compile({"data": [_trace("a")]}, {"a": prob}))["coloraxis"]
+    assert (axis["cmin"], axis["cmax"]) == (0.0, 1.0)
+    change = make_gridded(n_time=1, fill=2.0, units="mm day-1")
+    change["precip"].attrs["standard_name"] = "lwe_precipitation_rate"
+    change["precip"].values[..., 0] = -3.0
+    axis = _layout(compile({"data": [_trace("a")]}, {"a": change}))["coloraxis"]
+    assert "ticktext" not in axis["colorbar"]  # continuous, not the mm classes
+    assert axis["cmin"] == -axis["cmax"]
