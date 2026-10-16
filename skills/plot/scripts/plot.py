@@ -27,7 +27,15 @@ from weather_skills_plotting.cli import (
 )
 from weather_skills_plotting.geodata import point_dim
 from weather_skills_plotting.reference import install_spec_help
-from weather_skills_plotting.spec import DUMP_SPEC_HELP, SPEC_ARGUMENT_HELP
+from weather_skills_plotting.series import (
+    MAX_INPUTS,
+    inherit_from_first,
+    keep_mixed_precip_as_rates,
+    trace_label,
+    warn_disjoint_dates,
+    warn_mixed_units,
+)
+from weather_skills_plotting.spec import DUMP_SPEC_HELP, SPEC_ARGUMENT_HELP, merge_spec
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
 _SKILL_VERSION = "0.0.2"
@@ -161,16 +169,35 @@ def plot(
             "pass -i/--input or --layer, not both (-i takes only outline: and mask: layers)"
         )
     layout = {}
+    series = False
     if layers:
         data, datasets, mask = _layer_traces(layers)
+        datasets = spec_datasets(spec, datasets)
         if mask:
             layout["meta"] = {"geo": {"mask_geojson": mask}}
     else:
-        datasets = dict(zip(input_ids([x.name for x in inputs]), files, strict=True))
-        data = [
-            _default_trace(key, d, xaxis=None if i == 0 else f"x{i + 1}")
-            for i, (key, d) in enumerate(datasets.items())
-        ]
+        cli = dict(zip(input_ids([x.name for x in inputs]), files, strict=True))
+        datasets = spec_datasets(spec, cli)
+        data = [_default_trace(key, d) for key, d in datasets.items()]
+        # 1-D series share one x/y axis, one legend entry per file.
+        series = bool(data) and all(
+            t["type"] == "scatter" and "bind" not in t["meta"] for t in data
+        )
+        if series:
+            if len(data) > MAX_INPUTS:
+                raise UsageError(
+                    f"--input may be passed at most {MAX_INPUTS} times for series; got "
+                    f'{len(data)}. For ensemble members use meta.along "number" on one input'
+                )
+            for i, (trace, d) in enumerate(zip(data, datasets.values(), strict=True)):
+                trace["name"] = trace_label(d, i)
+        elif cli:
+            data = [
+                _default_trace(key, d, xaxis=None if i == 0 else f"x{i + 1}")
+                for i, (key, d) in enumerate(datasets.items())
+            ]
+        else:
+            data = []
         for j, shape in enumerate(shapes):
             if shape.kind == "mask":
                 layout["meta"] = {"geo": {"mask_geojson": shape.path}}
@@ -184,7 +211,6 @@ def plot(
                 if i:
                     outline.update(xaxis=f"x{i + 1}", yaxis=f"y{i + 1}")
                 data.append(outline)
-    datasets = spec_datasets(spec, datasets)
     if not datasets and not any((t.get("meta") or {}).get("bind") == "geojson" for t in data):
         if spec is None or not (spec.data.get("data")):
             raise UsageError(
@@ -193,7 +219,13 @@ def plot(
     base = skeleton("plot", datasets, data)
     if layout.get("meta"):
         base["layout"]["meta"].update(layout["meta"])
-    return run(base, spec, datasets, output, dump_spec, theme_file=theme_file)
+    merged = merge_spec(base, spec.data if spec is not None else {})
+    if series:
+        merged = inherit_from_first(merged, datasets)
+        datasets = keep_mixed_precip_as_rates(merged, datasets)
+        warn_mixed_units(merged, datasets)
+        warn_disjoint_dates(merged, datasets)
+    return run(merged, None, datasets, output, dump_spec, theme_file=theme_file)
 
 
 install_spec_help(plot)

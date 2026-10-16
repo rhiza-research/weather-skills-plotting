@@ -11,8 +11,7 @@ for dataset loading, the CLI decorator, and a handful of shared utilities.
 
 | Skill | Role |
 | --- | --- |
-| [`plot`](skills/plot/) | Heatmap, contour, timeseries, xy scatter, wind-rose, quiver, or layered map, one dataset or several side by side |
-| [`plot-timeseries`](skills/plot-timeseries/) | One 1D trace per input Zarr overlaid on a shared time axis |
+| [`plot`](skills/plot/) | Heatmap, contour, timeseries, xy scatter, wind-rose, quiver, or layered map, one dataset or several side by side; several 1-D series share one time axis |
 | [`plot-verify`](skills/plot-verify/) | Lead-week event-verification grid of maps for one observation week |
 | [`plot-mediogram`](skills/plot-mediogram/) | ECMWF-style mediogram comparing a forecast ensemble against an m-climate ensemble |
 | [`plot-video`](skills/plot-video/) | Animated HTML map of one gridded Zarr, one frame per time or forecast step |
@@ -42,7 +41,7 @@ uv run skills/plot/scripts/plot.py -i /tmp/forecast.zarr -o /tmp/out.png \
 uv run skills/plot/scripts/plot.py -i /tmp/forecast.zarr -o /tmp/out.html
 
 # A timeseries overlay of two area means (each from summarize-dim --lat-weighted)
-uv run skills/plot-timeseries/scripts/plot_timeseries.py -i /tmp/a_area.zarr -i /tmp/b_area.zarr \
+uv run skills/plot/scripts/plot.py -i /tmp/a_area.zarr -i /tmp/b_area.zarr \
   -o /tmp/timeseries.png
 
 # A lead-week verification grid

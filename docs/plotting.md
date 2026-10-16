@@ -138,8 +138,7 @@ export(fig, "out.png", datasets={"0": dataset})
 
 | Skill | Job | Inputs | Built traces |
 | --- | --- | --- | --- |
-| [`plot`](../skills/plot/SKILL.md) | maps, series, xy, wind rose | `-i`, `--layer KIND:PATH` | one per file: heatmap / points / series |
-| [`plot-timeseries`](../skills/plot-timeseries/SKILL.md) | many series on one time axis | repeatable `-i` | one `series` per input; `data[0]` settings inherited |
+| [`plot`](../skills/plot/SKILL.md) | maps, series, xy, wind rose | `-i`, `--layer KIND:PATH` | one per file: heatmap / points / series; 1-D series share one axis and inherit `data[0]` settings |
 | [`plot-verify`](../skills/plot-verify/SKILL.md) | obs / lead forecasts / verify grid | `--obs`, `--forecast`, `--verify` | 2-row grid, two color axes |
 | [`plot-mediogram`](../skills/plot-mediogram/SKILL.md) | ensemble vs m-climate at a point | forecast + m-climate `-i` | two `box` traces and a mean line |
 | [`plot-video`](../skills/plot-video/SKILL.md) | animated map through time / step | one gridded `-i`, `.html` out | one heatmap; panels become frames on one color axis |
