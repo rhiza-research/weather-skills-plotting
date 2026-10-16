@@ -117,3 +117,16 @@ def test_theme_file(tmp_path):
     path.write_text('{"colormap": "x"}')
     with pytest.raises(UsageError, match="unknown keys colormap"):
         load_theme(path)
+
+
+def test_default_theme_file_is_a_theme_file_and_is_the_standard_look():
+    from pathlib import Path
+
+    from weather_skills_plotting.palettes import DEFAULT_THEME_FILE, default_theme
+
+    # The shipped file loads as a --theme-file, layered on itself it changes nothing.
+    assert load_theme(Path(str(DEFAULT_THEME_FILE))) == default_theme()
+    theme = default_theme()
+    assert theme["defaults"]["precip"] == "default_precip"
+    assert theme["overlays"]["lakes"]["line"]["color"] == "#4d5b6b"
+    assert "rocket" in theme["palettes"]

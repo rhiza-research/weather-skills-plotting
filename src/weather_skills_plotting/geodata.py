@@ -277,16 +277,6 @@ def point_dim(ds):
     return None
 
 
-# Plotly line styles per base-map layer, in draw order (later is on top).
-# Slate water (#708090) so lakes never read as rainfall blues.
-OVERLAY_STYLES = {
-    "admin1": {"line": {"color": "#737373", "width": 0.6}},
-    "rivers": {"line": {"color": "#708090", "width": 0.6}},
-    # Shoreline only: a filled lake hid the data over it (Lake Victoria is among the wettest cells).
-    "lakes": {"line": {"color": "#4d5b6b", "width": 0.9}},
-    "borders": {"line": {"color": "#262626", "width": 1.2}},
-    "coastline": {"line": {"color": "black", "width": 1.2}},
-}
 _NE_LAYERS = {
     "admin1": ("cultural", "admin_1_states_provinces", "10m"),
     "rivers": ("physical", "rivers_lake_centerlines", None),

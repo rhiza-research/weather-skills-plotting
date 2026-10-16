@@ -95,7 +95,7 @@ CHIRPS and ECMWF week-1 rainfall side by side over Kenya, each on its own grid, 
 - Set a palette with `"meta": {"palette": NAME}`: `default_precip`, `default_precip_anom`, `ppt_daily` … `ppt_season`, `ppt_anom_*`, `spi`, or your own `{colors, bounds}`.
 - Temperatures use `RdYlBu_r`; fields spanning zero use `RdBu_r`; flag fields (verify hits) get one color per flag.
 - `{"layout": {"coloraxis": {"colorbar": {"orientation": "h"}}}}` puts the colorbar under the maps.
-- A `--theme-file` is JSON/TOML with any of four keys, layered on the standard look:
+- The standard look is one commented theme file, `weather_skills_plotting/themes/default.toml` in this package. A `--theme-file` is JSON/TOML with any of its four keys, layered on top of it:
   - `template`: a Plotly template (fonts, colorway, backgrounds).
   - `palettes`: `{name: {colors, bounds}}` for `meta.palette`; a name like a built-in one replaces it.
   - `defaults`: what a field gets when the spec names no palette, per kind: `precip`, `precip_anomaly`, `precip_poa`, `spi`, `wind_speed`, `diverging`, `temperature`, `sequential`. A value is a palette (name, color list or `{colors, bounds}`) or a Plotly colorscale name.

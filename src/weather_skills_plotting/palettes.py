@@ -11,13 +11,15 @@ from __future__ import annotations
 import copy
 import json
 import os
+import tomllib
+from importlib.resources import files
 from pathlib import Path
 
 import numpy as np
 from weather_skills_core.errors import UsageError
 from weather_skills_core.units import parse_aggregation_period, variable_units
 
-from weather_skills_plotting.geodata import OVERLAY_NAMES, OVERLAY_STYLES
+from weather_skills_plotting.geodata import OVERLAY_NAMES
 
 
 def _rgb(*rows: tuple[int, int, int]) -> list[str]:
@@ -534,28 +536,17 @@ ROCKET = [
 ]  # fmt: skip
 # Light-to-dark is the readable direction on a white map.
 DEFAULT_SEQUENTIAL = ROCKET[::-1]
-# seaborn "deep" / "colorblind" qualitative cycles (layout.template colorway).
-DEEP = ["#4c72b0", "#dd8452", "#55a868", "#c44e52", "#8172b3",
-        "#937860", "#da8bc3", "#8c8c8c", "#ccb974", "#64b5cd"]  # fmt: skip
+# The standard look: template, extra palettes, default colors, base-map lines.
+DEFAULT_THEME_FILE = files("weather_skills_plotting") / "themes" / "default.toml"
+_DEFAULT_THEME = tomllib.loads(DEFAULT_THEME_FILE.read_text(encoding="utf-8"))
+# The standard theme's colorway (seaborn "deep"), also used for flag classes.
+DEEP = list(_DEFAULT_THEME["template"]["layout"]["colorway"])
+# seaborn "colorblind": the colorway of the colorblind template, whatever the theme.
 COLORBLIND = ["#0173b2", "#de8f05", "#029e73", "#d55e00", "#cc78bc",
               "#ca9161", "#fbafe4", "#949494", "#ece133", "#56b4e9"]  # fmt: skip
 
 PALETTE_KEYS = frozenset({"colors", "bounds", "under", "over", "labels"})
 THEME_FILE_KEYS = frozenset({"template", "palettes", "defaults", "overlays"})
-# The standard theme's color for each field kind (see ``default_kind``): a
-# palette name, color list or {colors, bounds}, or a Plotly colorscale name.
-# ``default_precip`` / ``default_precip_anom`` pick their window from the
-# field's ``aggregation_period``.
-DEFAULT_COLORS = {
-    "precip": "default_precip",
-    "precip_anomaly": "default_precip_anom",
-    "precip_poa": "ppt_poa",
-    "spi": "spi",
-    "wind_speed": "YlGn",
-    "diverging": "RdBu_r",
-    "temperature": "RdYlBu_r",
-    "sequential": "rocket",
-}
 _THEME_ENV = "WEATHER_SKILLS_PLOT_THEME"
 _USER_THEME_CANDIDATES = (
     Path.home() / ".config" / "weather-skills" / "plot.json",
@@ -604,10 +595,10 @@ def _read_theme_file(path: Path) -> dict:
         parse_palette(entry, loc=f"{path}: palettes.{name}")
     theme["palettes"].update(data.get("palettes") or {})
     for kind, value in (data.get("defaults") or {}).items():
-        if kind not in DEFAULT_COLORS:
+        if kind not in theme["defaults"]:
             raise UsageError(
                 f"plot theme file {path}: defaults.{kind} is not a field kind; "
-                f"known: {', '.join(DEFAULT_COLORS)}"
+                f"known: {', '.join(theme['defaults'])}"
             )
         _check_default_color(value, theme["palettes"], loc=f"{path}: defaults.{kind}")
     for name, style in (data.get("overlays") or {}).items():
@@ -622,11 +613,11 @@ def _read_theme_file(path: Path) -> dict:
         from weather_skills_plotting.spec import plotly_error
 
         try:
-            go.Scatter(deep_merge(OVERLAY_STYLES[name], style))
+            go.Scatter(deep_merge(theme["overlays"][name], style))
         except ValueError as exc:
             msg = str(plotly_error(exc)).removeprefix("plot spec: ")
             raise UsageError(f"plot theme file {path}: overlays.{name}: {msg}") from None
-    theme["template"] = data.get("template")
+    theme["template"] = deep_merge(theme["template"], data.get("template") or {})
     theme["defaults"].update(data.get("defaults") or {})
     theme["overlays"] = deep_merge(theme["overlays"], data.get("overlays") or {})
     return theme
@@ -652,17 +643,13 @@ def _check_default_color(value, palettes: dict, *, loc: str) -> None:
 
 
 def default_theme() -> dict:
-    """The standard look: Plotly template overlay, palettes, default colors, base-map lines.
+    """The standard look, read from ``themes/default.toml`` (a fresh copy).
 
-    ``template`` is layered on the ``weather_skills`` / ``colorblind`` templates
-    (``layout.register_templates``); the standard theme adds nothing to them.
+    Its palettes are added to the built-in ones (``builtin_palettes``).
     """
-    return {
-        "template": None,
-        "palettes": builtin_palettes(),
-        "defaults": dict(DEFAULT_COLORS),
-        "overlays": copy.deepcopy(OVERLAY_STYLES),
-    }
+    theme = copy.deepcopy(_DEFAULT_THEME)
+    theme["palettes"] = {**builtin_palettes(), **theme.get("palettes", {})}
+    return theme
 
 
 def load_theme(path=None) -> dict:
