@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -24,8 +26,46 @@ def input_path(ds) -> str | None:
     return None if ds is None else ds.attrs.get(INPUT_PATH_ATTR)
 
 
-def letter(i: int) -> str:
-    return chr(ord("a") + i) if i < 26 else f"i{i}"
+_NAME = re.compile(r"[A-Za-z0-9_]+")
+
+
+def split_name(value: str, flag: str) -> tuple[str, str | None]:
+    """``PATH=NAME`` → ``(PATH, NAME)``; a bare ``PATH`` has no name."""
+    path, sep, name = str(value).rpartition("=")
+    if not sep:
+        return str(value), None
+    if not path or not _NAME.fullmatch(name):
+        raise argparse.ArgumentTypeError(
+            f"{flag} expects PATH or PATH=NAME, NAME made of letters, digits and _; got {value!r}"
+        )
+    return path, name
+
+
+class InputArg:
+    """``-i PATH[=NAME]``. The decorator opens the Zarr (``.ds``)."""
+
+    def __init__(self, path: str, name: str | None):
+        self.path, self.name, self.ds = path, name, None
+
+    def zarr_paths(self):
+        return [Path(self.path)]
+
+    def __str__(self):
+        # Provenance records str(); keep the flag's own form.
+        return f"{self.path}={self.name}" if self.name else self.path
+
+
+def parse_input(value):
+    return InputArg(*split_name(value, "-i"))
+
+
+def input_ids(names) -> list[str]:
+    """The id of each input in order: its NAME, else its position (``"0"``, ``"1"``, …)."""
+    ids = [name or str(i) for i, name in enumerate(names)]
+    for key in ids:
+        if ids.count(key) > 1:
+            raise UsageError(f"two inputs have the id {key!r}; give each a distinct PATH=NAME")
+    return ids
 
 
 def skeleton(skill: str, datasets: dict, data: list, layout: dict | None = None) -> dict:
@@ -65,7 +105,8 @@ def run(
 
     user = user_spec.data if isinstance(user_spec, SpecArg) else (user_spec or {})
     merged = merge_spec(skill_spec, user)
-    validate(merged)
+    theme = load_theme(theme_file)
+    validate(merged, theme["palettes"])
     dest = dump_spec_dest(dump)
     if dest is not None:
         dump_spec(merged, dest)
@@ -77,7 +118,6 @@ def run(
             f"output {Path(output).name!r} must end in .html: an animation plays only in a "
             "browser. For a still image of one time, use the plot skill"
         )
-    theme = load_theme(theme_file)
     fig = compile(merged, datasets, theme=theme)
     layout_meta = (merged.get("layout") or {}).get("meta") or {}
     if animate:

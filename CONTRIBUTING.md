@@ -32,6 +32,8 @@ The `*-mpl` skills use the matplotlib engine instead:
 (`weather-skills-plotting-mpl`), sourced as `path = "../../../mpl"`. It is a
 uv workspace member, so `uv sync --group dev` installs both engines.
 
+Design rule: [plotting computes as little as possible](docs/plotting.md#plotting-computes-as-little-as-possible).
+
 ## Skill correctness tests
 
 Per-skill tests live in `skills/<name>/tests/`. Library-level tests (spec

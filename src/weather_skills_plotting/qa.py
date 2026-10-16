@@ -111,7 +111,7 @@ def figure_counts(fig) -> list[tuple[str, int, int]]:
             values = np.asarray(raw, dtype=float).ravel()
         except (TypeError, ValueError):
             continue
-        # One row per input: a, b … (not a-3 or a-1-station_id-TA00057).
+        # One row per input: 0, 1, … or its NAME (not 0-3 or 0-1-station_id-TA00057).
         name = uid.split("-")[0] or "trace"
         count = rows.setdefault(name, [0, 0])
         count[0] += int(np.isfinite(values).sum())

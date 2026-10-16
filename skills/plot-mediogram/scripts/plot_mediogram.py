@@ -3,12 +3,13 @@
 # dependencies = [
 #   "weather-skills-plotting",
 #   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
+#   "numpy",
 # ]
 #
 # [tool.uv.sources]
 # weather-skills-plotting = { path = "../../..", editable = true }
 # ///
-"""ECMWF-style mediogram: forecast vs m-climate ensemble boxes at one point, as PNG or HTML."""
+"""Draw an ECMWF-style mediogram of forecast and model-climate ensembles at one place, as PNG, JPG, or HTML."""
 
 import numpy as np
 from weather_skills_core import Dataset, UsageError, weather_skill
@@ -59,11 +60,11 @@ def _variable(ds, user, uid):
 @weather_skill.argument("--spec", type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
 @weather_skill.argument(
     "--theme-file",
-    help="Theme JSON/TOML: {template: <Plotly template>, palettes: {…}}.",
+    help="Theme JSON/TOML layered on the standard look: {template, palettes, defaults, overlays}.",
 )
 @weather_skill.argument("--dump-spec", nargs="?", const="-", probe=True, help=DUMP_SPEC_HELP)
 def plot_mediogram(ds, output, spec, theme_file, dump_spec, **kwargs):
-    """ECMWF-style mediogram: forecast vs m-climate ensemble distributions at a point."""
+    """Draw an ECMWF-style mediogram of forecast and model-climate ensembles at one place, as PNG, JPG, or HTML."""
     files = [d for d in (ds or []) if d is not None]
     if not files and spec is not None:
         opened = spec.opened()

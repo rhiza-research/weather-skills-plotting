@@ -53,11 +53,9 @@ from weather_skills_plotting.spec import DEFAULT_BIND
 from weather_skills_plotting.wind import (
     WIND_ROSE_SECTORS,
     WIND_SPEED_COLORS,
-    _calendar_year,  # noqa: F401 — re-exported for tests
     flat_numeric,
     is_sample_dim,
     native_spacing_deg,
-    pair_xy,
     quiver_step,
     resolve_uv,
     speed_bin_labels,
@@ -102,7 +100,6 @@ class Bound:
     color_key: str | None = None
     color_da: object = None
     color_title: str | None = None
-    default_colorscale: object = None
     axis_titles: dict = field(default_factory=dict)
     title: str | None = None
     layout: dict = field(default_factory=dict)
@@ -113,6 +110,7 @@ class Bound:
 class Context:
     datasets: dict
     palettes: dict
+    theme: dict
     bbox: tuple | None = None
     polygon: object = None
     point: dict | None = None
@@ -123,7 +121,9 @@ def bind_of(trace: dict) -> str | None:
     meta = trace.get("meta") or {}
     if meta.get("bind"):
         return meta["bind"]
-    if not any(meta.get(k) for k in ("source", "x", "y")):
+    if meta.get("x") or meta.get("y"):
+        return "xy"
+    if not meta.get("source"):
         return None
     return DEFAULT_BIND.get(trace.get("type") or "scatter", "series")
 
@@ -235,8 +235,16 @@ def _sel(da, source: dict, loc: str):
                 f"{loc}.sel {dim}={value!r} does not match the coordinate ({exc})"
             ) from None
     # A one-value dim (a single pressure level or member) has nothing to choose
-    # or average; time and step stay so a single map keeps its date.
-    keep = {"time", "step", cf_dim(da, "time"), cf_dim(da, "latitude"), cf_dim(da, "longitude")}
+    # or average; time and step stay so a single map keeps its date, and a
+    # one-station file keeps its station axis.
+    keep = {
+        "time",
+        "step",
+        cf_dim(da, "time"),
+        cf_dim(da, "latitude"),
+        cf_dim(da, "longitude"),
+        point_dim(da),
+    }
     single = [d for d in da.dims if da.sizes[d] == 1 and d not in keep]
     return da.squeeze(single) if single else da
 
@@ -279,11 +287,6 @@ def _subset(ctx: Context, source: dict, da):
     return da
 
 
-def _reduce(da, source: dict):
-    dims = [d for d in (source.get("reduce") or []) if d in da.dims]
-    return da.mean(dims, keep_attrs=True) if dims else da
-
-
 def _facet_dim(meta: dict, da, keep: tuple, loc: str):
     """The dim that becomes one panel per value, or ``None``."""
     facet = meta.get("facet")
@@ -305,8 +308,8 @@ def _leftover_error(da, allowed, what, loc):
     if extra:
         raise UsageError(
             f"dimension {extra[0]!r} remains for {what}; select a position with "
-            f"{loc}.source.isel / sel, average it with {loc}.source.reduce, or panel it "
-            f"with {loc}.facet. Side-by-side maps are separate inputs on separate axes, "
+            f"{loc}.source.isel / sel, panel it with {loc}.facet, or average it first with "
+            f"summarize-dim. Side-by-side maps are separate inputs on separate axes, "
             f"not one dataset concatenated along {extra[0]!r}"
         )
 
@@ -325,19 +328,12 @@ def _wrapped(ctx):
     return ctx.bbox is not None and ctx.bbox[1] > ctx.bbox[3]
 
 
-def _map_field(ctx, da, meta, loc, what, note=True):
-    """Grid field ready to panel: subset, ensemble-mean, transposed."""
+def _map_field(ctx, da, meta, loc, what):
+    """Grid field ready to panel: subset, transposed."""
     lat, lon = _lonlat(da, what)
     if not _wrapped(ctx):
         da = ensure_normalized_longitude(da, lon)
     fdim = _facet_dim(meta, da, (lat, lon), loc)
-    if "number" in da.dims and fdim != "number" and note:
-        print(
-            f"Note: {loc}: drawing the ensemble mean of {da.sizes['number']} members; set "
-            f'{loc}.facet "number" for one map per member',
-            file=sys.stderr,
-        )
-        da = da.mean("number", keep_attrs=True)
     _leftover_error(da, {lat, lon, fdim}, what, loc)
     order = ([fdim] if fdim else []) + [lat, lon]
     return da.transpose(*order), lat, lon, fdim
@@ -378,18 +374,12 @@ def bind_field(trace, meta, ctx, loc, *, speed=False):
         ds = _dataset(ctx, source, f"{loc}.source")
         u_name, v_name = resolve_uv(ds, source.get("u"), source.get("v"))
         ds = to_standard_units(ds, variables=[u_name, v_name])
-        # reduce averages the wind vector; speed is that mean wind's speed.
-        u_da = _reduce(
-            _subset(ctx, source, _sel(plain(ds[u_name]), source, f"{loc}.source")), source
-        )
-        v_da = _reduce(
-            _subset(ctx, source, _sel(plain(ds[v_name]), source, f"{loc}.source")), source
-        )
+        u_da = _subset(ctx, source, _sel(plain(ds[u_name]), source, f"{loc}.source"))
+        v_da = _subset(ctx, source, _sel(plain(ds[v_name]), source, f"{loc}.source"))
         da = wind_speed_da(u_da, v_da)
         title = wind_speed_cbar_label(u_da)
     else:
         da, _ = select(ctx, source, f"{loc}.source")
-        da = _reduce(da, source)
         title = variable_label_for_display(da)
     da, lat, lon, fdim = _map_field(ctx, da, meta, loc, "a map")
     x, y = da[lon].values, da[lat].values
@@ -412,9 +402,8 @@ def bind_field(trace, meta, ctx, loc, *, speed=False):
         extent=extent_from_da(da, lat, lon, ctx.bbox),
         color_values=values,
         color_key="z",
-        color_da=None if speed else da,
+        color_da=da,
         color_title=title,
-        default_colorscale="YlGn" if speed else None,
     )
 
 
@@ -445,10 +434,10 @@ def bind_arrows(trace, meta, ctx, loc):
     u_units, v_units = variable_units(ds[u_name]), variable_units(ds[v_name])
     if u_units and v_units and not units_equal(u_units, v_units):
         raise UsageError(f"u units {u_units!r} do not match v units {v_units!r}")
-    u_da = _reduce(_subset(ctx, source, _sel(plain(ds[u_name]), source, f"{loc}.source")), source)
-    v_da = _reduce(_subset(ctx, source, _sel(plain(ds[v_name]), source, f"{loc}.source")), source)
+    u_da = _subset(ctx, source, _sel(plain(ds[u_name]), source, f"{loc}.source"))
+    v_da = _subset(ctx, source, _sel(plain(ds[v_name]), source, f"{loc}.source"))
     u_da, lat, lon, fdim = _map_field(ctx, u_da, meta, loc, "wind arrows")
-    v_da, *_ = _map_field(ctx, v_da, meta, loc, "wind arrows", note=False)
+    v_da, *_ = _map_field(ctx, v_da, meta, loc, "wind arrows")
     step = opts.get("step")
     native = native_spacing_deg(u_da[lat].values, u_da[lon].values)
     if step is None and native:
@@ -544,15 +533,7 @@ def bind_points(trace, meta, ctx, loc):
         raise UsageError(
             f"{loc}: no stations remain after layout.meta.geo.bbox / mask_geojson; nothing to plot"
         )
-    da = _reduce(da, source)
     fdim = _facet_dim(meta, da, (pdim,), loc)
-    if "number" in da.dims and fdim != "number":
-        print(
-            f"Note: {loc}: drawing the ensemble mean of {da.sizes['number']} members; set "
-            f'{loc}.facet "number" for one map per member',
-            file=sys.stderr,
-        )
-        da = da.mean("number", keep_attrs=True)
     _leftover_error(da, {pdim, fdim}, "station points", loc)
     if fdim:
         da = da.transpose(fdim, pdim)
@@ -563,19 +544,23 @@ def bind_points(trace, meta, ctx, loc):
     for key, ptitle, part in _slices(da, fdim):
         vals = np.asarray(part.values, dtype=float)
         values.append(vals)
+        keep = np.ones(vals.shape, bool)
+        if "markers" not in (trace.get("mode") or "markers"):
+            # A text-only trace prints values: "NaN" says nothing, so skip those points.
+            keep = np.isfinite(vals)
         panels.append(
             Panel(
                 [
                     {
                         "mode": "markers",
-                        "x": lon,
-                        "y": lat,
-                        "text": names,
-                        "customdata": vals,
+                        "x": lon[keep],
+                        "y": lat[keep],
+                        "text": [n for n, k in zip(names, keep, strict=True) if k],
+                        "customdata": vals[keep],
                         # An outline keeps a station visible when its class is white.
                         # A few stations read as dots, not specks; a dense network stays small.
                         "marker": {
-                            "color": vals,
+                            "color": vals[keep],
                             "size": 13 if vals.size <= 50 else 8,
                             "line": {"width": 1},
                         },
@@ -667,13 +652,15 @@ def _rgba(color, alpha):
 def bind_series(trace, meta, ctx, loc, *, color=None):
     source = meta.get("source") or {}
     da, _ = select(ctx, source, f"{loc}.source")
-    da = _reduce(da, source)
     sdim = "step" if "step" in da.dims else cf_dim(da, "time")
     if sdim is None or sdim not in da.dims:
         if da.ndim == 1:
             sdim = da.dims[0]
         else:
-            raise UsageError(f"{loc}: a series needs a step or time axis; got {list(da.dims)}")
+            raise UsageError(
+                f"{loc}: a series needs a step or time axis; got {list(da.dims)}. To plot one "
+                "variable against another, set meta.x and meta.y to their names"
+            )
     along = along_dim(da, meta.get("along"))
     if meta.get("along") and along is None:
         raise UsageError(
@@ -686,9 +673,9 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
     extra = [d for d in da.dims if d not in (sdim, along)]
     if extra:
         raise UsageError(
-            f"{loc}: dims {extra} remain besides {sdim!r}. Add them to {loc}.source.reduce "
-            f"(averaged), or set {loc}.along {extra[0]!r} for one line per value. Nothing is "
-            "averaged silently"
+            f"{loc}: dims {extra} remain besides {sdim!r}. Pick one value with "
+            f"{loc}.source.isel / sel, set {loc}.along {extra[0]!r} for one line per value, "
+            "or average them first with summarize-dim (--lat-weighted for an area mean)"
         )
     x, xname = timeseries_axis(da, sdim)
     x = np.asarray(x)
@@ -849,49 +836,34 @@ def seasonal_dates(coord, loc):
     return np.array(text, dtype="datetime64[D]").astype("datetime64[ns]")
 
 
-def _xy_series(ctx, source, loc):
-    da, _ = select(ctx, source, loc)
-    da = _reduce(da, source)
-    sdim = "step" if "step" in da.dims else cf_dim(da, "time")
-    if sdim is None or sdim not in da.dims:
-        if da.ndim != 1:
-            raise UsageError(
-                f"{loc} needs a time or step axis to pair samples; got {list(da.dims)}"
-            )
-        sdim = da.dims[0]
-    rest = [d for d in da.dims if d != sdim]
-    if rest:
+def bind_xy(trace, meta, ctx, loc):
+    """One variable against another from the same input: a point per shared position."""
+    source = meta.get("source") or {}
+    x_da, _ = select(ctx, source, f"{loc}.source", variable=meta.get("x"))
+    y_da, _ = select(ctx, source, f"{loc}.source", variable=meta.get("y"))
+    if set(x_da.dims) != set(y_da.dims):
         raise UsageError(
-            f"{loc}: dims {rest} remain besides {sdim!r}. Average them with {loc}.reduce "
-            f"{rest}, or pick one value with {loc}.isel / sel. Nothing is averaged silently"
+            f"{loc}: x {meta.get('x')!r} has dims {list(x_da.dims)} but y {meta.get('y')!r} has "
+            f"{list(y_da.dims)}; select one value of the extra dims with {loc}.source.isel / sel"
         )
-    axis, _ = timeseries_axis(da, sdim)
-    return da, np.asarray(axis), np.asarray(da.values, dtype=float)
-
-
-def bind_pair(trace, meta, ctx, loc):
-    pair_on = meta.get("pair_on") or "time"
-    if not meta.get("x") or not meta.get("y"):
-        raise UsageError(f'{loc}: meta.bind "pair" needs meta.x and meta.y sources')
-    x_da, x_axis, x_raw = _xy_series(ctx, meta["x"], f"{loc}.x")
-    y_da, y_axis, y_raw = _xy_series(ctx, meta["y"], f"{loc}.y")
-    xv, yv, keys = pair_xy(x_axis, x_raw, y_axis, y_raw, pair_on)
+    y_da = y_da.transpose(*x_da.dims)
+    xv = np.asarray(x_da.values, dtype=float).ravel()
+    yv = np.asarray(y_da.values, dtype=float).ravel()
     keep = np.isfinite(xv) & np.isfinite(yv)
-    xv, yv = xv[keep], yv[keep]
-    keys = [k for k, ok in zip(keys, keep, strict=True) if ok]
-    if xv.size == 0:
-        raise UsageError(f"{loc}: no finite paired samples to plot")
-    labelled = pair_on == "year" or (pair_on == "time" and xv.size <= 25)
-    out = {
-        "mode": "markers+text" if labelled else "markers",
-        "x": xv,
-        "y": yv,
-        "showlegend": False,
-    }
-    if labelled:
+    if not keep.any():
+        raise UsageError(f"{loc}: no position has a finite x and y to plot")
+    out = {"mode": "markers", "x": xv[keep], "y": yv[keep], "showlegend": False}
+    # A short 1-D series labels each point with its year or date.
+    if x_da.ndim == 1 and keep.sum() <= 25:
+        labels = [
+            str(v) if isinstance(v, (int, np.integer)) else format_plot_date(v)
+            for v in x_da[x_da.dims[0]].values
+        ]
         out.update(
-            text=[format_plot_date(k) if pair_on == "time" else str(k) for k in keys],
+            mode="markers+text",
+            text=[label for label, ok in zip(labels, keep, strict=True) if ok],
             textposition="top right",
+            cliponaxis=False,
         )
     x_qty = variable_label_for_display(x_da, include_units=False)
     y_qty = variable_label_for_display(y_da, include_units=False)
@@ -919,7 +891,6 @@ def bind_samples(trace, meta, ctx, loc):
             f'{loc}.source.point or layout.meta.geo.point ({{"lat": …, "lon": …}}) is '
             "required to take samples at a point"
         )
-    da = _reduce(da, source)
     cat = "step" if "step" in da.dims else cf_dim(da, "time")
     if cat is None or cat not in da.dims:
         raise UsageError(f"{loc}: samples need a step or time axis for the categories")
@@ -1019,7 +990,7 @@ BINDERS = {
     "points": bind_points,
     "geojson": bind_geojson,
     "series": bind_series,
-    "pair": bind_pair,
+    "xy": bind_xy,
     "samples": bind_samples,
     "windrose": bind_windrose,
 }
@@ -1031,7 +1002,7 @@ _TYPES_FOR_BIND = {
     "points": {"scatter", "scattergl"},
     "geojson": {"scatter", "scattergl"},
     "series": {"scatter", "scattergl", "bar"},
-    "pair": {"scatter", "scattergl"},
+    "xy": {"scatter", "scattergl"},
     "samples": {"box", "scatter", "violin"},
     "windrose": {"barpolar"},
 }
@@ -1046,8 +1017,8 @@ def bind_trace(trace: dict, ctx: Context, loc: str, *, color=None) -> Bound:
             f"{loc}: meta.bind {bind!r} draws as type {' or '.join(sorted(allowed))}, "
             f"not {ttype!r}"
             + (
-                '; for a 1-D series of a gridded field set meta.bind "series" and '
-                "average lat/lon with meta.source.reduce"
+                "; for a 1-D series of a gridded field, average lat/lon first with "
+                'summarize-dim --lat-weighted and set meta.bind "series"'
                 if bind == "field"
                 else ""
             )

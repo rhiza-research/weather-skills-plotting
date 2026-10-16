@@ -20,10 +20,10 @@ import re
 import numpy as np
 from weather_skills_core.errors import UsageError
 from weather_skills_core.standard_utils import parse_bbox, polygon_from_geojson
+from weather_skills_core.units import convert_values, variable_units
 
 from weather_skills_plotting.bind import Context, bind_of, bind_trace
 from weather_skills_plotting.geodata import (
-    OVERLAY_STYLES,
     geoms_to_xy,
     overlay_geoms,
     overlay_settings,
@@ -42,17 +42,17 @@ from weather_skills_plotting.layout import (
     register_templates,
 )
 from weather_skills_plotting.palettes import (
-    COLORBLIND,
     DEEP,
     DEFAULT_PRECIP_PALETTES,
-    DEFAULT_SEQUENTIAL,
+    STANDARD_SEA_LEVEL_PRESSURE_HPA,
     aggregation_days,
     continuous_colorscale,
     default_palette,
     default_precip_window,
+    default_theme,
     discretize,
     is_precip_anomaly,
-    is_temperature,
+    is_sea_level_pressure,
     load_theme,
     parse_palette,
 )
@@ -75,8 +75,9 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
     """Return a validated ``plotly.graph_objects.Figure``."""
     import plotly.graph_objects as go
 
-    spec = validate(copy.deepcopy(spec))
-    theme = theme or load_theme()
+    # A theme dict missing keys (e.g. only template and palettes) gets the standard ones.
+    theme = {**default_theme(), **theme} if theme else load_theme()
+    spec = validate(copy.deepcopy(spec), theme["palettes"])
     register_templates(theme.get("template"))
     user_layout = copy.deepcopy(spec.get("layout") or {})
     lmeta = user_layout.pop("meta", None) or {}
@@ -85,12 +86,12 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
     ctx = Context(
         datasets=datasets,
         palettes=theme["palettes"],
+        theme=theme,
         bbox=tuple(parse_bbox(bbox)) if isinstance(bbox, str) else (tuple(bbox) if bbox else None),
         polygon=polygon_from_geojson(geo["mask_geojson"]) if geo.get("mask_geojson") else None,
         point=geo.get("point"),
     )
-    template = user_layout.get("template", DEFAULT_TEMPLATE)
-    colorway = COLORBLIND if template == "colorblind" else DEEP
+    colorway = _template_colorway(user_layout.get("template", DEFAULT_TEMPLATE))
 
     items = []
     n_colored = 0
@@ -110,7 +111,7 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
             None,
         )
         for key, value in (((twin or {}).get("meta") or {}).get("source") or {}).items():
-            if key in ("sel", "isel", "reduce", "u", "v"):
+            if key in ("sel", "isel", "u", "v"):
                 source.setdefault(key, copy.deepcopy(value))
     for i, trace in enumerate(traces):
         bound = None
@@ -197,6 +198,17 @@ def _lift_color(spec_trace: dict, color_key: str) -> dict:
     return out
 
 
+def _uncolored(spec_trace: dict) -> bool:
+    """No color scale to show: a contour drawn as plain lines (``contours.coloring: none``),
+    or a scatter drawn without markers (``mode: "text"``, ``"lines"``)."""
+    if spec_trace.get("type") == "contour":
+        return (spec_trace.get("contours") or {}).get("coloring") == "none"
+    mode = spec_trace.get("mode")
+    return (
+        spec_trace.get("type") in ("scatter", "scattergl") and bool(mode) and "markers" not in mode
+    )
+
+
 def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
     """Fill ``layout.<name>`` for the bound traces in ``members``.
 
@@ -222,13 +234,21 @@ def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
         days = [aggregation_days(b.color_da) for _, b, _ in members if b.color_da is not None]
         palette_raw = default_precip_window(*(days or [None]), anomaly=DEFAULT_PRECIP_PALETTES[key])
     palette = parse_palette(palette_raw, registry=ctx.palettes) if palette_raw else None
-    if palette is None and "colorscale" not in user:
-        das = [b.color_da for _, b, _ in members if b.color_da is not None]
-        palette = default_palette(*das) if das else None
     values = np.concatenate([np.ravel(v) for _, b, _ in members for v in b.color_values])
     finite = values[np.isfinite(values)]
     stretch = "cmin" in user or "cmax" in user
+    lo = float(finite.min()) if finite.size else 0.0
+    hi = float(finite.max()) if finite.size else 1.0
+    # Limits the user set decide whether the scale straddles zero; they are kept as given.
+    diverging = user.get("cmin", lo) < 0 < user.get("cmax", hi)
     axis = {"colorbar": {"title": {"text": first.color_title or ""}}}
+    if palette is None and "colorscale" not in user:
+        # The theme's color for this kind of field: precip, wind speed, diverging, temperature …
+        das = [b.color_da for _, b, _ in members if b.color_da is not None]
+        palette = default_palette(*(das or [None]), theme=ctx.theme, diverging=diverging)
+        if palette.get("colorscale"):
+            axis["colorscale"] = palette["colorscale"]
+            palette = None
     if palette and palette.get("bounds") and not stretch and "colorscale" not in user:
         for _, bound, traces in members:
             for tr in traces:
@@ -247,22 +267,18 @@ def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
         return axis
     if palette:
         axis["colorscale"] = continuous_colorscale(palette["colors"])
-    elif first.default_colorscale:
-        axis["colorscale"] = first.default_colorscale
-    lo = float(finite.min()) if finite.size else 0.0
-    hi = float(finite.max()) if finite.size else 1.0
-    # Limits the user set decide whether the scale straddles zero; they are kept as given.
-    diverging = user.get("cmin", lo) < 0 < user.get("cmax", hi)
-    if "colorscale" not in axis and "colorscale" not in user:
-        if diverging:
-            axis["colorscale"] = "RdBu_r"
-        elif first.color_da is not None and is_temperature(first.color_da):
-            axis["colorscale"] = "RdYlBu_r"
-        else:
-            axis["colorscale"] = continuous_colorscale(DEFAULT_SEQUENTIAL)
     if diverging and not stretch:
         m = max(abs(lo), abs(hi))
         lo, hi = -m, m
+    elif not stretch and first.color_da is not None and is_sea_level_pressure(first.color_da):
+        # White at the standard atmosphere: lows read blue, highs red.
+        mid = float(
+            convert_values(
+                STANDARD_SEA_LEVEL_PRESSURE_HPA, "hPa", variable_units(first.color_da) or "hPa"
+            )[0]
+        )
+        m = max(abs(lo - mid), abs(hi - mid))
+        lo, hi = mid - m, mid + m
     if lo == hi:
         lo, hi = lo - 1, hi + 1
     axis.setdefault("cmin", lo)
@@ -271,6 +287,20 @@ def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
 
 
 # ------------------------------------------------------------------- map figure
+
+
+def _template_colorway(template) -> list:
+    """Series colors from the figure's template (a theme file may set its colorway)."""
+    import plotly.io as pio
+
+    if isinstance(template, str):
+        try:
+            colorway = pio.templates[template].layout.colorway
+        except (KeyError, ValueError):
+            colorway = None
+    else:
+        colorway = ((template or {}).get("layout") or {}).get("colorway")
+    return list(colorway or DEEP)
 
 
 def _page_color(user_layout: dict) -> str:
@@ -329,7 +359,7 @@ def _assemble_map(items, user_layout, lmeta, ctx):
             if not keys:
                 raise UsageError(
                     "layered traces share no time/step values to draw together; select one "
-                    "time per layer (meta.source.isel / sel), or reduce it (meta.source.reduce)"
+                    "time per layer (meta.source.isel / sel), or aggregate first"
                 )
             plan.append(keys)
         else:
@@ -404,7 +434,7 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     auto = {}
     for g in order:
         for _, spec_trace, bound in groups[g]:
-            if bound is None or not bound.color_values:
+            if bound is None or not bound.color_values or _uncolored(spec_trace):
                 continue
             name = (
                 spec_trace.get("coloraxis")
@@ -440,6 +470,11 @@ def _assemble_map(items, user_layout, lmeta, ctx):
             axis_of[id(spec_trace)] = name
     for p in range(n):
         for _, tr, spec_trace, bound in panel_traces[p]:
+            if _uncolored(spec_trace):
+                if tr.get("type") == "contour":
+                    # Isobars over shading: plain black lines, no colorbar of their own.
+                    fill_defaults(tr, {"showscale": False, "line": {"color": "black", "width": 1}})
+                continue
             if bound is None or id(spec_trace) not in axis_of:
                 continue
             name = axis_of[id(spec_trace)]
@@ -606,7 +641,7 @@ def _assemble_map(items, user_layout, lmeta, ctx):
         tolerance = 0.25 * (extents[p][1] - extents[p][0]) / max(panel_px, 1.0)
         for name, geoms in overlay_geoms(extents[p], settings):
             xs, ys = geoms_to_xy(geoms, rings_only=name == "lakes", tolerance=tolerance)
-            style = copy.deepcopy(OVERLAY_STYLES[name])
+            style = copy.deepcopy(ctx.theme["overlays"][name])
             if isinstance(settings.get(name), dict):
                 style = deep_merge(style, settings[name])
             tr = {

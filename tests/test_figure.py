@@ -115,9 +115,15 @@ def test_leftover_dim_is_an_error_with_hint():
         compile({"data": [_trace("a")]}, {"a": ds})
 
 
-def test_ensemble_mean_and_step_panels_for_forecast():
-    fig = compile({"data": [_trace("a")]}, {"a": make_forecast(n_number=3, n_step=4)})
+def test_step_panels_for_forecast():
+    fig = compile({"data": [_trace("a")]}, {"a": make_forecast(n_number=0, n_step=4)})
     assert len(_data(fig, "heatmap")) == 4
+
+
+def test_ensemble_map_is_not_averaged():
+    # The plotter selects but never averages: summarize-dim makes the ensemble mean.
+    with pytest.raises(UsageError, match="'number' remains.*summarize-dim"):
+        compile({"data": [_trace("a")]}, {"a": make_forecast(n_number=3, n_step=4)})
 
 
 def test_isel_and_bbox_subset():
@@ -141,12 +147,107 @@ def test_contour_uses_class_edges_as_levels():
     assert tr["autocontour"] is False
 
 
+def _pressure():
+    """MSLP in hPa: a 1030 high at (10N, 20E) and a 990 low at (-10N, 60E)."""
+    lats, lons = np.arange(-30.0, 30.5, 1.0), np.arange(0.0, 80.5, 1.0)
+    lat, lon = np.meshgrid(lats, lons, indexing="ij")
+    z = (
+        1010
+        + 20 * np.exp(-((lat - 10) ** 2 + (lon - 20) ** 2) / 50)
+        - 20 * np.exp(-((lat + 10) ** 2 + (lon - 60) ** 2) / 50)
+    )
+    ds = xr.Dataset(
+        {"msl": (("latitude", "longitude"), z)}, coords={"latitude": lats, "longitude": lons}
+    )
+    ds["msl"].attrs.update(units="hPa", standard_name="air_pressure_at_mean_sea_level")
+    return ds
+
+
+def test_one_station_keeps_its_station_axis():
+    # local-extrema finds a single high: a one-point file still draws as a point.
+    stations = make_station(n_station=1, n_time=1).isel(time=0)
+    spec = {"data": [_trace("a"), _trace("c", type="scatter", meta={"bind": "points"})]}
+    fig = compile(spec, {"a": _pressure(), "c": stations})
+    point = next(t for t in fig.data if t["uid"] == "c")
+    assert len(point["x"]) == 1
+
+
+def test_line_only_contour_over_shading_keeps_the_shading_colorbar():
+    spec = {
+        "data": [
+            _trace("a"),
+            _trace(
+                "iso", input="a", type="contour", contours={"coloring": "none"}, showscale=False
+            ),
+        ]
+    }
+    fig = compile(spec, {"a": _pressure()})
+    iso = _data(fig, "contour")[0]
+    assert iso["coloraxis"] is None
+    assert iso["showscale"] is False and iso["line"]["color"] == "black"
+    layout = _layout(fig)
+    assert layout["coloraxis"].get("showscale") is not False
+    assert "coloraxis2" not in layout
+
+
+def test_text_only_points_have_no_colorbar_and_keep_customdata_in_images(tmp_path, monkeypatch):
+    import plotly.io as pio
+
+    from weather_skills_plotting import export
+
+    stations = make_station(n_station=3, n_time=1).isel(time=0)
+    spec = {
+        "data": [
+            _trace("a"),
+            _trace(
+                "c",
+                type="scatter",
+                mode="text",
+                texttemplate="<b>H</b><br>%{customdata:.0f}",
+                meta={"bind": "points"},
+            ),
+        ]
+    }
+    fig = compile(spec, {"a": _pressure(), "c": stations})
+    text = next(t for t in fig.data if t["uid"] == "c")
+    assert text["marker"]["coloraxis"] is None
+    layout = _layout(fig)
+    assert "coloraxis2" not in layout and "orientation" not in layout["coloraxis"]["colorbar"]
+    # A PNG drops the heatmap's hover copy but keeps what a texttemplate prints.
+    written = {}
+    monkeypatch.setattr(pio, "write_image", lambda image, *a, **k: written.update(image))
+    monkeypatch.setattr("weather_skills_plotting.qa.report_figure", lambda *a, **k: None)
+    export(fig, tmp_path / "map.png")
+    kept = {t["uid"]: "customdata" in t for t in written["data"] if t["uid"] in ("a", "c")}
+    assert kept == {"a": False, "c": True}
+
+
+def test_text_only_points_skip_nan_but_markers_keep_them():
+    stations = make_station(n_station=3, n_time=1).isel(time=0)
+    stations["precip"].values[1] = np.nan
+    for mode, n in (("text", 2), ("markers", 3)):
+        spec = {"data": [_trace("c", type="scatter", mode=mode, meta={"bind": "points"})]}
+        trace = next(t for t in compile(spec, {"c": stations}).data if t["uid"] == "c")
+        assert len(trace["x"]) == n and len(trace["customdata"]) == n
+
+
 def test_non_precip_gets_continuous_scale_symmetric_when_diverging():
     ds = make_gridded(n_time=1, name="t2m", units="degree_Celsius")
     ds["t2m"].values[:] = np.linspace(-2, 4, 12).reshape(1, 3, 4)
     axis = _layout(compile({"data": [_trace("a")]}, {"a": ds}))["coloraxis"]
     assert (axis["cmin"], axis["cmax"]) == (-4, 4)
     assert "ticktext" not in axis["colorbar"]
+
+
+def test_sea_level_pressure_is_red_blue_with_white_at_standard_atmosphere():
+    # Pa is drawn in hPa, so white sits at 1013.25 hPa either way.
+    for units, scale in (("hPa", 1.0), ("Pa", 100.0)):
+        ds = make_gridded(n_time=1, name="msl", units=units)
+        ds["msl"].values[:] = np.linspace(1008, 1036, 12).reshape(1, 3, 4) * scale
+        ds["msl"].attrs["standard_name"] = "air_pressure_at_mean_sea_level"
+        axis = _layout(compile({"data": [_trace("a")]}, {"a": ds}))["coloraxis"]
+        assert axis["colorscale"][0][1] == "rgb(5,48,97)"  # RdBu_r: blue lows
+        assert (axis["cmin"], axis["cmax"]) == pytest.approx((990.5, 1036))
 
 
 def test_points_layer_over_field_and_static_outline(tmp_path):
@@ -200,8 +301,9 @@ def test_overlays_switch_off_and_restyle():
 
 
 def test_series_spaghetti_band_and_cycle():
-    ds = make_forecast(n_number=5, n_step=4)
-    src = {"reduce": ["latitude", "longitude"]}
+    # An area mean, as summarize-dim --dim latitude --dim longitude writes it.
+    ds = make_forecast(n_number=5, n_step=4).mean(["latitude", "longitude"], keep_attrs=True)
+    src = {}
     same = compile(
         {
             "data": [
@@ -258,57 +360,46 @@ def test_series_spaghetti_band_and_cycle():
     assert [t["name"] for t in _data(cycle)] == ["0", "1", "2", "3", "4"]
 
 
-def test_series_needs_reduce_or_along():
-    with pytest.raises(UsageError, match="Nothing is averaged silently"):
+def test_series_needs_select_or_along():
+    with pytest.raises(UsageError, match="remain besides.*summarize-dim"):
         compile(
             {"data": [_trace("a", type="scatter", meta={"bind": "series"})]}, {"a": make_gridded()}
         )
 
 
 def test_series_forecast_plots_valid_time():
-    ds = make_forecast(n_number=0, n_step=3)
-    fig = compile(
-        {
-            "data": [
-                _trace(
-                    "a",
-                    type="scatter",
-                    source={"reduce": ["latitude", "longitude"]},
-                    meta={"bind": "series"},
-                )
-            ]
-        },
-        {"a": ds},
-    )
+    ds = make_forecast(n_number=0, n_step=3).mean(["latitude", "longitude"], keep_attrs=True)
+    fig = compile({"data": [_trace("a", type="scatter", meta={"bind": "series"})]}, {"a": ds})
     assert _data(fig)[0]["x"][0].startswith("2026-01-01")
     assert "tickformat" not in _layout(fig)["xaxis"]  # Plotly's own date ticks
 
 
-def test_pair_on_year_labels_points():
-    def yearly(start, values):
-        times = np.array(
-            [np.datetime64(f"{y}-09-01", "ns") for y in range(start, start + len(values))]
-        )
-        return xr.Dataset({"v": (("time",), np.asarray(values, float))}, coords={"time": times})
+def test_xy_scatter_of_two_variables():
+    years = [2019, 2020, 2021, 2022]
+    ds = xr.Dataset(
+        {"dmi": (("year",), [1.9, -0.2, -0.3, -1.0]), "precip": (("year",), [210, 60, np.nan, 30])},
+        coords={"year": years},
+    )
+    spec = {"data": [{"uid": "0", "type": "scatter", "meta": {"x": "dmi", "y": "precip"}}]}
+    tr = _data(compile(spec, {"0": ds}))[0]
+    assert list(tr["text"]) == ["2019", "2020", "2022"]
+    assert list(tr["x"]) == [1.9, -0.2, -1.0] and list(tr["y"]) == [210, 60, 30]
 
-    spec = {
-        "data": [
-            {
-                "uid": "xy",
-                "type": "scatter",
-                "meta": {
-                    "bind": "pair",
-                    "pair_on": "year",
-                    "x": {"input": "x"},
-                    "y": {"input": "y"},
-                },
-            }
-        ]
-    }
-    fig = compile(spec, {"x": yearly(2000, [1, 2, 3]), "y": yearly(2001, [5, 6, 7])})
-    tr = _data(fig)[0]
-    assert list(tr["text"]) == ["2001", "2002"]
-    assert list(tr["x"]) == [2, 3] and list(tr["y"]) == [5, 6]
+
+def test_xy_scatter_of_a_grid_is_one_point_per_cell():
+    ds = make_gridded(n_time=1)
+    ds["t2m"] = ds["precip"] * 0 + 25.0
+    spec = {"data": [{"uid": "0", "type": "scatter", "meta": {"x": "t2m", "y": "precip"}}]}
+    tr = _data(compile(spec, {"0": ds}))[0]
+    assert len(tr["x"]) == ds["precip"].size and tr["text"] is None
+
+
+def test_xy_scatter_needs_the_same_dims():
+    ds = make_forecast(n_number=3, n_step=2)
+    ds["mean"] = ds["tp"].mean("number")
+    spec = {"data": [{"uid": "0", "type": "scatter", "meta": {"x": "mean", "y": "tp"}}]}
+    with pytest.raises(UsageError, match="source.isel / sel"):
+        compile(spec, {"0": ds})
 
 
 def test_samples_box_and_mean_line():
@@ -548,3 +639,60 @@ def test_same_standard_name_shares_a_bar_and_small_bbox_keeps_overlapped_cells()
     assert np.asarray(field["z"]).size > 0
     points = next(t for t in _data(fig) if t["uid"].startswith("b"))
     assert points["marker"]["coloraxis"] == field["coloraxis"]
+
+
+def test_theme_file_sets_palette_colorway_and_overlays(tmp_path):
+    from weather_skills_plotting.palettes import load_theme
+
+    path = tmp_path / "theme.json"
+    path.write_text(
+        json.dumps(
+            {
+                "template": {"layout": {"colorway": ["#123456", "#654321"]}},
+                "palettes": {
+                    "agency": {"colors": ["#fff", "#fff", "#0a0", "#00f"], "bounds": [0, 1, 10]}
+                },
+                "defaults": {"precip": "agency"},
+                "overlays": {"borders": {"line": {"color": "#ff0000"}}},
+            }
+        )
+    )
+    theme = load_theme(path)
+    ds = make_gridded(n_time=1)
+    ds["precip"].attrs.update(units="mm", aggregation_period="7 day")
+    fig = compile({"data": [_trace("a")]}, {"a": ds}, theme=theme)
+    bar = _layout(fig)["coloraxis"]["colorbar"]
+    assert list(bar["ticktext"]) == ["0", "1", "10"]
+    borders = [t for t in _data(fig, "scatter") if str(t["uid"]).startswith("overlay-borders")]
+    assert borders and all(t["line"]["color"] == "#ff0000" for t in borders)
+    # A palette that exists only in the theme file is a known meta.palette name.
+    fig = compile({"data": [_trace("a", meta={"palette": "agency"})]}, {"a": ds}, theme=theme)
+    assert list(_layout(fig)["coloraxis"]["colorbar"]["ticktext"]) == ["0", "1", "10"]
+    # Explicit series colors (ensemble members, band) follow the template's colorway.
+    meta = {"bind": "series", "along": "number", "band": [10, 90]}
+    area_mean = make_forecast(n_number=5, n_step=4).mean(["latitude", "longitude"], keep_attrs=True)
+    fig = compile({"data": [_trace("a", type="scatter", meta=meta)]}, {"a": area_mean}, theme=theme)
+    assert _data(fig)[0]["line"]["color"] == "#123456"
+
+
+def test_colorblind_template_keeps_its_colorway_under_a_theme(tmp_path):
+    from weather_skills_plotting.palettes import COLORBLIND, load_theme
+
+    path = tmp_path / "theme.json"
+    path.write_text(json.dumps({"template": {"layout": {"colorway": ["#123456", "#654321"]}}}))
+    meta = {"bind": "series", "along": "number"}
+    area_mean = make_forecast(n_number=2, n_step=4).mean(["latitude", "longitude"], keep_attrs=True)
+    spec = {
+        "data": [_trace("a", type="scatter", meta=meta)],
+        "layout": {"template": "colorblind"},
+    }
+    fig = compile(spec, {"a": area_mean}, theme=load_theme(path))
+    assert _data(fig)[0]["line"]["color"] == COLORBLIND[0]
+
+
+def test_partial_theme_dict_gets_the_standard_keys():
+    from weather_skills_plotting.palettes import builtin_palettes
+
+    ds = make_gridded(n_time=1)
+    fig = compile({"data": [_trace("a")]}, {"a": ds}, theme={"palettes": builtin_palettes()})
+    assert any(str(t["uid"]).startswith("overlay-borders") for t in _data(fig, "scatter"))
