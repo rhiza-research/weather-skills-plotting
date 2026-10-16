@@ -75,7 +75,8 @@ _RECIPES = [
     ("Contour instead of heatmap", '{"data": [{"uid": "0", "type": "contour"}]}'),
     (
         "MSLP chart: --layer heatmap:anom.zarr --layer contour:msl.zarr=MSLP --layer "
-        "scatter:highs.zarr=HIGHS --layer scatter:lows.zarr=LOWS (from local-extrema); black isobars every 4 hPa, "
+        "scatter:highs.zarr=HIGHS --layer scatter:lows.zarr=LOWS (from local-extrema --radius 7, a "
+        "Tropical Tidbits-style set of centres; 15 or more misses most); black isobars every 4 hPa, "
         "H / L with the central value",
         '{"data": [{"uid": "MSLP", "contours": {"coloring": "none", "showlabels": true, '
         '"start": 900, "end": 1080, "size": 4}}, {"uid": "HIGHS", "mode": "text", '
