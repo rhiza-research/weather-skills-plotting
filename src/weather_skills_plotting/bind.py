@@ -53,10 +53,9 @@ from weather_skills_plotting.palettes import (
     continuous_colorscale,
     parse_palette,
 )
-from weather_skills_plotting.spec import DEFAULT_BIND
+from weather_skills_plotting.spec import DEFAULT_BIND, fill_defaults
 from weather_skills_plotting.wind import (
     WIND_ROSE_SECTORS,
-    WIND_SPEED_COLORS,
     flat_numeric,
     is_sample_dim,
     native_spacing_deg,
@@ -519,14 +518,15 @@ def bind_arrows(trace, meta, ctx, loc):
         kxs, kys = _arrow_segments(
             np.array([kx]), np.array([ky]), np.array([ARROW_KEY_SPEED]), np.array([0.0]), scale
         )
+        styles = ctx.theme["styles"]
         arrows = {
             "mode": "lines",
             "x": xs,
             "y": ys,
             "hoverinfo": "skip",
             "showlegend": False,
-            "line": {"color": "black"},
         }
+        fill_defaults(arrows, styles["arrows"])
         # A white box behind the reference arrow so data arrows do not run through it.
         box_x = [kx - 0.2 * span_x, extent[1] - 0.01 * span_x]
         box_y = [ky - 0.04 * span_y, ky + 0.04 * span_y]
@@ -536,12 +536,12 @@ def bind_arrows(trace, meta, ctx, loc):
             "x": [box_x[0], box_x[1], box_x[1], box_x[0], box_x[0]],
             "y": [box_y[0], box_y[0], box_y[1], box_y[1], box_y[0]],
             "fill": "toself",
-            "fillcolor": "rgba(255, 255, 255, 0.85)",
             "line": {"width": 0},
             "hoverinfo": "skip",
             "showlegend": False,
             "uid_suffix": "key-box",
         }
+        fill_defaults(key_box, styles["arrow_key_box"])
         key_trace = {
             "type": "scatter",
             "mode": "lines+text",
@@ -551,9 +551,9 @@ def bind_arrows(trace, meta, ctx, loc):
             "textposition": "middle left",
             "hoverinfo": "skip",
             "showlegend": False,
-            "line": {"color": "black"},
             "uid_suffix": "key",
         }
+        fill_defaults(key_trace, styles["arrows"])
         panels.append(Panel([arrows, key_box, key_trace], ptitle, key))
     return Bound(panels, is_map=True, extent=extent)
 
@@ -689,14 +689,11 @@ def bind_geojson(trace, meta, ctx, loc):
         "y": ys,
         "hoverinfo": "skip",
         "showlegend": False,
-        # One boundary stands out; dozens of county lines would smother the data, so they
-        # take the theme's admin-1 style (KMSA: dark grey).
-        "line": (
-            {"color": "black", "width": 2}
-            if parts <= 5
-            else dict((ctx.theme["overlays"].get("admin1") or {}).get("line") or {"width": 0.8})
-        ),
     }
+    # One boundary stands out; dozens of county lines would smother the data, so they
+    # take the theme's admin-1 style (KMSA: dark grey).
+    admin1 = {"line": ctx.theme["overlays"]["admin1"]["line"]}
+    fill_defaults(line, ctx.theme["styles"]["boundary"] if parts <= 5 else admin1)
     return Bound([Panel([line])], is_map=True, static=True, extent=[w, e, s, n])
 
 
@@ -792,18 +789,20 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
                     gx += xs + [None]
                     gy += list(y[:, j]) + [None]
                 traces.append(
-                    {
-                        "type": "scatter",
-                        "x": gx,
-                        "y": gy,
-                        "mode": "lines",
-                        "opacity": 0.25,
-                        "line": {"color": col, "width": 1},
-                        "showlegend": False,
-                        "hoverinfo": "skip",
-                        "legendgroup": label,
-                        "uid_suffix": "members",
-                    }
+                    fill_defaults(
+                        {
+                            "type": "scatter",
+                            "x": gx,
+                            "y": gy,
+                            "mode": "lines",
+                            "line": {"color": col},
+                            "showlegend": False,
+                            "hoverinfo": "skip",
+                            "legendgroup": label,
+                            "uid_suffix": "members",
+                        },
+                        ctx.theme["styles"]["band_members"],
+                    )
                 )
             lo, hi = np.nanpercentile(y, band[0], axis=1), np.nanpercentile(y, band[1], axis=1)
             common = {
@@ -821,6 +820,7 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
                     **common,
                     "y": hi,
                     "fill": "tonexty",
+                    # The series color, translucent (trace opacity does not reach a fill).
                     "fillcolor": _rgba(col, 0.25),
                     "uid_suffix": "band-high",
                     # The legend says what the shading is.
@@ -871,16 +871,18 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
             for j in range(y.shape[1]):
                 gx += xs + [None]
                 gy += list(y[:, j]) + [None]
+            # Translucent (the theme's members style) so overlapping members read as density.
             traces.append(
-                {
-                    **base,
-                    "x": gx,
-                    "y": gy,
-                    "mode": "lines",
-                    # Translucent so overlapping members read as density.
-                    "opacity": 0.45,
-                    "line": {"color": _color_name(trace, color)},
-                }
+                fill_defaults(
+                    {
+                        **base,
+                        "x": gx,
+                        "y": gy,
+                        "mode": "lines",
+                        "line": {"color": _color_name(trace, color)},
+                    },
+                    ctx.theme["styles"]["members"],
+                )
             )
     # Dates need no axis title, except to say a date starts a multi-day total.
     period = is_date and xname.endswith(("starting", "Month"))
@@ -1070,7 +1072,10 @@ def bind_windrose(trace, meta, ctx, loc):
         )
     else:
         # One fixed colour per speed class, so 2–4 m/s looks the same on every rose.
-        colors = [WIND_SPEED_COLORS[min(i, len(WIND_SPEED_COLORS) - 1)] for i in range(n)]
+        fixed = parse_palette("wind_rose", loc="palettes.wind_rose", registry=ctx.palettes)[
+            "colors"
+        ]
+        colors = [fixed[min(i, len(fixed) - 1)] for i in range(n)]
     units = speed_units_display(u_da)
     theta = [i * 360.0 / WIND_ROSE_SECTORS for i in range(WIND_ROSE_SECTORS)]
     traces = [

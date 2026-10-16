@@ -1,5 +1,6 @@
 """Plot themes: default.json, shipped themes, and --theme-file layering."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -101,3 +102,34 @@ def test_theme_file_mistakes_are_usage_errors(tmp_path):
     bad.write_text("{bad")
     with pytest.raises(UsageError, match="not valid JSON/TOML"):
         load_theme(bad)
+
+
+def test_theme_styles_merge_and_reach_the_figure(tmp_path):
+    from weather_skills_plotting import compile
+
+    path = tmp_path / "theme.json"
+    path.write_text(
+        '{"styles": {"maps": {"plot_bgcolor": "#000000"}, "isobars": {"line": {"width": 3}}}}'
+    )
+    theme = load_theme(path)
+    assert theme["styles"]["isobars"]["line"] == {"color": "black", "width": 3}
+    ds = make_gridded(n_time=1)
+    fig = compile(
+        {"data": [{"uid": "a", "type": "heatmap", "meta": {"source": {"input": "a"}}}]},
+        {"a": ds},
+        theme=theme,
+    )
+    assert fig.layout.plot_bgcolor == "#000000"
+    path.write_text('{"styles": {"halo": {"opacity": 1}}}')
+    with pytest.raises(UsageError, match="styles.halo must be one of"):
+        load_theme(path)
+
+
+def test_replacing_a_master_recolors_its_windows(tmp_path):
+    master = default_theme()["palettes"]["ppt_master"]
+    colors = ["#000000", *master["colors"][1:]]
+    path = tmp_path / "theme.json"
+    path.write_text(json.dumps({"palettes": {"ppt_master": {**master, "colors": colors}}}))
+    palettes = load_theme(path)["palettes"]
+    assert palettes["ppt_week"]["colors"][0] == "#000000"
+    assert palettes["ppt_season"]["colors"][0] == "#000000"

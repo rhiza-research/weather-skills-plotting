@@ -5,7 +5,7 @@ from weather_skills_plotting.themes import default_theme
 
 
 def test_plotly_grows_margins_and_tick_labels_push_them():
-    register_templates(default_theme()["template"])
+    register_templates(default_theme())
     layout, _ = map_layout(1, 1, 1.2, titled=True, panel_titles=True, right=True)
     # Margins are a starting size; Plotly may grow them to fit labels and colorbars.
     assert layout["margin"].get("autoexpand", True) is True
@@ -14,7 +14,7 @@ def test_plotly_grows_margins_and_tick_labels_push_them():
 
 
 def test_room_around_maps_scales_with_the_font():
-    register_templates(default_theme()["template"])
+    register_templates(default_theme())
     small, _ = map_layout(2, 2, 1.2, titled=True, panel_titles=True, right=True)
     big, _ = map_layout(
         2, 2, 1.2, titled=True, panel_titles=True, right=True, user={"font": {"size": 24}}
