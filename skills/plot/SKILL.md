@@ -22,19 +22,19 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i rain.zarr -o rain.png
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i chirps.zarr=OBS -i ecmwf.zarr=FC -o compare.png
 # Layers on one map, bottom first
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --layer heatmap:rain.zarr --layer scatter:stations.zarr --layer outline:kenya.geojson -o map.png
-# One variable against another, both in one file (merge two files first)
+# One variable against another (merge puts both in one file)
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i iod_rain.zarr -o iod_vs_rain.png --spec '{"data": [{"uid": "0", "meta": {"x": "dmi", "y": "precip"}}]}'
 ```
 
-The plot type follows the data: a lat/lon grid is a colored map, stations are colored markers, a 1-D series is a line.
+The plot type follows the data: a lat/lon grid is a colored map, stations are colored markers, a 1-D series is a line. `meta.x` / `meta.y` scatter two variables.
 
 ### Arguments
 - `--input`, `-i` — Zarr to draw, as `PATH` or `PATH=NAME`; repeat for side-by-side panels.
 - `--layer` — `KIND:PATH` or `KIND:PATH=NAME` to stack on one map; repeat. Kinds: `heatmap`, `contour`, `scatter` (stations), `quiver` (wind u/v), `outline` and `mask` (GeoJSON). `outline` and `mask` also work with `-i`.
 - `--spec` — Plotly figure JSON, inline or a file path.
 - `--theme-file` — house style: a Plotly `template` (fonts, background, colors) and named `palettes` for `meta.palette`.
-- `--dump-spec` — print (`-`) or save (a path) the spec the tool would draw, without drawing.
-- `--output`, `-o` — `.png`, `.jpg`, or `.html` (interactive).
+- `--dump-spec` — print (`-`) or save (a path) the spec, without drawing.
+- `--output`, `-o` — `.png`, `.jpg`, or `.html`.
 
 ### Customizing with `--spec`
 The tool picks sensible defaults; `--spec` changes them. It takes [Plotly figure](https://plotly.com/python/reference/) JSON, `{"data": [...], "layout": {...}}`, and you write only the parts you want to change.
@@ -95,5 +95,5 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -o nairobi.png \
   --spec '{"data": [{"uid": "STATIONS", "marker": {"size": 14}}]}'
 # Ensemble members as lines with a 10–90% band
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i ens_area_mean.zarr -o ens.png \
-  --spec '{"data": [{"uid": "0", "meta": {"bind": "series", "along": "number", "band": [10, 90]}}]}'
+  --spec '{"data": [{"uid": "0", "meta": {"along": "number", "band": [10, 90]}}]}'
 ```
