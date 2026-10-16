@@ -24,8 +24,7 @@ and transforms when those are available (for example a fetch skill,
    Plotly keys for titles, axes, colorbars, annotations and shapes; the
    dataset bindings go in each trace's `meta` (see the skill's `--help`).
 4. Run the skill script and report the output path (`.png`, `.jpg`, or an
-   interactive `.html`). Look at the pixels (or use `inspect-figure` if
-   available) before calling a render correct.
+   interactive `.html`).
 5. On failure, report the actual error — do not paper over it.
 
 ## Plotting-specific notes

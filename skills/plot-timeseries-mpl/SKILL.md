@@ -49,8 +49,7 @@ every valid key at that level, not a silent no-op. If you don't already
 know the shape of `--spec`, run `--help`: after the flags it prints the plot
 spec reference (every section and key, with recipes), rather than guessing
 keys one at a time. To modify a figure you already drew, `--dump-spec -`
-with the same files prints its current spec to edit and pass back. And render once and look at
-the PNG before trying another variation — the `plot hash` printed after a
+with the same files prints its current spec to edit and pass back. The `plot hash` printed after a
 render only tells you the pixels changed, never what changed or how it
 looks.
 
@@ -104,7 +103,7 @@ A PNG at `--output`. Stdout prints `plot hash` (sha256 of RGB pixels) and
 `data: not null` or `data: NULL`. `NULL` means inspect-zarr the inputs. A
 changed hash only proves the pixels differ, not what changed or whether it
 looks right — never use hash comparisons to answer a layout or appearance
-question; always look at the PNG. `--dump-spec` skips the PNG and this
+question. `--dump-spec` skips the PNG and this
 report.
 Overlay mode is a single axes (default `figsize=(10, 6)`).
 `layout.facet.per_trace` is one stacked panel per input. Override the canvas with
