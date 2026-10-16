@@ -1,8 +1,8 @@
 ---
 name: plot-mediogram
-description: Render an ECMWF-style mediogram PNG comparing a forecast ensemble against an m-climate ensemble at one point. Pass the forecast Zarr then the m-climate Zarr with -i. BOTH need `number` (members) and `step` dims: the m-climate is a reforecast/hindcast ensemble on the forecast's leads, and no fetch skill currently writes one — a climatology mean/std (clim-fetch) has no members and is refused, so check you have an m-climate source before choosing this skill. Set geo.lat, geo.lon, and any other parameters in --spec. Grouped box plots per step (forecast cyan, m-climate red) plus the forecast mean line. For precipitation, run convert-to-totals after aggregate-temporal before plotting.
+description: "Draw an ECMWF-style mediogram at one place, saved as PNG, JPG, or interactive HTML: for each forecast lead, a box plot of the forecast ensemble next to a box plot of the model climate, plus the forecast mean. Use to show whether a forecast at a point is unusually wet, dry, warm, or cold compared with what the model normally predicts at that lead and time of year."
 license: MIT
-compatibility: Requires Python 3.12 and uv.
+compatibility: Requires Python 3.12 and uv. PNG/JPG export needs Chrome (installed, or `plotly_get_chrome -y`).
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/plot_mediogram.py *)
 metadata:
   version: "0.0.2"
@@ -11,83 +11,61 @@ metadata:
 
 # plot-mediogram
 
-Single-point mediogram plotting an ECMWF ensemble forecast distribution against an m-climate (historical) ensemble distribution. For each forecast step, two side-by-side box plots are drawn (forecast left/cyan, m-climate right/red) with the forecast ensemble mean as a black line.
-
-## Before guessing a flag or a key
-
-Every drawing choice besides `-i`/`-o` is a JSON key under `--spec` (see
-**Parameters** below); an unknown or misplaced key is a hard error listing
-every valid key at that level, not a silent no-op. If you don't already
-know the shape of `--spec`, run `--help`: after the flags it prints the plot
-spec reference (every section and key, with recipes), rather than guessing
-keys one at a time. To modify a figure you already drew, `--dump-spec -`
-with the same two files prints its current spec to edit and pass back. The `plot hash` printed after
-a render only tells you the pixels changed, never what changed or how it
-looks.
-
-## Input schema
-
-Both inputs are Zarr stores with at least:
-- a `number` dim (ensemble members)
-- a `step` dim (forecast lead time)
-- spatial coords identifiable as `latitude`/`longitude` (CF-style or common aliases)
-- at least one data variable
-
-Lat/lon selection is nearest-neighbor.
-
-**Where the m-climate comes from.** ECMWF's m-climate is a reforecast
-ensemble: past years' hindcast members re-run for the same calendar date,
-stacked so `number` runs over year × member and `step` matches the forecast
-leads. No fetch skill currently produces that cube (the dynamical-fetch
-ensembles are real-time forecasts only), and a climatology `avg`/`std` from
-`clim-fetch` has no `number` dim, so it fails with `mclimate input requires
-'number' and 'step' dims`. Without a reforecast source, compare the forecast
-against a climatology another way (e.g. `difference` against the clim-fetch
-mean, or `plot-timeseries` with the ensemble band).
+Draws a forecast ensemble against the model climate at one point, one pair of box plots per lead.
 
 ## Usage
 
+```bash
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot_mediogram.py -i forecast.zarr -i mclimate.zarr -o mediogram.png \
+  --spec '{"layout": {"meta": {"geo": {"point": {"lat": -1.3, "lon": 36.8}}}}}'
 ```
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot_mediogram.py \
-    -i <forecast.zarr> -i <mclimate.zarr> -o <out.png> \
-    --spec '{"geo":{"lat":-1.3,"lon":36.8},"inputs":[{"variable":"tp"}],"title":"Nairobi"}'
-```
+
+The model climate (m-climate) is the same forecast system's reforecasts of past years for the same leads: what the model usually predicts. Each lead gets a blue forecast box and a red m-climate box, with a black line through the forecast mean. Each file uses its grid cell nearest the point.
 
 ### Arguments
+- `--input`, `-i` — pass twice: the forecast Zarr, then the m-climate Zarr.
+- `--spec` — Plotly figure JSON, inline or a file path. Must set the point, `layout.meta.geo.point`.
+- `--theme-file` — house style: a Plotly `template` (fonts, background, colors) and named `palettes`.
+- `--dump-spec` — print (`-`) or save (a path) the spec, without drawing.
+- `--output`, `-o` — `.png`, `.jpg`, or `.html`.
 
-- `--input`, `-i` — pass exactly twice: forecast Zarr first, m-climate Zarr second. Optional when `--spec` lists both paths.
-- `--output`, `-o` — PNG path.
-- `--spec` — JSON object or path, always deep-merged onto the spec built from the opened files. Your values win. `geo.lat` and `geo.lon` are required. A `patch` key inside the object is rejected.
-- `--dump-spec` — write the merged spec as JSON and skip the PNG. Bare `--dump-spec` or `-` prints to stdout. Use it to get the current spec to modify; for what keys exist, use `--help`.
+### Inputs
+Both files need ensemble members (`number`), leads (`step`), and latitude/longitude. The m-climate must hold individual reforecast members for the same leads; a climatology mean and standard deviation is not one. No fetcher here supplies reforecasts; a past init of the same system (same leads) is a rough stand-in. Say so in the title if you use one. Up to 15 leads are drawn, those both files have.
 
-### Parameters (`--spec`)
+### Customizing with `--spec`
+`--spec` takes [Plotly figure](https://plotly.com/python/reference/) JSON, `{"data": [...], "layout": {...}}`; write only the parts you want to change. The figure has three entries in `data`, chosen by `"uid"`: `"forecast"` and `"mclimate"` (Plotly `box` traces) and `"forecast-mean"` (a line).
 
-- `geo.lat`, `geo.lon` — point, nearest-neighbor.
-- `inputs[]` — `variable` per input (`forecast`, `mclimate`); an input that omits it uses `inputs[0].variable` (the forecast input), then auto-detects. The two archives may name the field differently — set each one's own `variable`.
-- `title`, `xlabel`, `ylabel`. Keep the title to a few words (`Nairobi`).
-- `theme.fontsize` (default 16), `layout.figsize` as `[W, H]` (default about 10×5).
+| To | `--spec` |
+| --- | --- |
+| Set the point | `{"layout": {"meta": {"geo": {"point": {"lat": -1.3, "lon": 36.8}}}}}` |
+| Set the title | `{"layout": {"title": {"text": "Nairobi"}}}` (the grid cell and init date are added) |
+| Recolor a box | `{"data": [{"uid": "mclimate", "fillcolor": "orange"}]}` |
+| Pick leads | `{"data": [{"uid": "forecast", "meta": {"source": {"isel": {"step": [0, 2, 4, 6]}}}}, {"uid": "mclimate", "meta": {"source": {"isel": {"step": [0, 2, 4, 6]}}}}, {"uid": "forecast-mean", "meta": {"source": {"isel": {"step": [0, 2, 4, 6]}}}}]}` |
+| Pick the variable | `{"data": [{"uid": "forecast", "meta": {"source": {"variable": "t2m"}}}, {"uid": "mclimate", "meta": {"source": {"variable": "t2m"}}}, {"uid": "forecast-mean", "meta": {"source": {"variable": "t2m"}}}]}` |
+
+Leads and variable are set on each entry, so the two files may name the variable differently. `--help` lists every option; `--dump-spec -` shows the spec for your files.
 
 ### Output
+The figure at `-o`. PNG/JPG also print `data: not null` or `data: NULL`; `NULL` means every value drawn is NaN.
 
-A PNG at `--output`, single axes, default figsize `(10, 5)` (override with
-`layout.figsize`), legend below the boxes. Stdout prints `plot hash` (sha256 of
-RGB pixels) and `data: not null` or `data: NULL`. `NULL` means inspect-zarr
-the inputs. A changed hash only proves the pixels differ, not what changed
-or whether it looks right — never use hash comparisons to answer a layout
-or appearance question.
-`--dump-spec` skips the PNG and this report. Up to 6 forecast steps on the x-axis labeled with actual leads (`+7d`, `+10d`, …). The y-axis (and default title) use the variable `long_name`.
+### Notes
+- Boxes pair up by lead, so an m-climate from another init date lines up by lead, not by date.
+- For rainfall totals, run aggregate-temporal then convert-to-totals on both files first.
+
+### Example
+```bash
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot_mediogram.py -i ecmwf_fc.zarr -i ecmwf_mclimate.zarr -o mediogram_nairobi.png \
+  --spec '{"layout": {"meta": {"geo": {"point": {"lat": -1.3, "lon": 36.8}}}, "title": {"text": "Nairobi"}}}'
+```
+ECMWF daily rainfall for the 15 days from the 12 Oct 2026 init at Nairobi, each day's 51 members next to the m-climate.
+
+## Details
+
+### Reading the boxes
+A box spans the 25th to 75th percentile of the members, with a line at the median. Whiskers reach the furthest member within 1.5 × the box height; members beyond are dots.
+
+### Axes and title
+When the forecast has its init `time`, the x-axis shows each lead's valid date and the title the init date; otherwise it shows the lead. The default title names the variable and the grid cell used. A rainfall axis does not go below zero. Keep a custom title to a few words, such as the place name.
 
 ### Provenance
-
-The output carries a `weather_skills_history` provenance chain; inspect it
-with the `provenance` skill.
-
-## Example
-
-```bash
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot_mediogram.py \
-    -i /tmp/ecmwf_forecast.zarr \
-    -i /tmp/ecmwf_mclimate.zarr \
-    -o /tmp/mediogram_nairobi.png \
-    --spec '{"geo":{"lat":-1.3,"lon":36.8},"inputs":[{"variable":"tp"}]}'
-```
+The file's history (`weather_skills_history`) is embedded in the PNG metadata or HTML `<meta>` tag; read it with the `provenance` skill.

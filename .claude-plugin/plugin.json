@@ -14,7 +14,7 @@
     "weather",
     "climate",
     "plotting",
-    "matplotlib",
+    "plotly",
     "cartopy",
     "geospatial",
     "zarr",

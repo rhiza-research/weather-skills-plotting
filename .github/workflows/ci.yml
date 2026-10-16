@@ -37,6 +37,8 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --group dev
+      # PNG export (kaleido) drives headless Chrome; fetch the build plotly pins.
+      - run: uv run plotly_get_chrome -y
       - run: uv run pytest
 
   discover:

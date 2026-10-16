@@ -1,5 +1,5 @@
 """Figure-facing helpers: dataset labels, variable labels, unit spellings,
-which variable each input uses, and precip totals for display.
+and precip totals for display.
 
 Moved from weather-skills-core, which keeps the on-disk contract; these only
 shape what a figure shows.
@@ -11,8 +11,6 @@ import json
 import re
 from pathlib import Path
 
-from weather_skills_core.cf import auto_variable
-from weather_skills_core.cf import cf_dim as _core_cf_dim
 from weather_skills_core.errors import UsageError
 from weather_skills_core.provenance import HISTORY_ATTR, SOURCE_ATTR, origin_skill
 from weather_skills_core.units import (
@@ -21,11 +19,10 @@ from weather_skills_core.units import (
     STANDARD,
     assert_nonoverlapping_intervals,
     classify_variable,
-    convert_dataarray,
     format_cell_methods,
     looks_like_rate_display_name,
+    parse_aggregation_period,
     rate_to_total,
-    to_standard_units,
     units_equal,
     ureg,
     variable_units,
@@ -33,27 +30,11 @@ from weather_skills_core.units import (
 
 _DATE_TAIL = re.compile(r"[_-]\d{4}-\d{2}-\d{2}(?:[_-]\d{2}-\d{2}-\d{2})?$")
 _VAR_TAIL = re.compile(r"[_-](?:precip|tp)$", re.I)
-_ACRONYMS = frozenset({"ecmwf", "s2s", "ghcn", "cmip6", "gefs", "oisst", "imerg", "smap", "chirps"})
-
-
-_EXACT_GEO_NAMES = {"latitude": ("latitude", "lat"), "longitude": ("longitude", "lon")}
-
-
-def cf_dim(obj, cf_name: str):
-    """Coord name for a cf key, preferring an exact ``latitude``/``lat`` (``longitude``/``lon``).
-
-    point-value outputs carry extra ``grid_latitude``/``grid_longitude`` coords with
-    degree units, which make the cf-xarray lookup ambiguous (it then returns None).
-    """
-    for name in _EXACT_GEO_NAMES.get(cf_name, ()):
-        if name in obj.coords or name in obj.dims:
-            return name
-    return _core_cf_dim(obj, cf_name)
 
 
 def _prettify_token(text: str) -> str:
-    parts = [p for p in re.split(r"[_-]+", text.strip()) if p]
-    return " ".join(p.upper() if p.lower() in _ACRONYMS else p.capitalize() for p in parts) or text
+    # Product ids are mostly acronyms (ECMWF, IMERG, CHIRPS), so every word is upper-cased.
+    return " ".join(p.upper() for p in re.split(r"[_-]+", text.strip()) if p) or text
 
 
 def label_from_history(ds) -> str | None:
@@ -68,6 +49,10 @@ def label_from_history(ds) -> str | None:
     return _prettify_token(skill.removesuffix("-fetch")) if skill else None
 
 
+# Words a catalog id carries that a panel title does not need.
+_ID_NOISE = re.compile(r"[-_](forecast|analysis)(?=[-_]|$)|[-_]\d+[-_](day|hour)s?.*$", re.I)
+
+
 def label_from_source_token(token: str) -> str:
     """Product name from a source token: ``scheme:product/…``, a path, or a bare id."""
     text = token.strip()
@@ -78,6 +63,8 @@ def label_from_source_token(token: str) -> str:
     elif "/" in text or "\\" in text or text.endswith(".zarr"):
         text = Path(text).stem
     text = _VAR_TAIL.sub("", _DATE_TAIL.sub("", text))
+    # nasa-imerg-analysis-late → NASA IMERG LATE; ecmwf-ifs-ens-forecast-15-day-0-25-degree → ECMWF IFS ENS
+    text = _ID_NOISE.sub("", text) or text
     return _prettify_token(text)
 
 
@@ -89,48 +76,9 @@ def dataset_display_label(ds, fallback) -> str:
     return label_from_history(ds) or (fallback() if callable(fallback) else str(fallback))
 
 
-def resolve_input_labels(
-    labels: list[str] | None,
-    n: int,
-    *,
-    input_flag: str = "--input",
-) -> list[str | None]:
-    """Map optional ``--label`` values to *n* inputs; ``None`` slots use auto labels."""
-    if not labels or all(label is None for label in labels):
-        return [None] * n
-    if len(labels) != n:
-        raise UsageError(f"expected {n} --label values (one per {input_flag}), got {len(labels)}")
-    return list(labels)
-
-
 def combine_display_labels(labels: list[str]) -> str:
     """Join unique labels for a shared row title (e.g. one forecast row)."""
     return " / ".join(dict.fromkeys(label for label in labels if label))
-
-
-def resolve_input_variable(inputs, ds, *, id=None, index=None):
-    """This input's own ``variable``, else ``inputs[0].variable``, else auto-detect on ``ds``.
-
-    Match the input by ``id`` (preferred) or list ``index``. This is the one
-    place "which variable does this dataset use" is resolved, so every
-    plot-* skill treats a per-input override, and the ``inputs[0]`` fallback,
-    the same way — a spec key set on one dataset never leaks onto another
-    dataset that has its own name for the same field.
-    """
-    items = [item for item in (inputs or []) if isinstance(item, dict)]
-    own = None
-    if id is not None:
-        own = next((item.get("variable") for item in items if str(item.get("id")) == str(id)), None)
-    elif index is not None and index < len(items):
-        own = items[index].get("variable")
-    if own:
-        return own
-    fallback = items[0].get("variable") if items else None
-    if fallback and (ds is None or fallback in ds.data_vars):
-        return fallback
-    # The inherited name is not in this dataset (obs ``precip`` beside a forecast's
-    # ``precipitation_surface``): auto-detect this dataset's own field instead.
-    return auto_variable(ds)
 
 
 def format_units_for_display(units: str | None) -> str:
@@ -139,18 +87,42 @@ def format_units_for_display(units: str | None) -> str:
     ``mm day-1`` / ``millimeter / day`` → ``mm/day``; ``degree_Celsius`` →
     ``°C``; other pint-parseable strings use CF compact form.
     """
-    if not isinstance(units, str) or not units.strip():
+    if not isinstance(units, str) or not units.strip() or units.strip() == "1":
         return ""
     raw = units.strip()
+    if units_equal(raw, "delta_degC"):
+        return "°C"
     for kind, nice in (("precip", "mm/day"), ("precip_amount", "mm"), ("temp", "°C")):
         if units_equal(raw, STANDARD[kind]["units"]):
             return nice
-    if units_equal(raw, "delta_degC"):
-        return "°C"
     try:
-        return format(ureg.Unit(raw), "cf").replace(" d-1", "/day")
+        text = format(ureg.Unit(raw), "cf").replace(" d-1", "/day").replace(" h-1", "/h")
     except Exception:  # noqa: BLE001 — leave unparseable strings alone
         return raw
+    if text == "1":
+        # Dimensionless: a ratio of like units (m3 m-3) says what it is; a bare 1 says nothing.
+        return "" if raw.lower() in ("1", "dimensionless") else raw
+    return text
+
+
+_LABEL_NOISE = (
+    (re.compile(r"^(daily|hourly|weekly|monthly)\s+", re.I), ""),
+    (re.compile(r"^mean\s+", re.I), ""),
+    (re.compile(r"\s+in the (last|previous) \d+ hours?$", re.I), ""),
+    (re.compile(r"\s+at 2 met(re|er)s?", re.I), " (2 m)"),
+    (re.compile(r"\s+at 10 met(re|er)s?", re.I), " (10 m)"),
+)
+
+
+def short_label(label: str) -> str:
+    """Drop aggregation words a colorbar does not need ("Daily", "in the last 24 hours")."""
+    out = label
+    for pattern, repl in _LABEL_NOISE:
+        out = pattern.sub(repl, out)
+    out = out.strip()
+    if not out or out == label:
+        return label
+    return out[:1].upper() + out[1:]
 
 
 def variable_label_for_display(
@@ -177,6 +149,25 @@ def variable_label_for_display(
     )
     if kind == "precip_amount" and looks_like_rate_display_name(label):
         label = PRECIP_AMOUNT_LONG_NAME
+    label = short_label(label)
+    if kind in ("precip", "precip_amount") and label.lower() == "total precipitation":
+        label = "Precipitation"
+    from weather_skills_plotting.palettes import is_precip_anomaly, is_statistic
+
+    if is_statistic(da):
+        # summarize-dim writes "Standard deviation of Total precipitation across number".
+        m = re.match(r"standard deviation of (.+?)(?: across (.+))?$", label, re.I)
+        if m:
+            what = short_label(m.group(1))
+            if what.lower() == "total precipitation":
+                what = "Precipitation"
+            label = f"{what} std. dev." + (f" ({m.group(2)})" if m.group(2) else "")
+        elif "std" not in label.lower() and "deviation" not in label.lower():
+            label = f"{label} std. dev."
+    elif "anomal" not in label.lower() and (
+        "anomal" in str(da.name).lower() or is_precip_anomaly(da)
+    ):
+        label = f"{label} anomaly"
     if not include_units:
         return label
     units = format_units_for_display(variable_units(da))
@@ -185,38 +176,11 @@ def variable_label_for_display(
     return label
 
 
-def to_display_units(ds, variables):
-    """``to_standard_units``, except a temperature *difference* stays a difference.
-
-    A ``difference`` anomaly of two °C fields is ``delta_degC`` but may keep
-    ``standard_name: air_temperature``; converting that to absolute
-    ``degree_Celsius`` is impossible, so it is shown as ``delta_degC`` (°C).
-    """
-    names = list(variables)
-    out = ds
-    for name in list(names):
-        units = variable_units(ds[name]) if name in ds.data_vars else None
-        try:
-            is_delta = units is not None and str(ureg.Unit(units)).startswith("delta_")
-        except Exception:  # noqa: BLE001 — unparseable units are left to the core check
-            is_delta = False
-        if not is_delta:
-            continue
-        names.remove(name)
-        converted, _ = convert_dataarray(ds[name], "delta_degC")
-        if converted.pint.units is not None:
-            converted = converted.pint.dequantify()
-        out = out.copy() if out is ds else out
-        out[name] = converted
-        out[name].attrs = {**ds[name].attrs, "units": "delta_degC"}
-    return to_standard_units(out, variables=names) if names else out
-
-
 def precip_for_display(ds, name: str):
     """In-memory precip rate → period total for plotting.
 
     Uses stamped ``aggregation_period`` (from ``aggregate-temporal``). No-op
-    when the variable is not a precip rate, has no period, or the time axis
+    when the variable is not a precip rate, has no period or a sub-daily one, or the time axis
     would overlap (same gates as convert-to-totals). Plotters call this so
     precip defaults to ``mm`` totals without a separate Zarr. The period attr
     is kept so colormap selection can stay period-aware.
@@ -230,6 +194,13 @@ def precip_for_display(ds, name: str):
         return ds
     period = da.attrs.get(AGGREGATION_PERIOD_ATTR)
     if not (isinstance(period, str) and period.strip()):
+        return ds
+    try:
+        days = float(parse_aggregation_period(period).to("day").magnitude)
+    except Exception:  # noqa: BLE001 — calendar periods (1 month, 1 dekad) are a day or more
+        days = None
+    if days is not None and days < 1:
+        # Sub-daily means (a 6 hour rate) read as rates, the way forecast charts show them.
         return ds
     dim = "step" if "step" in da.dims else "time" if "time" in da.dims else None
     if dim is None:

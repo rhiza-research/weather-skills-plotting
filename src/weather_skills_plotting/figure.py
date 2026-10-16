@@ -1,1875 +1,814 @@
-"""Figure construction helpers: dates, colorbar, allowlists, PNG save."""
+"""Assemble a Plotly figure from a spec and its datasets.
+
+1. Bind: every trace with ``meta`` data becomes concrete traces (``bind.py``).
+2. Place: map traces group by their ``xaxis`` anchor; a group panels its
+   facet values; static layers (outlines, plain traces) repeat on each panel.
+3. Color: each color-scaled source trace gets a ``coloraxis`` (shared when
+   the user points traces at the same one, or when same-variable layers
+   share a panel). Class palettes become stepped colorscales.
+4. Defaults (axis titles, panel titles, colorbar titles, sizes) fill only
+   what the user's layout leaves unset; the user's layout is merged last.
+"""
 
 from __future__ import annotations
 
-import argparse
-from dataclasses import dataclass, field
-from pathlib import Path
+import copy
+import json
+import math
+import re
+import sys
 
+import numpy as np
 from weather_skills_core.errors import UsageError
+from weather_skills_core.standard_utils import parse_bbox, polygon_from_geojson
+from weather_skills_core.units import convert_values, variable_units
 
-DEFAULT_FONTSIZE = 16
-DEFAULT_DPI = 150
-
-# Sept not Sep — the usual meteorological short form.
-_MONTHS = (
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sept",
-    "Oct",
-    "Nov",
-    "Dec",
+from weather_skills_plotting.bind import Context, bind_of, bind_trace
+from weather_skills_plotting.geodata import (
+    dateline_bbox,
+    geoms_to_xy,
+    overlay_geoms,
+    overlay_settings,
+)
+from weather_skills_plotting.layout import (
+    DEFAULT_TEMPLATE,
+    WIDE_MAP,
+    axis_suffix,
+    choose_grid,
+    colorbar_mode,
+    map_axes,
+    map_layout,
+    panel_title,
+    place_colorbars,
+    register_templates,
+)
+from weather_skills_plotting.palettes import (
+    DEEP,
+    DEFAULT_PRECIP_PALETTES,
+    STANDARD_SEA_LEVEL_PRESSURE_HPA,
+    _class_slots,
+    aggregation_days,
+    continuous_colorscale,
+    default_palette,
+    default_precip_window,
+    default_theme,
+    discretize,
+    is_precip_anomaly,
+    is_sea_level_pressure,
+    is_temperature,
+    load_theme,
+    parse_palette,
+)
+from weather_skills_plotting.spec import (
+    deep_merge,
+    fill_defaults,
+    merge_spec,
+    plotly_error,
+    validate,
 )
 
-
-def _ymd(value):
-    """Return ``(year, month, day)`` from a datetime-like, or None."""
-    if value is None:
-        return None
-    if hasattr(value, "year") and hasattr(value, "month") and hasattr(value, "day"):
-        try:
-            year, month, day = int(value.year), int(value.month), int(value.day)
-            if 1 <= month <= 12 and 1 <= day <= 31:
-                return year, month, day
-        except (TypeError, ValueError):
-            pass
-    try:
-        import numpy as np
-
-        arr = np.asarray(value)
-        if arr.dtype.kind == "M":
-            sample = np.asarray(arr.reshape(-1)[0]).astype("datetime64[D]")
-            text = str(np.datetime_as_string(sample, unit="D"))
-            return int(text[0:4]), int(text[5:7]), int(text[8:10])
-    except (TypeError, ValueError, IndexError):
-        pass
-    text = str(value)
-    if len(text) >= 10 and text[4:5] == "-" and text[7:8] == "-":
-        try:
-            return int(text[0:4]), int(text[5:7]), int(text[8:10])
-        except ValueError:
-            return None
-    return None
+# Draw order inside a map panel: fields under overlays, then arrows, stations, outlines.
+NO_DATA_COLOR = "#cccccc"  # map background, seen where cells are NaN
+MANY_PANELS = 24  # more map panels than this get a warning
+_MAP_RANK = {"field": 0, "speed": 0, "overlay": 1, "arrows": 2, "points": 3, "geojson": 4, None: 5}
+_TRACE_COLOR_KEYS = ("colorscale", "reversescale", "showscale", "colorbar")
+_TRACE_LIMIT_KEYS = {"zmin": "cmin", "zmax": "cmax", "zmid": "cmid"}
+_MARKER_LIMIT_KEYS = {"cmin": "cmin", "cmax": "cmax", "cmid": "cmid"}
 
 
-def format_plot_date(value, *, year=True):
-    """Figure date: ``14 Sept '26``. Set ``year=False`` for day-of-year ticks."""
-    ymd = _ymd(value)
-    if ymd is None:
-        return str(value)
-    y, month, day = ymd
-    mon = _MONTHS[month - 1]
-    if not year:
-        return f"{day} {mon}"
-    return f"{day} {mon} '{y % 100:02d}"
+def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
+    """Return a validated ``plotly.graph_objects.Figure``."""
+    import plotly.graph_objects as go
 
+    # A theme dict missing keys (e.g. only template and palettes) gets the standard ones.
+    theme = {**default_theme(), **theme} if theme else load_theme()
+    spec = validate(copy.deepcopy(spec), theme["palettes"])
+    register_templates(theme.get("template"))
+    user_layout = copy.deepcopy(spec.get("layout") or {})
+    lmeta = user_layout.pop("meta", None) or {}
+    geo = lmeta.get("geo") or {}
+    bbox = geo.get("bbox")
+    bbox = tuple(parse_bbox(bbox)) if isinstance(bbox, str) else (tuple(bbox) if bbox else None)
+    if bbox is None:
+        # A grid that crosses the dateline is drawn on one continuous 0..360 window.
+        bbox = dateline_bbox(datasets.values())
+    elif bbox[0] < bbox[2]:
+        raise UsageError(f"layout.meta.geo.bbox {list(bbox)} is [N, W, S, E]; north is below south")
+    ctx = Context(
+        datasets=datasets,
+        palettes=theme["palettes"],
+        theme=theme,
+        bbox=bbox,
+        polygon=polygon_from_geojson(geo["mask_geojson"]) if geo.get("mask_geojson") else None,
+        point=geo.get("point"),
+    )
+    colorway = _template_colorway(user_layout.get("template", DEFAULT_TEMPLATE))
 
-def axis_label(text):
-    """Sentence-case an axis label; map lon/lat shorthand to Longitude/Latitude."""
-    if text is None:
-        return text
-    s = str(text).strip()
-    if not s:
-        return s
-    known = {
-        "lon": "Longitude",
-        "lat": "Latitude",
-        "longitude": "Longitude",
-        "latitude": "Latitude",
-        "valid time": "Valid time",
-        "calendar day": "Calendar day",
-        "time": "Time",
-        "step": "Step",
-        "forecast step": "Forecast step",
-    }
-    key = s.lower()
-    if key in known:
-        return known[key]
-    if s[:1].islower():
-        return s[:1].upper() + s[1:]
-    return s
+    items = []
+    n_colored = 0
+    traces = spec.get("data") or []
+    for trace in traces:
+        # Arrows over a speed field take that field's selection unless they set their own.
+        if bind_of(trace) != "arrows":
+            continue
+        source = trace.setdefault("meta", {}).setdefault("source", {})
+        twin = next(
+            (
+                t
+                for t in traces
+                if bind_of(t) == "speed"
+                and ((t.get("meta") or {}).get("source") or {}).get("input") == source.get("input")
+            ),
+            None,
+        )
+        for key, value in (((twin or {}).get("meta") or {}).get("source") or {}).items():
+            if key in ("sel", "isel", "u", "v"):
+                source.setdefault(key, copy.deepcopy(value))
+    for i, trace in enumerate(traces):
+        bound = None
+        if bind_of(trace):
+            bound = bind_trace(trace, ctx, f"data[{i}]", color=colorway[n_colored % len(colorway)])
+            n_colored += 1
+        items.append((i, trace, bound))
+    if not items:
+        raise UsageError("plot spec has no traces to draw")
 
-
-def resolve_axis_label(override, default):
-    """Use ``override`` verbatim when set; otherwise sentence-case ``default``."""
-    if override is not None and str(override).strip() != "":
-        return str(override)
-    return axis_label(default)
-
-
-def is_datetime_axis(values):
-    """True when ``values`` are calendar dates (datetime64 or cftime)."""
-    import numpy as np
-
-    arr = np.asarray(values)
-    if arr.dtype.kind == "M":
-        return True
-    if arr.size == 0:
-        return False
-    first = arr.reshape(-1)[0]
-    return hasattr(first, "year") and hasattr(first, "month")
-
-
-def resolve_time_axis_label(override, default, values):
-    """Axis label for a 1D time axis. Datetime ticks already name the axis."""
-    if override is not None and str(override).strip() != "":
-        return str(override)
-    if is_datetime_axis(values):
-        return ""
-    return axis_label(default)
-
-
-def format_plot_date_range(start, end):
-    """Inclusive range: ``1–7 Sept '26``, ``28 Aug–3 Sept '26``, ``28 Dec '25–3 Jan '26``."""
-    a = _ymd(start)
-    b = _ymd(end)
-    if a is None or b is None:
-        return f"{format_plot_date(start)}–{format_plot_date(end)}"
-    ay, am, ad = a
-    by, bm, bd = b
-    a_mon, b_mon = _MONTHS[am - 1], _MONTHS[bm - 1]
-    a_yr, b_yr = f"'{ay % 100:02d}", f"'{by % 100:02d}"
-    if ay == by and am == bm:
-        return f"{ad}–{bd} {a_mon} {a_yr}"
-    if ay == by:
-        return f"{ad} {a_mon}–{bd} {b_mon} {b_yr}"
-    return f"{ad} {a_mon} {a_yr}–{bd} {b_mon} {b_yr}"
-
-
-def apply_date_ticks(ax):
-    """Show datetime x ticks as ``14 Sept '26``, never midnight timestamps."""
-    import matplotlib.dates as mdates
-    from matplotlib.ticker import FuncFormatter
-
-    def _fmt(x, _pos):
-        return format_plot_date(mdates.num2date(x))
-
-    ax.xaxis.set_major_formatter(FuncFormatter(_fmt))
-
-
-def parse_figsize(value):
-    """Argparse converter for ``W,H`` or ``WxH`` inches."""
-    if value is None:
-        return None
-    raw = str(value).strip().lower().replace("×", "x")
-    if not raw:
-        raise argparse.ArgumentTypeError("--figsize must be W,H inches (e.g. 10,6 or 10x6)")
-    sep = "x" if "x" in raw and "," not in raw else ","
-    parts = [p.strip() for p in raw.split(sep)]
-    if len(parts) != 2:
-        raise argparse.ArgumentTypeError("--figsize must be W,H inches (e.g. 10,6 or 10x6)")
-    try:
-        width, height = float(parts[0]), float(parts[1])
-    except ValueError:
-        raise argparse.ArgumentTypeError(
-            "--figsize must be W,H inches (e.g. 10,6 or 10x6)"
-        ) from None
-    if width <= 0 or height <= 0:
-        raise argparse.ArgumentTypeError("--figsize width and height must be positive")
-    return (width, height)
-
-
-def parse_panel_spacing(value):
-    """Argparse converter for ``W`` or ``W,H`` (or ``WxH``) GridSpec fractions."""
-    if value is None:
-        return None
-    if isinstance(value, (list, tuple)):
-        parts = [str(item).strip() for item in value]
+    if any(b is not None and b.is_map for _, _, b in items):
+        data, layout = _assemble_map(items, user_layout, lmeta, ctx)
     else:
-        raw = str(value).strip().lower().replace("×", "x")
-        if not raw:
-            raise argparse.ArgumentTypeError(
-                "--panel-spacing must be W or W,H (e.g. 0.25 or 0.4,0.2)"
+        data, layout = _assemble_chart(items, user_layout)
+    layout.setdefault("template", DEFAULT_TEMPLATE)
+    built = {a.get("name") for a in layout.get("annotations") or []}
+    for ann in user_layout.get("annotations") or []:
+        name = str(ann.get("name") or "")
+        if name.startswith("panel-title-") and name not in built:
+            have = sorted(
+                (n for n in built if n and n.startswith("panel-title-")),
+                key=lambda n: int(n.rsplit("-", 1)[1]),
             )
-        sep = "x" if "x" in raw and "," not in raw else ","
-        parts = [item.strip() for item in raw.split(sep) if item.strip()]
-    if len(parts) == 1:
-        parts = [parts[0], parts[0]]
-    if len(parts) != 2:
-        raise argparse.ArgumentTypeError("--panel-spacing must be W or W,H (e.g. 0.25 or 0.4,0.2)")
-    try:
-        wspace, hspace = float(parts[0]), float(parts[1])
-    except ValueError:
-        raise argparse.ArgumentTypeError(
-            "--panel-spacing must be W or W,H (e.g. 0.25 or 0.4,0.2)"
-        ) from None
-    if wspace < 0 or hspace < 0:
-        raise argparse.ArgumentTypeError("--panel-spacing values must be >= 0")
-    return (wspace, hspace)
-
-
-def parse_number_list(value):
-    """Argparse converter for comma-separated floats (bounds / colorbar ticks)."""
-    if isinstance(value, (list, tuple)):
-        parts = [str(v).strip() for v in value if str(v).strip()]
-    else:
-        parts = [p.strip() for p in str(value).split(",") if p.strip()]
-    if not parts:
-        raise argparse.ArgumentTypeError("expected comma-separated numbers")
-    try:
-        return [float(p) for p in parts]
-    except ValueError:
-        raise argparse.ArgumentTypeError(
-            f"expected comma-separated numbers, got {value!r}"
-        ) from None
-
-
-def parse_label_list(value):
-    """Argparse converter for comma-separated colorbar tick labels."""
-    if isinstance(value, (list, tuple)):
-        return [str(v) for v in value]
-    return [p.strip() for p in str(value).split(",")]
-
-
-def resolve_figsize(requested, default):
-    """Honor an explicit ``--figsize``; otherwise use ``default``."""
-    return tuple(requested) if requested is not None else tuple(default)
-
-
-# theme.rc keys documented for --patch. Any other matplotlib rcParam is also
-# accepted (except backend / interactive). These have no separate CLI flag.
-BASIC_THEME_RC = frozenset(
-    {
-        "font.size",
-        "font.family",
-        "font.weight",
-        "axes.titlesize",
-        "axes.titleweight",
-        "axes.titlepad",
-        "axes.labelsize",
-        "axes.labelweight",
-        "axes.labelpad",
-        "figure.titlesize",
-        "figure.titleweight",
-        "xtick.labelsize",
-        "ytick.labelsize",
-        "xtick.major.pad",
-        "ytick.major.pad",
-        "legend.fontsize",
-        "legend.title_fontsize",
-        "lines.linewidth",
-        "axes.linewidth",
-    }
-)
-
-
-def fontsize_rc(fontsize=DEFAULT_FONTSIZE) -> dict:
-    """RcParams ``--fontsize`` writes. Dumped as ``theme.rc`` so a spec dump
-    names ``axes.titlesize`` (panel titles) and ``figure.titlesize``.
-    """
-    fs = int(fontsize)
-    tick = max(8, int(round(fs * 0.85)))
-    legend = max(8, int(round(fs * 0.9)))
-    return {
-        "font.size": fs,
-        "axes.titlesize": fs,
-        "axes.labelsize": fs,
-        "xtick.labelsize": tick,
-        "ytick.labelsize": tick,
-        "legend.fontsize": legend,
-        "figure.titlesize": fs,
-    }
-
-
-def resolved_theme_rc(spec: dict | None) -> dict:
-    """``theme.rc`` after ``--fontsize``, with any user rc on top."""
-    theme = (spec or {}).get("theme") or {}
-    fontsize = theme.get("fontsize")
-    if fontsize is None:
-        fontsize = DEFAULT_FONTSIZE
-    user = theme.get("rc") if isinstance(theme.get("rc"), dict) else {}
-    return {**fontsize_rc(fontsize), **user}
-
-
-def apply_style(fontsize=DEFAULT_FONTSIZE, *, template="weather_skills", chart="line"):
-    """Seaborn chrome plus a single ``--fontsize``.
-
-    ``template`` is ``weather_skills`` (seaborn ``deep``) or ``colorblind``.
-    ``chart`` is ``line`` (whitegrid) or ``map`` (ticks, no background grid).
-    """
-    import matplotlib as mpl
-
-    from weather_skills_plotting.theme import seaborn_palette_name, seaborn_style_name
-
-    palette = seaborn_palette_name(template)
-    style = seaborn_style_name(chart)
-    try:
-        import seaborn as sns
-    except ImportError:
-        sns = None
-    if sns is not None:
-        sns.set_theme(style=style, palette=palette, context="notebook")
-        if chart == "map":
-            mpl.rcParams["axes.grid"] = False
-    mpl.rcParams.update(fontsize_rc(fontsize))
-
-
-def _format_cbar_tick(value):
-    """Short numeric tick: ``10`` not ``10.0``."""
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return str(value)
-    if abs(number - round(number)) < 1e-9:
-        return str(int(round(number)))
-    return f"{number:g}"
-
-
-def colorbar_spec(obj: dict | None) -> dict | None:
-    """Return the ``layout.colorbar`` size dict, or None.
-
-    ``len`` / ``shrink`` is the long-side fraction (0–1); ``thickness`` is the
-    short side in pixels (>1) or figure fraction (≤1).
-    """
-    if not isinstance(obj, dict):
-        return None
-    layout = obj.get("layout")
-    if isinstance(layout, dict) and isinstance(layout.get("colorbar"), dict):
-        return dict(layout["colorbar"])
-    return None
-
-
-def colorbar_size_kwargs(spec=None, *, colorbar=None) -> dict:
-    """Matplotlib ``colorbar()`` kwargs from ``len``/``shrink`` and ``thickness``."""
-    cbar = colorbar if colorbar is not None else colorbar_spec(spec)
-    if not cbar:
-        return {}
-    kw = {}
-    length = cbar.get("len") if cbar.get("len") is not None else cbar.get("shrink")
-    if length is not None:
-        kw["shrink"] = float(length)
-    thickness = cbar.get("thickness")
-    if thickness is not None:
-        thick = float(thickness)
-        if thick > 1:
-            kw["aspect"] = max(4.0, 20.0 * (30.0 / thick))
-        elif thick > 0:
-            kw["fraction"] = thick
-    return kw
-
-
-def apply_colorbar_size(fig, spec=None, *, colorbar=None):
-    """Resize existing colorbar axes from ``len``/``shrink`` and ``thickness``."""
-    cbar = colorbar if colorbar is not None else colorbar_spec(spec)
-    if not cbar:
-        return
-    ax = next((a for a in fig.axes if a.get_label() == "<colorbar>"), None)
-    if ax is None:
-        return
-    length = cbar.get("len") if cbar.get("len") is not None else cbar.get("shrink")
-    thickness = cbar.get("thickness")
-    if length is None and thickness is None:
-        return
-    fig.canvas.draw()
-    pos = ax.get_position()
-    horizontal = pos.width >= pos.height
-    fig_w, fig_h = fig.get_size_inches()
-    dpi = float(fig.dpi or DEFAULT_DPI)
-    x0, y0, width, height = pos.x0, pos.y0, pos.width, pos.height
-    if length is not None:
-        frac = float(length)
-        if 0 < frac <= 1:
-            if horizontal:
-                new_w = width * frac
-                x0 = x0 + (width - new_w) / 2
-                width = new_w
-            else:
-                new_h = height * frac
-                y0 = y0 + (height - new_h) / 2
-                height = new_h
-    if thickness is not None:
-        thick = float(thickness)
-        if thick > 1:
-            if horizontal:
-                height = thick / (dpi * fig_h)
-            else:
-                width = thick / (dpi * fig_w)
-        elif thick > 0:
-            if horizontal:
-                height = thick
-            else:
-                width = thick
-    ax.set_in_layout(False)
-    ax.set_position([x0, y0, width, height])
-
-
-def add_shared_colorbar(fig, mappable, axes, label="", *, location=None, **kwargs):
-    """Attach a colorbar in a matplotlib-reserved slot (not a figure-fraction box).
-
-    One map gets a right-hand bar; several maps share a bottom bar. Discrete
-    ``ticks`` (BoundaryNorm bounds) are all labeled.
-    """
-    import numpy as np
-
-    if mappable is None:
-        return None
-    if hasattr(axes, "ravel"):
-        axes = [ax for ax in np.ravel(axes) if getattr(ax, "get_visible", lambda: True)()]
-    elif not isinstance(axes, (list, tuple)):
-        axes = [axes]
-    if not axes:
-        return None
-    if location is None:
-        location = "right" if len(axes) == 1 else "bottom"
-    ticks = kwargs.get("ticks")
-    tick_list = list(ticks) if ticks is not None else None
-    labels = kwargs.pop("labels", None)
-    # Discrete class bars need the full axes span so every bound can be labeled.
-    shrink = kwargs.pop("shrink", None)
-    if shrink is None:
-        shrink = 1.0 if tick_list and len(tick_list) >= 6 else 0.8
-    pad = kwargs.pop("pad", 0.08)
-    if "location" in kwargs:
-        location = kwargs.pop("location")
-    labelpad = kwargs.pop("labelpad", None)
-    labelsize = kwargs.pop("labelsize", None)
-    ticksize = kwargs.pop("ticksize", None)
-    cbar = fig.colorbar(
-        mappable,
-        ax=axes,
-        location=location,
-        shrink=shrink,
-        pad=pad,
-        **kwargs,
-    )
-    if label:
-        cbar.set_label(label)
-    label_axis = (
-        cbar.ax.xaxis if getattr(cbar, "orientation", "vertical") == "horizontal" else cbar.ax.yaxis
-    )
-    if labelpad is not None:
-        label_axis.labelpad = float(labelpad)
-    if labelsize is not None:
-        label_axis.label.set_size(float(labelsize))
-    if ticksize is not None:
-        cbar.ax.tick_params(labelsize=float(ticksize))
-    if tick_list is not None:
-        cbar.set_ticks(tick_list)
-        if labels is not None:
-            if len(list(labels)) != len(tick_list):
-                from weather_skills_core.errors import UsageError
-
-                raise UsageError(
-                    f"colorbar labels has {len(list(labels))} entries "
-                    f"but ticks has {len(tick_list)}"
-                )
-            cbar.set_ticklabels(list(labels))
-        else:
-            cbar.set_ticklabels([_format_cbar_tick(t) for t in tick_list])
-    elif labels is not None:
-        from weather_skills_core.errors import UsageError
-
-        raise UsageError("colorbar labels requires ticks")
-    return cbar
-
-
-def facet_figure(
-    nrows,
-    ncols,
-    *,
-    figsize,
-    sharex=False,
-    sharey=False,
-    subplot_kws=None,
-    wspace=None,
-    hspace=None,
-    despine=True,
-):
-    """Build a panel grid with seaborn ``FacetGrid``, laid out by matplotlib's
-    constrained-layout engine.
-
-    Map panels pass a Cartopy projection through ``subplot_kws``. ``FacetGrid``
-    itself calls an internal, unconditional ``tight_layout()`` at construction
-    time — before any panel title, colorbar, or figure title exists — so its
-    result is transient and gets fully superseded the moment the constrained
-    layout engine takes over below. That single engine (not a GridSpec kwarg,
-    not a manual ``tight_layout()`` pass, not a hand-tuned ``suptitle.y``) is
-    what reserves room for panel titles, the figure title, and colorbars, and
-    what makes an explicit ``wspace``/``hspace`` (see ``_reapply_facet_spacing``)
-    take effect. Returns ``(fig, axes)`` with ``axes`` shaped ``(nrows, ncols)``.
-    """
-    import numpy as np
-    import pandas as pd
-    import seaborn as sns
-
-    nrows, ncols = int(nrows), int(ncols)
-    if nrows < 1 or ncols < 1:
-        raise ValueError("facet_figure needs at least one row and one column")
-    data = pd.DataFrame(
-        {
-            "row": np.repeat(np.arange(nrows), ncols),
-            "col": np.tile(np.arange(ncols), nrows),
-        }
-    )
-    height = float(figsize[1]) / nrows
-    aspect = (float(figsize[0]) / ncols) / height if height else 1.0
-    grid = sns.FacetGrid(
-        data,
-        row="row",
-        col="col",
-        row_order=list(range(nrows)),
-        col_order=list(range(ncols)),
-        sharex=sharex,
-        sharey=sharey,
-        height=height,
-        aspect=aspect,
-        subplot_kws=subplot_kws,
-        despine=despine,
-        legend_out=False,
-    )
-    fig = grid.fig
-    fig.set_size_inches(float(figsize[0]), float(figsize[1]), forward=True)
-    axes = np.asarray(grid.axes).reshape(nrows, ncols)
-    for ax in axes.flat:
-        ax.set_title("")
-    fig._ws_facet_spacing = (
-        None if wspace is None else float(wspace),
-        None if hspace is None else float(hspace),
-    )
-    _reapply_facet_spacing(fig)
-    return fig, axes
-
-
-def _reapply_facet_spacing(fig):
-    """Put the figure under constrained layout and apply any requested
-    ``wspace``/``hspace``. Constrained layout recomputes on every draw, so
-    this is safe to call more than once and needs no ``tight_layout()``
-    companion pass — see ``settle_figure``.
-    """
-    fig.set_layout_engine("constrained")
-    spacing = getattr(fig, "_ws_facet_spacing", None)
-    if not spacing or (spacing[0] is None and spacing[1] is None):
-        return
-    wspace, hspace = spacing
-    kw = {}
-    if wspace is not None:
-        kw["wspace"] = wspace
-    if hspace is not None:
-        kw["hspace"] = hspace
-    fig.get_layout_engine().set(**kw)
-
-
-def wrap_axes_title(ax, text):
-    """Wrap ``text`` so a panel title stays inside its axes. Keep existing breaks."""
-    import textwrap
-
-    if text is None:
-        return text
-    raw = str(text)
-    if not raw.strip() or "\n" in raw:
-        return raw
-    width_in = max(float(ax.get_position().width) * float(ax.figure.get_figwidth() or 1.0), 0.8)
-    try:
-        size = float(ax.title.get_fontsize())
-    except (TypeError, ValueError):
-        size = float(DEFAULT_FONTSIZE)
-    char_in = max(size / 72.0 * 0.52, 0.06)
-    return textwrap.fill(raw, width=max(12, int(width_in / char_in)))
-
-
-def _ticklabels(axis):
-    return [tick for tick in axis.get_ticklabels() if tick.get_visible() and tick.get_text()]
-
-
-def _ticklabels_overlap(labels, renderer):
-    boxes = [tick.get_window_extent(renderer) for tick in labels]
-    if len(boxes) < 2:
-        return False
-    return any(boxes[i].x1 > boxes[i + 1].x0 + 1.0 for i in range(len(boxes) - 1))
-
-
-def relax_colorbar_ticklabels(fig):
-    """Rotate horizontal colorbar labels when neighbors collide. Every tick stays."""
-    fig.canvas.draw()
-    renderer = fig.canvas.get_renderer()
-    for ax in fig.axes:
-        if ax.get_label() != "<colorbar>":
-            continue
-        labels = _ticklabels(ax.xaxis)
-        if len(labels) < 2 or not _ticklabels_overlap(labels, renderer):
-            continue
-        ax.tick_params(axis="x", labelrotation=45)
-        for tick in ax.get_xticklabels():
-            tick.set_ha("right")
-            tick.set_rotation_mode("anchor")
-
-
-def settle_figure(fig):
-    """Keep the figure under constrained layout (it already reserves room for
-    titles, labels, and colorbars on every draw — no ``tight_layout()`` call
-    needed, and calling one here would error once a colorbar exists on a
-    constrained-layout figure), then fix up crowded colorbar tick labels.
-    """
-    _reapply_facet_spacing(fig)
-    relax_colorbar_ticklabels(fig)
-
-
-def save_figure(fig, path, *, pad_inches=None, tight=True, dpi=None):
-    """Write a PNG. Default tight-crops chrome; ``tight=False`` keeps ``figsize``."""
-    import matplotlib.pyplot as plt
-
-    output = Path(path)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    kw = {"dpi": DEFAULT_DPI if dpi is None else dpi}
-    if tight:
-        kw["bbox_inches"] = "tight"
-        if pad_inches is not None:
-            kw["pad_inches"] = pad_inches
-    fig.savefig(output, **kw)
-    plt.close(fig)
-    return output
-
-
-@dataclass
-class CompiledFigure:
-    """A compiled matplotlib figure plus the resolved spec used to export it."""
-
-    fig: object
-    spec: dict
-    tight: bool = True
-    map_drawn: dict = field(default_factory=dict)
-
-
-def export_png(fig, path, *, scale=1, tight=True) -> Path:
-    """Write a PNG via matplotlib Agg. Pass ``tight=False`` to keep ``--figsize``.
-
-    A blank strip is added under the figure: the provenance seal is stamped in
-    the bottom-right corner afterwards, and there it never covers a colorbar
-    arrow, tick label, or legend.
-    """
-    from PIL import Image
-
-    output = save_figure(fig, path, tight=tight, dpi=DEFAULT_DPI * float(scale or 1))
-    with Image.open(output) as img:
-        img.load()
-        w, h = img.size
-    # Seal: diameter <= 48 px plus a margin of 1.5% of the short side on each side.
-    strip = 48 + 2 * max(4, int(min(w, h + 64) * 0.015)) + 4
-    canvas = Image.new("RGBA", (w, h + strip), (255, 255, 255, 255))
-    canvas.paste(img.convert("RGBA"), (0, 0))
-    canvas.save(output)
-    return output
-
-
-_JSON_TYPES = (str, int, float, bool, list, dict, type(None))
-
-_RC_FORBIDDEN_PREFIXES = (
-    "backend",
-    "interactive",
-    "tk.",
-    "webagg.",
-    "nbagg.",
-    "macosx.",
-    "pdf.use14corefonts",
-)
-
-LINE_KEYS = frozenset(
-    {
-        "alpha",
-        "antialiased",
-        "aa",
-        "color",
-        "c",
-        "dash_capstyle",
-        "dash_joinstyle",
-        "dashes",
-        "drawstyle",
-        "fillstyle",
-        "gapcolor",
-        "label",
-        "linestyle",
-        "ls",
-        "linewidth",
-        "lw",
-        "marker",
-        "markeredgecolor",
-        "mec",
-        "markeredgewidth",
-        "mew",
-        "markerfacecolor",
-        "mfc",
-        "markerfacecoloralt",
-        "mfcalt",
-        "markersize",
-        "ms",
-        "markevery",
-        "rasterized",
-        "solid_capstyle",
-        "solid_joinstyle",
-        "visible",
-        "zorder",
-    }
-)
-
-MESH_KEYS = frozenset(
-    {
-        "alpha",
-        "antialiased",
-        "edgecolors",
-        "hatch",
-        "linewidth",
-        "linewidths",
-        "rasterized",
-        "shading",
-        "vmin",
-        "vmax",
-        "zorder",
-    }
-)
-
-CONTOUR_KEYS = frozenset(
-    {
-        "alpha",
-        "antialiased",
-        "colors",
-        "extend",
-        "hatches",
-        "levels",
-        "lines",
-        "linestyles",
-        "linewidths",
-        "nchunk",
-        "rasterized",
-        "vmin",
-        "vmax",
-        "zorder",
-    }
-)
-
-SCATTER_KEYS = frozenset(
-    {
-        "alpha",
-        "cmap",
-        "edgecolors",
-        "linewidths",
-        "marker",
-        "s",
-        "vmin",
-        "vmax",
-        "zorder",
-        "rasterized",
-    }
-)
-
-# matplotlib's Collection base class aliases ``edgecolor`` / ``linewidth`` to
-# their plural forms on its own — but only when a caller passes just one
-# spelling. Our default kwargs already set the plural form, so an alias left
-# unrenamed here would collide with that default (matplotlib then raises
-# "got both 'edgecolor' and 'edgecolors'"). ``s`` (marker area, in points^2)
-# has no such alias at all, matplotlib-side, so ``size`` needs the same
-# treatment. Rename all three ourselves so exactly one spelling ever reaches
-# matplotlib.
-SCATTER_ALIASES = {"size": "s", "edgecolor": "edgecolors", "linewidth": "linewidths"}
-
-
-def normalize_aliases(block: dict, aliases: dict, *, loc: str) -> dict:
-    """Rename intuitive alias keys (``size``) to what matplotlib expects (``s``).
-
-    Raises if both a key and its alias are set, rather than silently
-    preferring one.
-    """
-    if not aliases or not isinstance(block, dict):
-        return block
-    out = {}
-    sources = {}
-    for key, value in block.items():
-        canonical = aliases.get(key, key)
-        if canonical in out:
-            raise UsageError(f"{loc} sets both {sources[canonical]!r} and {key!r}; use only one")
-        out[canonical] = value
-        sources[canonical] = key
-    return out
-
-
-BAR_KEYS = frozenset(
-    {
-        "align",
-        "alpha",
-        "color",
-        "edgecolor",
-        "hatch",
-        "linewidth",
-        "width",
-        "zorder",
-        "rasterized",
-        "mode",
-    }
-)
-
-QUIVER_KEYS = frozenset(
-    {
-        "alpha",
-        "angles",
-        "color",
-        "headaxislength",
-        "headlength",
-        "headwidth",
-        "minlength",
-        "minshaft",
-        "pivot",
-        "scale",
-        "scale_units",
-        "step",
-        "units",
-        "width",
-        "zorder",
-        "rasterized",
-    }
-)
-
-LEGEND_KEYS = frozenset(
-    {
-        "alignment",
-        "bbox_to_anchor",
-        "borderaxespad",
-        "columnspacing",
-        "draggable",
-        "edgecolor",
-        "facecolor",
-        "fontsize",
-        "framealpha",
-        "frameon",
-        "handlelength",
-        "labelcolor",
-        "loc",
-        "markerscale",
-        "ncol",
-        "shadow",
-        "title",
-        "title_fontsize",
-    }
-)
-
-GRID_KEYS = frozenset(
-    {
-        "alpha",
-        "axis",
-        "color",
-        "linestyle",
-        "linewidth",
-        "which",
-        "visible",
-        "zorder",
-    }
-)
-
-TICK_KEYS = frozenset(
-    {
-        "axis",
-        "which",
-        "direction",
-        "length",
-        "width",
-        "color",
-        "pad",
-        "labelsize",
-        "labelcolor",
-        "labelrotation",
-        "rotation",
-        "bottom",
-        "top",
-        "left",
-        "right",
-        "labelbottom",
-        "labeltop",
-        "labelleft",
-        "labelright",
-        "grid_alpha",
-        "grid_color",
-        "grid_linestyle",
-        "grid_linewidth",
-    }
-)
-
-TEXT_KEYS = frozenset(
-    {
-        "alpha",
-        "backgroundcolor",
-        "bbox",
-        "clip_on",
-        "color",
-        "fontfamily",
-        "fontstyle",
-        "fontsize",
-        "fontweight",
-        "ha",
-        "horizontalalignment",
-        "ma",
-        "rotation",
-        "rotation_mode",
-        "va",
-        "verticalalignment",
-        "wrap",
-        "zorder",
-        "transform",
-    }
-)
-
-ANNOTATE_KEYS = TEXT_KEYS | frozenset(
-    {
-        "arrowprops",
-        "annotation_clip",
-        "textcoords",
-        "xycoords",
-        "xytext",
-    }
-)
-
-ARROW_KEYS = frozenset(
-    {
-        "arrowstyle",
-        "connectionstyle",
-        "color",
-        "ec",
-        "edgecolor",
-        "fc",
-        "facecolor",
-        "linestyle",
-        "linewidth",
-        "lw",
-        "mutation_scale",
-        "relpos",
-        "shrinkA",
-        "shrinkB",
-        "alpha",
-    }
-)
-
-SUPTITLE_KEYS = frozenset({"y"})
-
-COLORBAR_EXTRA_KEYS = frozenset(
-    {
-        "extend",
-        "extendfrac",
-        "extendrect",
-        "drawedges",
-        "orientation",
-        "location",
-        "pad",
-        "spacing",
-        "format",
-    }
-)
-
-RECT_KEYS = frozenset(
-    {
-        "alpha",
-        "angle",
-        "edgecolor",
-        "facecolor",
-        "fill",
-        "hatch",
-        "linestyle",
-        "linewidth",
-        "zorder",
-    }
-)
-
-WINDROSE_KEYS = frozenset(
-    {
-        "edgecolor",
-        "linewidth",
-        "nsector",
-        "theta_direction",
-        "theta_zero_location",
-        "zorder",
-    }
-)
-
-FILL_KEYS = frozenset(
-    {
-        "alpha",
-        "color",
-        "edgecolor",
-        "facecolor",
-        "hatch",
-        "interpolate",
-        "linestyle",
-        "linewidth",
-        "step",
-        "zorder",
-    }
-)
-
-BOX_KEYS = frozenset(
-    {
-        "alpha",
-        "edgecolor",
-        "facecolor",
-        "hatch",
-        "linestyle",
-        "linewidth",
-        "zorder",
-    }
-)
-
-_ANNOTATION_META = frozenset(
-    {"text", "s", "x", "y", "xy", "xref", "yref", "axes", "panel", "transform", "showarrow"}
-)
-ANNOTATION_KEYS = ANNOTATE_KEYS | _ANNOTATION_META
-
-# Spellings accepted for where an annotation's x/y are measured. Matplotlib
-# (``axes fraction``) and Plotly (``paper`` / ``x domain``) names both work.
-_ANNOTATION_COORDS = {
-    "data": "data",
-    "x": "data",
-    "y": "data",
-    "axes": "axes",
-    "axes fraction": "axes",
-    "paper": "axes",
-    "domain": "axes",
-    "x domain": "axes",
-    "y domain": "axes",
-    "figure": "figure",
-    "figure fraction": "figure",
-}
-
-
-def annotation_coords(ann: dict, loc: str = "annotations") -> str:
-    """``data``, ``axes`` (0–1 across the panel), or ``figure`` (0–1 across the figure).
-
-    Read from ``xref`` / ``yref`` / ``xycoords`` / ``transform``; they must agree.
-    Unset means data coordinates (lon/lat on a map).
-    """
-    found = {}
-    for key in ("xref", "yref", "xycoords", "transform"):
-        raw = ann.get(key)
-        if raw is None or raw == "":
-            continue
-        name = str(raw).strip().lower()
-        if name not in _ANNOTATION_COORDS:
             raise UsageError(
-                f"{loc}.{key} {raw!r} is not a known coordinate system; use one of "
-                f"{', '.join(sorted(_ANNOTATION_COORDS))} "
-                "(axes fraction = 0–1 across the panel, figure fraction = 0–1 across the figure)"
+                f"layout.annotations name {name!r} matches no panel; this figure's panel titles "
+                f"are {', '.join(have) or 'none'} (numbered from 1)"
             )
-        found[key] = _ANNOTATION_COORDS[name]
-    systems = set(found.values())
-    if len(systems) > 1:
-        detail = ", ".join(f"{k}={ann[k]!r}" for k in found)
-        raise UsageError(
-            f"{loc} mixes coordinate systems ({detail}); x and y must use the same one"
-        )
-    return systems.pop() if systems else "data"
-
-
-def check_annotation_keys(ann: dict, loc: str = "annotations") -> None:
-    extra = sorted(k for k in ann if k not in ANNOTATION_KEYS)
-    if extra:
-        raise UsageError(
-            f"{loc} has unknown key(s) {extra}; allowed: {', '.join(sorted(ANNOTATION_KEYS))}. "
-            "Run with --help for the annotation reference"
-        )
-    annotation_coords(ann, loc)
-
-
-# Object-form axes.xlabel / axes.ylabel: text plus position knobs.
-AXIS_LABEL_META = frozenset({"text", "loc", "pad", "coords"})
-AXIS_LABEL_KEYS = AXIS_LABEL_META | TEXT_KEYS
-
-# Dumped on every resolved spec so agents can see the axis knobs.
-AXES_TEMPLATE = {
-    "xscale": None,
-    "yscale": None,
-    "xlim": None,
-    "ylim": None,
-    "xlabel": None,
-    "ylabel": None,
-    "title": None,
-    "aspect": None,
-    "facecolor": None,
-    "grid": None,
-    "spines": None,
-    "xticks": None,
-    "yticks": None,
-    "xticklabels": None,
-    "yticklabels": None,
-    "tick_params": None,
-    "xlocator": None,
-    "ylocator": None,
-    "xformatter": None,
-    "yformatter": None,
-    "legend": None,
-    "twinx": None,
-    "twiny": None,
-}
-
-
-def assert_json_value(value, loc: str) -> None:
-    """Reject callables and other non-JSON types."""
-    if not isinstance(value, _JSON_TYPES):
-        raise UsageError(
-            f"{loc} must be JSON (str/number/bool/list/object/null); got {type(value).__name__}"
-        )
-    if isinstance(value, list):
-        for i, item in enumerate(value):
-            assert_json_value(item, f"{loc}[{i}]")
-    elif isinstance(value, dict):
-        for key, item in value.items():
-            assert_json_value(item, f"{loc}.{key}")
-
-
-def pick(options: dict | None, allowed: frozenset, *, loc: str) -> dict:
-    """Return ``options`` keys in ``allowed``; error on anything else."""
-    if not options:
-        return {}
-    if not isinstance(options, dict):
-        raise UsageError(f"{loc} must be an object")
-    unknown = [k for k in options if k not in allowed]
-    if unknown:
-        raise UsageError(
-            f"{loc} has unknown key(s) {unknown}; allowed: {', '.join(sorted(allowed))}"
-        )
-    out = {}
-    for key, value in options.items():
-        assert_json_value(value, f"{loc}.{key}")
-        out[key] = _tuples(value)
-    return out
-
-
-def _tuples(value):
-    """Turn JSON lists of numbers into tuples where matplotlib wants xy pairs."""
-    if isinstance(value, list) and value and all(isinstance(v, (int, float)) for v in value):
-        if len(value) in (2, 4):
-            return tuple(value)
-        return value
-    if isinstance(value, list) and value and all(isinstance(v, list) for v in value):
-        return [tuple(v) if len(v) == 2 else v for v in value]
-    return value
-
-
-def apply_rc(rc: dict | None) -> None:
-    """Apply ``theme.rc`` as matplotlib rcParams."""
-    if not rc:
-        return
-    if not isinstance(rc, dict):
-        raise UsageError("rc must be an object of matplotlib rcParam names")
-    import matplotlib as mpl
-
-    for key, value in rc.items():
-        name = str(key)
-        lower = name.lower()
-        if any(lower.startswith(p) or lower == p.rstrip(".") for p in _RC_FORBIDDEN_PREFIXES):
-            raise UsageError(f"rc key {name!r} is not allowed (backend/interactive)")
-        assert_json_value(value, f"rc.{name}")
-        try:
-            mpl.rcParams[name] = value
-        except KeyError as exc:
-            raise UsageError(f"unknown matplotlib rcParam {name!r}") from exc
-        except ValueError as exc:
-            raise UsageError(f"invalid rcParam {name!r}: {exc}") from exc
-
-
-def _pair(value, loc: str):
-    if isinstance(value, (list, tuple)) and len(value) == 2:
-        return float(value[0]), float(value[1])
-    raise UsageError(f"{loc} must be [min, max]")
-
-
-def _apply_locator(axis, spec) -> None:
-    if spec is None:
-        return
-    from matplotlib.ticker import AutoLocator, LogLocator, MaxNLocator, MultipleLocator, NullLocator
-
-    if isinstance(spec, dict):
-        kind = str(spec.get("type") or spec.get("name") or "auto").lower()
-        extra = {k: v for k, v in spec.items() if k not in ("type", "name")}
-    else:
-        kind = str(spec).lower()
-        extra = {}
-    if kind in ("auto", "autoLocator"):
-        axis.set_major_locator(AutoLocator())
-    elif kind in ("log", "loglocator"):
-        axis.set_major_locator(
-            LogLocator(**{k: extra[k] for k in extra if k in {"base", "numticks", "subs"}})
-        )
-    elif kind in ("maxn", "maxlocator", "maxN"):
-        nbins = extra.get("nbins", extra.get("n", 7))
-        axis.set_major_locator(MaxNLocator(nbins=int(nbins)))
-    elif kind in ("null", "nulllocator", "none"):
-        axis.set_major_locator(NullLocator())
-    elif kind in ("multiple", "multiplelocator"):
-        base = extra.get("base", extra.get("step", 1))
-        axis.set_major_locator(MultipleLocator(float(base)))
-    else:
-        raise UsageError(f"unknown locator {kind!r}; use auto, log, maxn, null, or multiple")
-
-
-def _apply_formatter(axis, spec) -> None:
-    if spec is None:
-        return
-    from matplotlib.ticker import FuncFormatter, LogFormatter, PercentFormatter, ScalarFormatter
-
-    if isinstance(spec, dict):
-        kind = str(spec.get("type") or spec.get("name") or "scalar").lower()
-        extra = {k: v for k, v in spec.items() if k not in ("type", "name")}
-    else:
-        kind = str(spec).lower()
-        extra = {}
-    if kind in ("scalar", "scalarformatter"):
-        axis.set_major_formatter(ScalarFormatter())
-    elif kind in ("log", "logformatter"):
-        axis.set_major_formatter(LogFormatter())
-    elif kind in ("percent", "percentformatter"):
-        xmax = float(extra.get("xmax", 100))
-        axis.set_major_formatter(PercentFormatter(xmax=xmax))
-    elif kind in ("date", "dateformatter"):
-        from weather_skills_plotting.figure import apply_date_ticks
-
-        if getattr(axis, "axis_name", "x") != "x":
-            raise UsageError("date formatter is only supported on the x axis")
-        apply_date_ticks(axis.axes)
-    elif kind in ("format", "strformat") and extra.get("fmt"):
-        fmt = str(extra["fmt"])
-        axis.set_major_formatter(FuncFormatter(lambda x, _p, f=fmt: f.format(x)))
-    elif kind in ("dayofyear", "doy", "calendar_day"):
-        import datetime as dt
-
-        from weather_skills_plotting.figure import format_plot_date
-
-        def _doy(x, _p):
-            day = int(round(float(x)))
-            if day < 1 or day > 366:
-                return ""
-            if day == 366:
-                return format_plot_date(dt.date(2023, 12, 31), year=False)
-            return format_plot_date(dt.date(2023, 1, 1) + dt.timedelta(days=day - 1), year=False)
-
-        axis.set_major_formatter(FuncFormatter(_doy))
-    else:
-        raise UsageError(
-            f"unknown formatter {kind!r}; use scalar, log, percent, date, format, or dayofyear"
-        )
-
-
-def _tick_locs_and_labels(raw, loc: str):
-    """Parse ``xticks``/``yticks``: a list of values, or ``{values, labels, minor}``."""
-    if isinstance(raw, dict):
-        values = raw.get("values")
-        if values is None:
-            values = raw.get("ticks")
-        if values is None:
-            values = raw.get("locs")
-        labels = raw.get("labels") if raw.get("labels") is not None else raw.get("ticklabels")
-        minor = bool(raw.get("minor"))
-    elif isinstance(raw, list):
-        values, labels, minor = raw, None, False
-    else:
-        raise UsageError(f"{loc} must be a list of values or {{values, labels}}")
-    if values is not None and not isinstance(values, list):
-        raise UsageError(f"{loc}.values must be a list")
-    if labels is not None and not isinstance(labels, list):
-        raise UsageError(f"{loc}.labels must be a list")
-    return values, labels, minor
-
-
-def _apply_tick_values(ax, which: str, raw, loc: str) -> None:
-    values, labels, minor = _tick_locs_and_labels(raw, loc)
-    setter = ax.set_xticks if which == "x" else ax.set_yticks
-    label_setter = ax.set_xticklabels if which == "x" else ax.set_yticklabels
-    if values is not None:
-        setter(values, minor=minor)
-    if labels is not None:
-        label_setter(labels, minor=minor)
-
-
-def _apply_axis_label(ax, which: str, raw, loc: str) -> None:
-    """Apply ``axes.xlabel`` / ``axes.ylabel`` as a string or ``{text, loc, pad, coords, …}``.
-
-    Omit ``text`` to keep the already-drawn label and only change position or
-    font (the windrose ``Frequency (%)`` case). ``coords`` is ``[x, y]`` in
-    axes fraction.
-    """
-    axis = ax.xaxis if which == "x" else ax.yaxis
-    setter = ax.set_xlabel if which == "x" else ax.set_ylabel
-    if isinstance(raw, str):
-        setter(raw)
-        return
-    if not isinstance(raw, dict):
-        raise UsageError(f"{loc} must be a string or object")
-    opts = pick(raw, AXIS_LABEL_KEYS, loc=loc)
-    text = opts.pop("text", None)
-    pad = opts.pop("pad", None)
-    label_loc = opts.pop("loc", None)
-    coords = opts.pop("coords", None)
-    text_kw = {k: v for k, v in opts.items() if k in TEXT_KEYS}
-    if text is not None or pad is not None or label_loc is not None or text_kw:
-        kw = dict(text_kw)
-        if pad is not None:
-            kw["labelpad"] = pad
-        if label_loc is not None:
-            kw["loc"] = str(label_loc)
-        if text is None:
-            text = axis.get_label().get_text()
-        setter(text, **kw)
-    if coords is not None:
-        if not isinstance(coords, (list, tuple)) or len(coords) != 2:
-            raise UsageError(f"{loc}.coords must be [x, y] in axes fraction")
-        try:
-            x, y = float(coords[0]), float(coords[1])
-        except (TypeError, ValueError) as exc:
-            raise UsageError(f"{loc}.coords must be [x, y] in axes fraction") from exc
-        axis.set_label_coords(x, y)
-
-
-def apply_axes(ax, opts: dict | None, *, skip_legend: bool = False) -> None:
-    """Apply ``spec.axes`` to one matplotlib Axes."""
-    if not opts:
-        return
-    if not isinstance(opts, dict):
-        raise UsageError("axes must be an object (or a list of objects, one per panel)")
-    if opts.get("xscale"):
-        ax.set_xscale(str(opts["xscale"]))
-    if opts.get("yscale"):
-        ax.set_yscale(str(opts["yscale"]))
-    if opts.get("xlabel") is not None:
-        _apply_axis_label(ax, "x", opts["xlabel"], "axes.xlabel")
-    if opts.get("ylabel") is not None:
-        _apply_axis_label(ax, "y", opts["ylabel"], "axes.ylabel")
-    if opts.get("title") is not None:
-        ax.set_title(opts["title"])
-    if opts.get("xlim") is not None:
-        ax.set_xlim(*_pair(opts["xlim"], "axes.xlim"))
-    if opts.get("ylim") is not None:
-        ax.set_ylim(*_pair(opts["ylim"], "axes.ylim"))
-    if opts.get("aspect") is not None:
-        ax.set_aspect(opts["aspect"])
-    if opts.get("facecolor") is not None:
-        ax.set_facecolor(opts["facecolor"])
-    grid = opts.get("grid")
-    if grid is False:
-        ax.grid(False)
-    elif grid is True:
-        ax.grid(True)
-    elif isinstance(grid, dict):
-        ax.grid(**pick(grid, GRID_KEYS, loc="axes.grid"))
-    spines = opts.get("spines")
-    if isinstance(spines, dict):
-        for name, val in spines.items():
-            if name not in ax.spines:
-                raise UsageError(f"unknown spine {name!r}; this axes has {list(ax.spines)}")
-            if val is False:
-                ax.spines[name].set_visible(False)
-            elif val is True:
-                ax.spines[name].set_visible(True)
-            elif isinstance(val, dict):
-                if "visible" in val:
-                    ax.spines[name].set_visible(bool(val["visible"]))
-                if "color" in val:
-                    ax.spines[name].set_color(val["color"])
-                if "linewidth" in val:
-                    ax.spines[name].set_linewidth(val["linewidth"])
-            else:
-                raise UsageError(f"axes.spines.{name} must be bool or object")
-    ticks = opts.get("tick_params")
-    if isinstance(ticks, dict):
-        kw = pick(ticks, TICK_KEYS, loc="axes.tick_params")
-        if "rotation" in kw and "labelrotation" not in kw:
-            kw["labelrotation"] = kw.pop("rotation")
-        ax.tick_params(**kw)
-    locator = opts.get("locator") if isinstance(opts.get("locator"), dict) else {}
-    _apply_locator(ax.xaxis, opts.get("xlocator") or locator.get("x"))
-    _apply_locator(ax.yaxis, opts.get("ylocator") or locator.get("y"))
-    formatter = opts.get("formatter") if isinstance(opts.get("formatter"), dict) else {}
-    _apply_formatter(ax.xaxis, opts.get("xformatter") or formatter.get("x"))
-    _apply_formatter(ax.yaxis, opts.get("yformatter") or formatter.get("y"))
-    if opts.get("xticks") is not None:
-        _apply_tick_values(ax, "x", opts["xticks"], "axes.xticks")
-    if opts.get("yticks") is not None:
-        _apply_tick_values(ax, "y", opts["yticks"], "axes.yticks")
-    if opts.get("xticklabels") is not None:
-        ax.set_xticklabels(opts["xticklabels"])
-    if opts.get("yticklabels") is not None:
-        ax.set_yticklabels(opts["yticklabels"])
-    for twin_key, factory in (("twinx", ax.twinx), ("twiny", ax.twiny)):
-        twin = opts.get(twin_key)
-        if not twin:
-            continue
-        tax = factory()
-        if isinstance(twin, dict):
-            nested = {k: v for k, v in twin.items() if k not in ("twinx", "twiny")}
-            apply_axes(tax, nested, skip_legend=skip_legend)
-    if skip_legend:
-        return
-    legend = opts.get("legend")
-    if legend in (False, "off", "none"):
-        handle = ax.get_legend()
-        if handle is not None:
-            handle.remove()
-    elif legend is True:
-        ax.legend()
-    elif isinstance(legend, dict):
-        ax.legend(**pick(legend, LEGEND_KEYS, loc="axes.legend"))
-
-
-def _visible_axes(fig, axes=None):
-    import numpy as np
-
-    if axes is None:
-        axes = fig.axes
-    if hasattr(axes, "ravel"):
-        axes = list(np.ravel(axes))
-    elif not isinstance(axes, (list, tuple)):
-        axes = [axes]
-    return [
-        ax
-        for ax in axes
-        if getattr(ax, "get_visible", lambda: True)() and ax.get_label() != "<colorbar>"
-    ]
-
-
-def apply_annotation(ax, ann: dict, loc: str = "annotations") -> None:
-    """``ax.annotate`` when arrows/xytext are set, else ``ax.text``."""
-    if not isinstance(ann, dict):
-        raise UsageError(f"{loc} item must be an object")
-    text = ann.get("text") if ann.get("text") is not None else ann.get("s")
-    if text is None or str(text) == "":
-        return
-    if "xy" in ann:
-        xy = tuple(ann["xy"])
-        if len(xy) != 2:
-            raise UsageError(f"{loc}.xy must be [x, y]")
-    else:
-        xy = (
-            float(ann["x"]) if ann.get("x") is not None else 0.0,
-            float(ann["y"]) if ann.get("y") is not None else 0.0,
-        )
-    check_annotation_keys(ann, loc)
-    coords = annotation_coords(ann, loc)
-    kw = {}
-    for key in ANNOTATE_KEYS - {"xycoords", "transform"}:
-        if key in ann:
-            kw[key] = ann[key]
-    if "arrowprops" in kw:
-        if not isinstance(kw["arrowprops"], dict):
-            raise UsageError(f"{loc}.arrowprops must be an object")
-        kw["arrowprops"] = pick(kw["arrowprops"], ARROW_KEYS, loc=f"{loc}.arrowprops")
-    if "xytext" in kw:
-        kw["xytext"] = tuple(kw["xytext"]) if isinstance(kw["xytext"], list) else kw["xytext"]
-    if "bbox" in kw and isinstance(kw["bbox"], dict):
-        kw["bbox"] = dict(kw["bbox"])
-    if "arrowprops" in kw or "xytext" in kw:
-        xycoords = {"data": "data", "axes": "axes fraction", "figure": "figure fraction"}[coords]
-        ax.annotate(str(text), xy=xy, xycoords=xycoords, **kw)
-    else:
-        if coords != "data":
-            kw["transform"] = ax.transAxes if coords == "axes" else ax.figure.transFigure
-        text_kw = {k: v for k, v in kw.items() if k in TEXT_KEYS}
-        ax.text(xy[0], xy[1], str(text), **text_kw)
-
-
-_SHAPE_META = frozenset({"type", "kind", "panel", "axes"})
-_SPAN_STYLE_KEYS = RECT_KEYS | {"color", "facecolor"}
-# Canonical type -> (aliases, geometry keys, style keys).
-SHAPE_TYPES = {
-    "rect": (("rectangle", "box"), {"x0", "x1", "y0", "y1", "xy", "width", "height"}, RECT_KEYS),
-    "hline": (("axhline",), {"y"}, LINE_KEYS),
-    "vline": (("axvline",), {"x"}, LINE_KEYS),
-    "hspan": (("axhspan",), {"ymin", "ymax"}, _SPAN_STYLE_KEYS),
-    "vspan": (("axvspan",), {"xmin", "xmax"}, _SPAN_STYLE_KEYS),
-    "line": (("segment",), {"x", "y", "x0", "x1", "y0", "y1"}, LINE_KEYS),
-    "circle": ((), {"x", "y", "xy", "radius", "width", "height"}, RECT_KEYS),
-    "ellipse": ((), {"x", "y", "xy", "width", "height"}, RECT_KEYS),
-}
-_SHAPE_ALIASES = {
-    alias: name for name, (aliases, _, _) in SHAPE_TYPES.items() for alias in (name, *aliases)
-}
-
-
-def check_shape_keys(shape: dict, loc: str = "shapes") -> str:
-    """Return the canonical shape type; unknown types and keys are errors."""
-    raw = str(shape.get("type") or shape.get("kind") or "rect").lower()
-    kind = _SHAPE_ALIASES.get(raw)
-    if kind is None:
-        raise UsageError(f"{loc}.type {raw!r} is unknown; use {', '.join(SHAPE_TYPES)}")
-    _, geometry, style = SHAPE_TYPES[kind]
-    allowed = _SHAPE_META | geometry | style
-    extra = sorted(k for k in shape if k not in allowed)
-    if extra:
-        hint = ""
-        if {"xref", "yref", "xycoords", "transform"} & set(extra):
-            hint = " Shapes are drawn in data coordinates (lon/lat on a map)."
-        raise UsageError(
-            f"{loc} ({kind}) has unknown key(s) {extra}; geometry: "
-            f"{', '.join(sorted(geometry))}; style: {', '.join(sorted(style))}.{hint} "
-            "Run with --help for the shapes reference"
-        )
-    return kind
-
-
-def apply_shape(ax, shape: dict, loc: str = "shapes") -> None:
-    """Add a rect, hline/vline, span, line, or circle from JSON."""
-    if not isinstance(shape, dict):
-        raise UsageError(f"{loc} item must be an object")
-    kind = check_shape_keys(shape, loc)
-    if kind == "rect":
-        from matplotlib.patches import Rectangle
-
-        if "x0" in shape:
-            x0, x1 = float(shape["x0"]), float(shape["x1"])
-            y0, y1 = float(shape["y0"]), float(shape["y1"])
-            xy, w, h = (min(x0, x1), min(y0, y1)), abs(x1 - x0), abs(y1 - y0)
-        else:
-            xy = tuple(shape.get("xy") or (0, 0))
-            w = float(shape.get("width", 0))
-            h = float(shape.get("height", 0))
-        style = pick(
-            {k: v for k, v in shape.items() if k in RECT_KEYS},
-            RECT_KEYS,
-            loc=loc,
-        )
-        style.setdefault("fill", False)
-        style.setdefault("edgecolor", "black")
-        style.setdefault("linewidth", 1.5)
-        style.setdefault("zorder", 6)
-        ax.add_patch(Rectangle(xy, w, h, **style))
-        return
-    if kind == "hline":
-        ax.axhline(
-            float(shape.get("y", 0)),
-            **pick({k: v for k, v in shape.items() if k in LINE_KEYS}, LINE_KEYS, loc=loc),
-        )
-        return
-    if kind == "vline":
-        ax.axvline(
-            float(shape.get("x", 0)),
-            **pick({k: v for k, v in shape.items() if k in LINE_KEYS}, LINE_KEYS, loc=loc),
-        )
-        return
-    if kind == "hspan":
-        ax.axhspan(
-            float(shape["ymin"]),
-            float(shape["ymax"]),
-            **pick(
-                {
-                    k: v
-                    for k, v in shape.items()
-                    if k in RECT_KEYS | {"alpha", "zorder", "color", "facecolor"}
-                },
-                RECT_KEYS | {"alpha", "zorder", "color", "facecolor"},
-                loc=loc,
-            ),
-        )
-        return
-    if kind == "vspan":
-        ax.axvspan(
-            float(shape["xmin"]),
-            float(shape["xmax"]),
-            **pick(
-                {
-                    k: v
-                    for k, v in shape.items()
-                    if k in RECT_KEYS | {"alpha", "zorder", "color", "facecolor"}
-                },
-                RECT_KEYS | {"alpha", "zorder", "color", "facecolor"},
-                loc=loc,
-            ),
-        )
-        return
-    if kind == "line":
-        x = shape.get("x") or [shape.get("x0"), shape.get("x1")]
-        y = shape.get("y") or [shape.get("y0"), shape.get("y1")]
-        ax.plot(
-            x, y, **pick({k: v for k, v in shape.items() if k in LINE_KEYS}, LINE_KEYS, loc=loc)
-        )
-        return
-    if kind in ("circle", "ellipse"):
-        from matplotlib.patches import Circle, Ellipse
-
-        xy = tuple(shape.get("xy") or (float(shape.get("x", 0)), float(shape.get("y", 0))))
-        style = pick({k: v for k, v in shape.items() if k in RECT_KEYS}, RECT_KEYS, loc=loc)
-        if kind == "ellipse" or "width" in shape:
-            ax.add_patch(
-                Ellipse(
-                    xy,
-                    float(shape.get("width", 1)),
-                    float(shape.get("height", shape.get("width", 1))),
-                    **style,
-                )
-            )
-        else:
-            ax.add_patch(Circle(xy, float(shape.get("radius", 1)), **style))
-        return
-
-
-def _resolve_target_axes(item: dict, visible: list, loc: str) -> list:
-    """Unset ``panel``/``axes`` broadcasts to every visible panel. A single
-    int targets one panel; a list of ints targets that subset. Either way,
-    an out-of-range index still raises.
-    """
-    raw = item.get("axes") if item.get("axes") is not None else item.get("panel")
-    if raw is None:
-        return visible
-    values = raw if isinstance(raw, (list, tuple)) else [raw]
-    out = []
-    for v in values:
-        idx = int(v)
-        if idx < 0 or idx >= len(visible):
-            raise UsageError(f"{loc} axes index {idx} is out of range (0..{len(visible) - 1})")
-        out.append(visible[idx])
-    return out
-
-
-def apply_annotations_and_shapes(fig, spec: dict, axes=None) -> None:
-    """Draw every ``annotations[]``/``shapes[]`` entry.
-
-    An entry with no ``panel``/``axes`` draws on every panel. Set ``panel``
-    (an int, or a list of ints) to target one panel or a subset instead —
-    breaking change: this used to default to panel 0 only.
-    """
-    visible = _visible_axes(fig, axes)
-    if not visible:
-        return
-    for i, ann in enumerate(list(spec.get("annotations") or [])):
-        if not isinstance(ann, dict):
-            continue
-        for ax in _resolve_target_axes(ann, visible, f"annotations[{i}]"):
-            apply_annotation(ax, ann, loc=f"annotations[{i}]")
-    for i, shape in enumerate(list(spec.get("shapes") or [])):
-        if not isinstance(shape, dict):
-            continue
-        for ax in _resolve_target_axes(shape, visible, f"shapes[{i}]"):
-            apply_shape(ax, shape, loc=f"shapes[{i}]")
-
-
-def apply_axes_from_spec(fig, spec: dict, axes=None) -> None:
-    opts = spec.get("axes")
-    if opts is None:
-        return
-    visible = _visible_axes(fig, axes)
-    if isinstance(opts, list):
-        for ax, one in zip(visible, opts, strict=False):
-            apply_axes(ax, one)
-        return
-    for ax in visible:
-        apply_axes(ax, opts)
-
-
-def suptitle_kwargs(spec: dict | None) -> dict:
-    """Matplotlib ``Figure.suptitle`` kwargs from ``layout.suptitle``.
-
-    ``y`` is a figure fraction. The Matplotlib default is 0.98; a larger value
-    moves the figure title up. Panel titles use ``axes.titlepad`` instead.
-    """
-    layout = (spec or {}).get("layout") if isinstance(spec, dict) else None
-    raw = layout.get("suptitle") if isinstance(layout, dict) else None
-    if raw is None:
-        return {}
-    picked = pick(raw, SUPTITLE_KEYS, loc="layout.suptitle")
-    y = picked.get("y")
-    if y is None:
-        return {}
-    if isinstance(y, bool) or not isinstance(y, (int, float)):
-        raise UsageError(
-            "layout.suptitle.y must be a number "
-            "(figure fraction; larger moves the title up, default 0.98)"
-        )
-    number = float(y)
-    if number != number or number in (float("inf"), float("-inf")):
-        raise UsageError(
-            "layout.suptitle.y must be a finite number "
-            "(figure fraction; larger moves the title up, default 0.98)"
-        )
-    return {"y": number}
-
-
-def wrap_suptitle(fig, text):
-    """Wrap a figure title so it fits within the figure width. Keep existing breaks.
-
-    A centered ``Figure.suptitle`` that is wider than the figure itself does
-    not shrink or grow the canvas to fit — it just gets cut off at both
-    edges, on screen and in a ``bbox_inches="tight"`` export alike. Wrapping
-    it onto more lines, the same way ``wrap_axes_title`` already does for
-    panel titles, is what actually fits it; constrained layout then reserves
-    whatever extra height that needs automatically.
-    """
-    import textwrap
-
-    if text is None:
-        return text
-    raw = str(text)
-    if not raw.strip() or "\n" in raw:
-        return raw
-    width_in = max(float(fig.get_figwidth() or 1.0) * 0.94, 0.8)
-    import matplotlib as mpl
-
+    out_layout = merge_spec({"layout": layout}, {"layout": user_layout})["layout"]
     try:
-        size = float(mpl.rcParams.get("figure.titlesize", DEFAULT_FONTSIZE))
-    except (TypeError, ValueError):
-        size = float(DEFAULT_FONTSIZE)
-    char_in = max(size / 72.0 * 0.52, 0.06)
-    return textwrap.fill(raw, width=max(12, int(width_in / char_in)))
+        return go.Figure({"data": data, "layout": out_layout})
+    except ValueError as exc:
+        raise plotly_error(exc) from None
 
 
-def apply_suptitle(fig, title, spec=None):
-    """Place the figure title, honoring ``layout.suptitle.y`` when set."""
-    if not title:
-        return None
-    return fig.suptitle(wrap_suptitle(fig, title), **suptitle_kwargs(spec))
+# ---------------------------------------------------------------- trace merge
 
 
-def colorbar_mpl_kwargs_from_dict(cbar: dict | None) -> dict:
-    """Extra matplotlib colorbar kwargs (extend, pad, orientation, …) from an
-    already-resolved ``layout.colorbar``-shaped dict — e.g. a figure-wide
-    default merged with a ``subplots[].colorbar`` override for one cell.
-    """
-    cbar = cbar or {}
-    kw = colorbar_size_kwargs(colorbar=cbar)
-    extra = pick(
-        {k: v for k, v in cbar.items() if k in COLORBAR_EXTRA_KEYS},
-        COLORBAR_EXTRA_KEYS,
-        loc="layout.colorbar",
-    )
-    kw.update(extra)
-    if cbar.get("ticks") is not None:
-        kw["ticks"] = list(cbar["ticks"])
-    if cbar.get("labels") is not None:
-        kw["labels"] = list(cbar["labels"])
-    if cbar.get("labelpad") is not None:
-        kw["labelpad"] = float(cbar["labelpad"])
-    if cbar.get("labelsize") is not None:
-        kw["labelsize"] = float(cbar["labelsize"])
-    if cbar.get("ticksize") is not None:
-        kw["ticksize"] = float(cbar["ticksize"])
-    return kw
-
-
-def colorbar_mpl_kwargs(spec: dict | None) -> dict:
-    """Extra matplotlib colorbar kwargs (extend, pad, orientation, …)."""
-    return colorbar_mpl_kwargs_from_dict(colorbar_spec(spec))
-
-
-def line_kwargs(style: dict | None, *, loc: str = "line") -> dict:
-    if not style:
-        return {}
-    raw = style.get("line") if isinstance(style.get("line"), dict) else style
-    return pick({k: v for k, v in raw.items() if k in LINE_KEYS}, LINE_KEYS, loc=loc)
-
-
-def mesh_kwargs(trace: dict | None) -> dict:
-    raw = (trace or {}).get("mesh") or {}
-    return pick(raw, MESH_KEYS, loc="traces[].mesh") if raw else {}
-
-
-def contour_kwargs(trace: dict | None) -> dict:
-    raw = dict((trace or {}).get("contour") or {})
-    raw.pop("lines", None)
-    return pick(raw, CONTOUR_KEYS, loc="traces[].contour") if raw else {}
-
-
-def quiver_kwargs(trace: dict | None) -> dict:
-    raw = dict((trace or {}).get("quiver") or {})
-    raw.pop("step", None)
-    return pick(raw, QUIVER_KEYS, loc="traces[].quiver") if raw else {}
-
-
-def windrose_kwargs(trace: dict | None) -> dict:
-    raw = (trace or {}).get("windrose") or {}
-    return pick(raw, WINDROSE_KEYS, loc="traces[].windrose") if raw else {}
-
-
-def scatter_kwargs(style: dict | None, *, loc: str = "scatter") -> dict:
-    if not style:
-        return {}
-    raw = style.get("scatter") if isinstance(style.get("scatter"), dict) else style
-    raw = normalize_aliases(raw, SCATTER_ALIASES, loc=loc)
-    return pick({k: v for k, v in raw.items() if k in SCATTER_KEYS}, SCATTER_KEYS, loc=loc)
-
-
-def bar_kwargs(style: dict | None, *, loc: str = "bar") -> dict:
-    if not style:
-        return {}
-    raw = style.get("bar") if isinstance(style.get("bar"), dict) else style
-    mpl_keys = BAR_KEYS - {"mode"}
-    return pick({k: v for k, v in raw.items() if k in mpl_keys}, mpl_keys, loc=loc)
-
-
-def fill_kwargs(trace: dict | None, *, loc: str = "traces[].fill") -> dict:
-    raw = (trace or {}).get("fill") if isinstance(trace, dict) else None
-    return pick(raw, FILL_KEYS, loc=loc) if raw else {}
-
-
-def box_kwargs(style: dict | None, *, loc: str = "box") -> dict:
-    if not style:
-        return {}
-    raw = style.get("box") if isinstance(style.get("box"), dict) else style
-    return pick({k: v for k, v in raw.items() if k in BOX_KEYS}, BOX_KEYS, loc=loc)
-
-
-def resolve_axes_block(spec: dict | None) -> dict | list:
-    """``axes`` for a dumped spec: only the keys that carry a value.
-
-    The full set of editable knobs lives in ``AXES_TEMPLATE`` and is documented
-    in ``docs/plotting.md``; stamping all of them as nulls onto every dumped
-    spec buried the handful of values that were actually set.
-    """
-
-    def _one(user):
-        if not isinstance(user, dict):
-            return {}
-        return {k: v for k, v in user.items() if v is not None}
-
-    user = (spec or {}).get("axes")
-    if isinstance(user, list):
-        return [_one(item) for item in user]
-    return _one(user)
-
-
-def attach_figure_spec(resolved: dict, spec: dict | None = None) -> dict:
-    """Fill matplotlib layout knobs on a dumped spec (axes, annotations, shapes).
-
-    Sidecars dump only the axes keys that were set. ``theme.rc`` always includes
-    the font sizes ``--fontsize`` applied so a dump names ``axes.titlesize``.
-    The full axes catalog is ``AXES_TEMPLATE``.
-    """
-    src = spec or {}
-    out = dict(resolved)
-    if src.get("axes") is not None:
-        out["axes"] = src["axes"]
-    out["axes"] = resolve_axes_block(out)
-    for key in ("annotations", "shapes"):
-        if src.get(key):
-            out[key] = list(src[key])
-        else:
-            out.setdefault(key, list(out.get(key) or []))
-    layout = dict(out.get("layout") or {})
-    spec_layout = src.get("layout") or {}
-    for key in ("facecolor", "dpi", "colorbar", "suptitle"):
-        if spec_layout.get(key) is not None:
-            layout[key] = spec_layout[key]
-    out["layout"] = layout
-    theme = dict(out.get("theme") or {})
-    src_theme = src.get("theme") or {}
-    if theme.get("fontsize") is None and src_theme.get("fontsize") is not None:
-        theme["fontsize"] = src_theme["fontsize"]
-    user_rc = {}
-    if isinstance(theme.get("rc"), dict):
-        user_rc.update(theme["rc"])
-    if isinstance(src_theme.get("rc"), dict):
-        user_rc.update(src_theme["rc"])
-    theme["rc"] = user_rc
-    theme["rc"] = resolved_theme_rc({"theme": theme})
-    out["theme"] = theme
+def _concrete(spec_trace: dict, generated: dict, uid: str, *, user_style=True) -> dict:
+    """Generated arrays with the user's own trace keys on top (user wins)."""
+    gen = dict(generated)
+    suffix = gen.pop("uid_suffix", None)
+    out = {"type": spec_trace.get("type") or "scatter"}
+    if user_style and not str(suffix or "").startswith("band"):
+        user = {k: v for k, v in spec_trace.items() if k not in ("meta", "uid", "xaxis", "yaxis")}
+        if "=" in str(suffix or ""):
+            # One trace per along member: the member's name, not the input's.
+            user.pop("name", None)
+        out.update(deep_merge(gen, user))
+    else:
+        out.update(gen)
+    out["uid"] = safe_uid(f"{uid}-{suffix}" if suffix else uid)
     return out
 
 
-def apply_style_then_rc(spec: dict, *, chart: str, fontsize, template: str) -> None:
-    apply_style(fontsize, template=template, chart=chart)
-    apply_rc((spec.get("theme") or {}).get("rc"))
+def safe_uid(text) -> str:
+    """plotly.js puts uids in CSS selectors: keep letters, digits, ``-`` and ``_``."""
+    return re.sub(r"[^A-Za-z0-9_-]+", "-", str(text))
 
 
-def finish_figure(fig, spec: dict, axes=None) -> None:
-    """Post-draw: per-axes options, annotations, shapes, figure facecolor."""
-    apply_axes_from_spec(fig, spec, axes)
-    apply_annotations_and_shapes(fig, spec, axes)
-    layout = spec.get("layout") or {}
-    if layout.get("facecolor"):
-        fig.patch.set_facecolor(layout["facecolor"])
-    if layout.get("dpi"):
-        fig.set_dpi(float(layout["dpi"]))
+def _set_path(obj: dict, path: str, value):
+    keys = path.split(".")
+    for key in keys[:-1]:
+        obj = obj.setdefault(key, {})
+    obj[keys[-1]] = value
+
+
+def _get_path(obj: dict, path: str):
+    for key in path.split("."):
+        if not isinstance(obj, dict):
+            return None
+        obj = obj.get(key)
+    return obj
+
+
+# ---------------------------------------------------------------- color axes
+
+
+def _lift_color(spec_trace: dict, color_key: str) -> dict:
+    """Trace-level colorscale / limits / colorbar, moved onto its coloraxis."""
+    holder = spec_trace.get("marker") or {} if color_key == "marker.color" else spec_trace
+    limits = _MARKER_LIMIT_KEYS if color_key == "marker.color" else _TRACE_LIMIT_KEYS
+    out = {k: copy.deepcopy(holder[k]) for k in _TRACE_COLOR_KEYS if k in holder}
+    out.update({dst: holder[src] for src, dst in limits.items() if src in holder})
+    return out
+
+
+def _uncolored(spec_trace: dict) -> bool:
+    """No color scale to show: a contour drawn as plain lines (``contours.coloring: none``),
+    or a scatter drawn without markers (``mode: "text"``, ``"lines"``)."""
+    if spec_trace.get("type") == "contour":
+        return (spec_trace.get("contours") or {}).get("coloring") == "none"
+    mode = spec_trace.get("mode")
+    return (
+        spec_trace.get("type") in ("scatter", "scattergl") and bool(mode) and "markers" not in mode
+    )
+
+
+def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
+    """Fill ``layout.<name>`` for the bound traces in ``members``.
+
+    ``members`` are ``(spec_trace, bound, concrete_traces)``. Returns the
+    generated coloraxis dict (the user's own keys are merged later).
+    """
+    lifted = {}
+    for spec_trace, bound, _ in members:
+        lifted = deep_merge(lifted, _lift_color(spec_trace, bound.color_key))
+    user = deep_merge(lifted, user_axis or {})
+    first = members[0][1]
+    palette_raw = next(
+        (
+            (st.get("meta") or {}).get("palette")
+            for st, _, _ in members
+            if (st.get("meta") or {}).get("palette")
+        ),
+        None,
+    )
+    key = palette_raw.lower() if isinstance(palette_raw, str) else None
+    if key in DEFAULT_PRECIP_PALETTES and not any(k.lower() == key for k in ctx.palettes):
+        # A --theme-file entry of the same name wins over the window-following default.
+        days = [aggregation_days(b.color_da) for _, b, _ in members if b.color_da is not None]
+        palette_raw = default_precip_window(*(days or [None]), anomaly=DEFAULT_PRECIP_PALETTES[key])
+    palette = parse_palette(palette_raw, registry=ctx.palettes) if palette_raw else None
+    values = np.concatenate([np.ravel(v) for _, b, _ in members for v in b.color_values])
+    finite = values[np.isfinite(values)]
+    stretch = "cmin" in user or "cmax" in user
+    lo = float(finite.min()) if finite.size else 0.0
+    hi = float(finite.max()) if finite.size else 1.0
+    # Limits the user set decide whether the scale straddles zero; they are kept as given.
+    # A temperature difference (delta_degC) is centred on zero whatever its sign; an
+    # absolute temperature crossing 0 °C (sea ice, the Arctic) keeps the temperature scale.
+    color_das = [b.color_da for _, b, _ in members if b.color_da is not None]
+    difference = any("delta_" in str(variable_units(d) or "") for d in color_das)
+    absolute_temp = bool(color_das) and not difference and all(map(is_temperature, color_das))
+    diverging = difference or (
+        not absolute_temp and user.get("cmin", lo) < 0 < user.get("cmax", hi)
+    )
+    axis = {"colorbar": {"title": {"text": first.color_title or ""}}}
+    if palette is None and "colorscale" not in user:
+        # The theme's color for this kind of field: precip, wind speed, diverging, temperature …
+        das = [b.color_da for _, b, _ in members if b.color_da is not None]
+        palette = default_palette(*(das or [None]), theme=ctx.theme, diverging=diverging)
+        if palette.get("colorscale"):
+            axis["colorscale"] = palette["colorscale"]
+            palette = None
+    if palette and palette.get("bounds") and stretch:
+        print(
+            f"Warning: zmin/zmax turn the class palette {palette.get('name') or ''} into a "
+            "continuous scale; drop them to keep its classes, or set bounds in the palette",
+            file=sys.stderr,
+        )
+    if palette and palette.get("bounds") and not stretch and "colorscale" not in user:
+        under, classes, over = _class_slots(palette)
+        if under and finite.size and finite.min() >= palette["bounds"][0]:
+            # Nothing falls below the first edge (rain is never negative): no empty
+            # box under "0" on the colorbar.
+            palette = {k: v for k, v in palette.items() if k not in ("colors", "under", "over")}
+            palette.update(colors=list(classes), **({"over": over} if over else {}))
+        for _, bound, traces in members:
+            for tr in traces:
+                raw = _get_path(tr, bound.color_key)
+                slots, scale = discretize(raw, palette)
+                _set_path(tr, bound.color_key, slots)
+        _, scale = discretize(finite, palette)
+        axis.update(colorscale=scale["colorscale"], cmin=scale["cmin"], cmax=scale["cmax"])
+        axis["colorbar"].update(tickvals=scale["tickvals"], ticktext=scale["ticktext"])
+        # An outline keeps white classes (dry, near-zero anomaly) visible on the bar.
+        axis["colorbar"].update(outlinewidth=1, outlinecolor="#999999")
+        n_slots = len(scale["colorscale"]) // 2
+        for tr in contour_traces:
+            tr.setdefault("autocontour", False)
+            fill_defaults(tr, {"contours": {"start": 0.5, "end": n_slots - 1.5, "size": 1}})
+        return axis
+    if palette:
+        axis["colorscale"] = continuous_colorscale(palette["colors"])
+    if diverging and not stretch:
+        m = max(abs(lo), abs(hi))
+        lo, hi = -m, m
+    elif not stretch and first.color_da is not None and is_sea_level_pressure(first.color_da):
+        # White at the standard atmosphere: lows read blue, highs red.
+        mid = float(
+            convert_values(
+                STANDARD_SEA_LEVEL_PRESSURE_HPA, "hPa", variable_units(first.color_da) or "hPa"
+            )[0]
+        )
+        m = max(abs(lo - mid), abs(hi - mid))
+        lo, hi = mid - m, mid + m
+    probability = bool(color_das) and all(
+        "probab" in f"{d.name} {d.attrs.get('long_name') or ''}".lower() for d in color_das
+    )
+    if not stretch and probability and 0 <= lo and hi <= 1:
+        # A probability reads against its whole range: 0.85 is not "the maximum".
+        lo, hi = 0.0, 1.0
+    if lo == hi:
+        lo, hi = lo - 1, hi + 1
+    axis.setdefault("cmin", lo)
+    axis.setdefault("cmax", hi)
+    return axis
+
+
+# ------------------------------------------------------------------- map figure
+
+
+def _template_colorway(template) -> list:
+    """Series colors from the figure's template (a theme file may set its colorway)."""
+    import plotly.io as pio
+
+    if isinstance(template, str):
+        try:
+            colorway = pio.templates[template].layout.colorway
+        except (KeyError, ValueError):
+            colorway = None
+    else:
+        colorway = ((template or {}).get("layout") or {}).get("colorway")
+    return list(colorway or DEEP)
+
+
+def _page_color(user_layout: dict) -> str:
+    """The figure's background colour: the user's, else the template's, else Plotly's white."""
+    import plotly.io as pio
+
+    if user_layout.get("paper_bgcolor"):
+        return user_layout["paper_bgcolor"]
+    template = user_layout.get("template", DEFAULT_TEMPLATE)
+    if isinstance(template, str):
+        try:
+            color = pio.templates[template].layout.paper_bgcolor
+        except (KeyError, ValueError):
+            color = None
+    else:
+        color = ((template or {}).get("layout") or {}).get("paper_bgcolor")
+    return color or "white"
+
+
+def _anchor(trace: dict) -> int:
+    raw = trace.get("xaxis") or "x"
+    try:
+        return int(raw[1:] or 1)
+    except ValueError:
+        raise UsageError(f"trace xaxis {raw!r} must look like x, x2, x3 …") from None
+
+
+def _input_label(ctx, trace):
+    from pathlib import Path
+
+    from weather_skills_core.decorator import INPUT_PATH_ATTR
+
+    if trace.get("name"):
+        return str(trace["name"])
+    source = (trace.get("meta") or {}).get("source") or {}
+    if source.get("input") is not None and not str(source["input"]).isdigit():
+        return str(source["input"])  # the NAME from -i PATH=NAME
+    ds = ctx.datasets.get(str(source.get("input"))) if source.get("input") else None
+    path = getattr(ds, "attrs", {}).get(INPUT_PATH_ATTR) if ds is not None else None
+    return Path(path).stem if path else None
+
+
+def _assemble_map(items, user_layout, lmeta, ctx):
+    groups: dict[int, list] = {}
+    # A plain Plotly trace (city markers, a box) with no axis of its own goes on every map.
+    floating = [item for item in items if item[2] is None and not item[1].get("xaxis")]
+    for item in items:
+        if not any(item is f for f in floating):
+            groups.setdefault(_anchor(item[1]), []).append(item)
+    if not groups:
+        groups[1] = []
+    order = sorted(groups)
+    plan = []  # per group: list of panel keys (None for an unfaceted group)
+    for g in order:
+        faceted = [
+            b for _, _, b in groups[g] if b is not None and not b.static and len(b.panels) > 1
+        ]
+        if faceted:
+            keys = [p.key for p in faceted[0].panels]
+            for b in faceted[1:]:
+                have = {_key(p.key) for p in b.panels}
+                keys = [k for k in keys if _key(k) in have]
+            if not keys:
+                raise UsageError(
+                    "layered traces share no time/step values to draw together; select one "
+                    "time per layer (meta.source.isel / sel), or aggregate first"
+                )
+            plan.append(keys)
+        else:
+            plan.append([None])
+    if len(order) > 1 and any(len(keys) > 1 for keys in plan):
+        raise UsageError(
+            "side-by-side map traces (different xaxis) must each already be a single map; "
+            "select one time/step per input (meta.source.isel / sel) or aggregate first"
+        )
+    panels = []  # (group index or None for an empty cell, key)
+    if len(order) > 1:
+        # Unfaceted side-by-side traces keep their axis number as their cell,
+        # so x, x2, x4 leaves cell 3 empty.
+        panels = [
+            (order.index(a), None) if a in order else (None, None) for a in range(1, order[-1] + 1)
+        ]
+    else:
+        panels = [(0, k) for k in plan[0]]
+    n = len(panels)
+    if n > MANY_PANELS:
+        print(
+            f"Warning: {n} map panels; each will be small. Pick the ones you need with "
+            'meta.source.isel (e.g. {"step": [0, 6, 12, 18]}) or aggregate first.',
+            file=sys.stderr,
+        )
+
+    # Bind results per panel.
+    panel_traces = [[] for _ in range(n)]  # (rank, trace dict, spec_trace, bound)
+    panel_titles = [None] * n
+    extents = [None] * n
+    for p, (gi, key) in enumerate(panels):
+        if gi is None:
+            continue
+        g = order[gi]
+        for i, spec_trace, bound in [*groups[g], *floating]:
+            uid = spec_trace.get("uid") or f"trace{i}"
+            if bound is None:
+                tr = copy.deepcopy(
+                    {k: v for k, v in spec_trace.items() if k not in ("xaxis", "yaxis")}
+                )
+                tr["uid"] = safe_uid(f"{uid}-p{p + 1}" if n > 1 else uid)
+                if any(spec_trace is f[1] for f in floating):
+                    # One color on every panel, not the next colorway entry per copy.
+                    fill_defaults(
+                        tr, {"marker": {"color": "#262626"}, "line": {"color": "#262626"}}
+                    )
+                panel_traces[p].append((_MAP_RANK[None], tr, spec_trace, None))
+                continue
+            if len(bound.panels) == 1:
+                part = bound.panels[0]
+            else:
+                part = next(pp for pp in bound.panels if _key(pp.key) == _key(key))
+            if part.title and panel_titles[p] is None:
+                panel_titles[p] = part.title
+            if not bound.static and bound.extent and extents[p] is None:
+                extents[p] = bound.extent
+            pid = f"{uid}-p{p + 1}" if n > 1 else uid
+            for j, gen in enumerate(part.traces):
+                tr = _concrete(spec_trace, gen, pid if j == 0 else f"{pid}-{j}")
+                panel_traces[p].append((_MAP_RANK[bind_of(spec_trace)], tr, spec_trace, bound))
+        if extents[p] is None:
+            extents[p] = next(
+                (b.extent for _, _, b in groups[g] if b is not None and b.extent), None
+            )
+        if extents[p] is None:
+            raise UsageError("a map panel has no data extent; set layout.meta.geo.bbox")
+    if len(order) > 1:
+        # Side by side, a panel is named for its dataset (trace name, else file name),
+        # and keeps its date too when the panels show different dates.
+        dates = [t for t in panel_titles if t]
+        differ = len(set(dates)) > 1
+        for p, (gi, _) in enumerate(panels):
+            if gi is None:
+                continue
+            bound_items = [
+                (t, b) for _, t, b in groups[order[gi]] if b is not None and not b.static
+            ]
+            name = _input_label(ctx, bound_items[0][0]) if bound_items else None
+            if name:
+                date = panel_titles[p]
+                panel_titles[p] = f"{name} · {date}" if differ and date else name
+
+    # Color axes: explicit coloraxis wins; else traces showing the same quantity
+    # (color title, palette, anomaly or not) share one, side by side included.
+    axis_of = {}  # id(spec_trace) -> coloraxis name
+    axis_members: dict[str, list] = {}
+    next_axis = 1
+    auto = {}
+    for g in order:
+        for _, spec_trace, bound in groups[g]:
+            if bound is None or not bound.color_values or _uncolored(spec_trace):
+                continue
+            name = (
+                spec_trace.get("coloraxis")
+                if bound.color_key == "z"
+                else (spec_trace.get("marker") or {}).get("coloraxis")
+            )
+            if not name:
+                # One quantity is one CF standard_name in one unit: station "Surface air
+                # temperature" and a forecast's "2 m temperature" share a bar. Anomalies
+                # and spreads of it do not.
+                title = bound.color_title or ""
+                sn = (
+                    bound.color_da.attrs.get("standard_name")
+                    if bound.color_da is not None
+                    else None
+                )
+                difference = bound.color_da is not None and "delta_" in str(
+                    variable_units(bound.color_da) or ""
+                )
+                quantity = (
+                    (
+                        sn,
+                        title.rpartition("[")[2],
+                        "anomaly" in title,
+                        "std. dev." in title,
+                        difference,
+                    )
+                    if sn
+                    else title
+                )
+                key = (
+                    json.dumps(quantity),
+                    json.dumps((spec_trace.get("meta") or {}).get("palette"), sort_keys=True),
+                    json.dumps(spec_trace.get("colorscale"), sort_keys=True),
+                    bound.color_da is not None and is_precip_anomaly(bound.color_da),
+                )
+                name = auto.get(key)
+                if name is None:
+                    name = "coloraxis" if next_axis == 1 else f"coloraxis{next_axis}"
+                    next_axis += 1
+                    auto[key] = name
+            axis_of[id(spec_trace)] = name
+    for p in range(n):
+        for _, tr, spec_trace, bound in panel_traces[p]:
+            if _uncolored(spec_trace):
+                if tr.get("type") == "contour":
+                    # Isobars over shading: plain black lines, no colorbar of their own.
+                    fill_defaults(tr, {"showscale": False, "line": {"color": "black", "width": 1}})
+                continue
+            if bound is None or id(spec_trace) not in axis_of:
+                continue
+            name = axis_of[id(spec_trace)]
+            if bound.color_key == "z" and "z" in tr:
+                tr["coloraxis"] = name
+            elif bound.color_key == "marker.color" and "color" in (tr.get("marker") or {}):
+                tr["marker"]["coloraxis"] = name
+            else:
+                continue
+            members = axis_members.setdefault(name, [])
+            entry = next((m for m in members if m[0] is spec_trace), None)
+            if entry is None:
+                members.append((spec_trace, bound, [tr]))
+            else:
+                entry[2].append(tr)
+
+    outlines = [
+        b.extent for _, st, b in items if b is not None and bind_of(st) == "geojson" and b.extent
+    ]
+    if outlines and ctx.bbox is None and len(order) == 1:
+        # An outline names the place of interest: frame it, with a margin.
+        w, e = min(o[0] for o in outlines), max(o[1] for o in outlines)
+        s, n_ = min(o[2] for o in outlines), max(o[3] for o in outlines)
+        pad = 0.04 * max(e - w, n_ - s)
+        extents = [[w - pad, e + pad, s - pad, n_ + pad] if x else None for x in extents]
+    if len(order) > 1 and ctx.bbox is None:
+        # Side-by-side maps of the same region share one window, so a coarse
+        # grid next to a fine one is compared on equal footing.
+        boxes = [e for e in extents if e]
+        area = [(e[1] - e[0]) * (e[3] - e[2]) for e in boxes]
+        overlap = all(
+            max(0.0, min(a[1], b[1]) - max(a[0], b[0]))
+            * max(0.0, min(a[3], b[3]) - max(a[2], b[2]))
+            >= 0.5 * min(area[i], area[j])
+            for i, a in enumerate(boxes)
+            for j, b in enumerate(boxes)
+            if i < j
+        )
+        if overlap:
+            union = [
+                min(e[0] for e in boxes),
+                max(e[1] for e in boxes),
+                min(e[2] for e in boxes),
+                max(e[3] for e in boxes),
+            ]
+            extents = [union if e else None for e in extents]
+
+    # Grid and canvas follow the maps' shape; colorbars go beside the rows or
+    # under the columns they colour when the panels split that way.
+    aspect = float(np.median([(e[1] - e[0]) / max(e[3] - e[2], 1e-6) for e in extents if e]))
+    grid_in = user_layout.pop("grid", None) or {}
+    rows, cols = choose_grid(n, aspect, grid_in.get("rows"), grid_in.get("columns"))
+    panels_of = {}
+    for name in axis_members:
+        if (user_layout.get(name) or {}).get("showscale") is False:
+            continue
+        panels_of[name] = [
+            p for p in range(n) for _, _, st, _ in panel_traces[p] if axis_of.get(id(st)) == name
+        ]
+    panels_of = dict(sorted(panels_of.items(), key=lambda item: min(item[1])))
+    mode = colorbar_mode(panels_of, cols)
+    if mode in ("right", "rows") and aspect > WIDE_MAP:
+        # A strip (a Pacific band, a polar belt) is too short for a vertical bar's title.
+        mode = "below"
+    if mode in ("right", "rows") and any(
+        ((user_layout.get(name) or {}).get("colorbar") or {}).get("orientation") == "h"
+        for name in panels_of
+    ):
+        # A horizontal bar asked for in the spec gets room under the maps.
+        mode = "below"
+    layout, domains = map_layout(
+        rows,
+        cols,
+        aspect,
+        titled=bool((user_layout.get("title") or {}).get("text")),
+        panel_titles=any(panel_titles),
+        right=bool(panels_of) and mode in ("right", "rows"),
+        below=bool(panels_of) and mode in ("columns", "below"),
+        user={**user_layout, "grid": grid_in},
+    )
+    slots = place_colorbars(mode, panels_of, domains)
+    # No-data cells show the plot background: a neutral grey, not the template's tint.
+    # Darker than the near-white of a diverging zero or a dry class, so a missing cell
+    # never reads as zero.
+    layout["plot_bgcolor"] = NO_DATA_COLOR
+    layout["annotations"] = []
+    for p in range(n):
+        s = axis_suffix(p)
+        if extents[p] is None:
+            # An empty cell keeps a hidden axis so annotations can still target it,
+            # painted with the page colour so the template's panel background
+            # does not show as a blank box.
+            d = domains[p]
+            layout[f"xaxis{s}"] = {"visible": False, "domain": [d[0], d[1]], "anchor": f"y{s}"}
+            layout[f"yaxis{s}"] = {"visible": False, "domain": [d[2], d[3]], "anchor": f"x{s}"}
+            layout.setdefault("shapes", []).append(
+                {
+                    "type": "rect",
+                    "xref": f"x{s} domain",
+                    "yref": f"y{s} domain",
+                    "x0": 0,
+                    "x1": 1,
+                    "y0": 0,
+                    "y1": 1,
+                    "fillcolor": _page_color(user_layout),
+                    "opacity": 1,
+                    "line": {"width": 0},
+                    "layer": "above",
+                }
+            )
+            continue
+        layout[f"xaxis{s}"], layout[f"yaxis{s}"] = map_axes(p, extents[p], domains[p])
+        if panel_titles[p]:
+            layout["annotations"].append(panel_title(p, panel_titles[p]))
+    for name, members in axis_members.items():
+        contours = [tr for _, b, trs in members for tr in trs if tr.get("type") == "contour"]
+        for tr in contours:
+            fill_defaults(tr, {"contours": {"coloring": "fill"}})
+        axis = _resolve_coloraxis(
+            name, members, user_layout.get(name), ctx, contour_traces=contours
+        )
+        if name in slots:
+            fill_defaults(axis["colorbar"], slots[name])
+            bar = axis["colorbar"]
+            user_bar = (user_layout.get(name) or {}).get("colorbar") or {}
+            if bar.get("orientation") == "h" and bar.get("ticktext") and "ticktext" not in user_bar:
+                # Class edges crowd a short horizontal bar: label every k-th edge.
+                room = bar.get("len", 1) * layout.get("width", 800) / len(bar["ticktext"])
+                widest = max(len(t) for t in bar["ticktext"]) * 7 + 8
+                k = math.ceil(widest / room)
+                if k > 1:
+                    bar["ticktext"] = [
+                        t if i % k == 0 else "" for i, t in enumerate(bar["ticktext"])
+                    ]
+        else:
+            axis["showscale"] = False
+        lifted = {}
+        for spec_trace, bound, _ in members:
+            lifted = deep_merge(lifted, _lift_color(spec_trace, bound.color_key))
+        layout[name] = deep_merge(axis, lifted)
+
+    # Overlays, then assemble each panel's traces in draw order.
+    settings = overlay_settings(lmeta.get("overlays"))
+    if outlines and settings.get("admin1") is None:
+        # The outline file is the boundary to show; Natural Earth's would double it.
+        settings["admin1"] = False
+    data = []
+    for p in range(n):
+        s = axis_suffix(p)
+        if extents[p] is None:
+            # plotly.js only builds axes a trace uses; keep the empty cell's axis alive.
+            data.append(
+                {
+                    "type": "scatter",
+                    "x": [None],
+                    "y": [None],
+                    "xaxis": f"x{s}",
+                    "yaxis": f"y{s}",
+                    "hoverinfo": "skip",
+                    "showlegend": False,
+                    "uid": f"empty-p{p + 1}",
+                }
+            )
+            continue
+        # A quarter of a panel pixel, in degrees: finer detail never shows.
+        panel_px = (domains[p][1] - domains[p][0]) * (
+            layout["width"] - layout["margin"]["l"] - layout["margin"]["r"]
+        )
+        tolerance = 0.25 * (extents[p][1] - extents[p][0]) / max(panel_px, 1.0)
+        for name, geoms in overlay_geoms(extents[p], settings):
+            xs, ys = geoms_to_xy(geoms, rings_only=name == "lakes", tolerance=tolerance)
+            style = copy.deepcopy(ctx.theme["overlays"][name])
+            if isinstance(settings.get(name), dict):
+                style = deep_merge(style, settings[name])
+            tr = {
+                "type": "scatter",
+                "mode": "lines",
+                "x": xs,
+                "y": ys,
+                "hoverinfo": "skip",
+                "showlegend": False,
+                "uid": f"overlay-{name}-{p + 1}",
+                **style,
+            }
+            panel_traces[p].append((_MAP_RANK["overlay"], tr, None, None))
+        for _, tr, _, _ in sorted(panel_traces[p], key=lambda item: item[0]):
+            tr["xaxis"], tr["yaxis"] = f"x{s}", f"y{s}"
+            if not tr.get("name"):
+                # An unnamed added trace (city markers, a box) would read "trace 6".
+                tr.setdefault("showlegend", False)
+            data.append(tr)
+    return data, layout
+
+
+def _key(value):
+    arr = np.asarray(value)
+    if arr.dtype.kind in "Mm":
+        return int(
+            arr.astype("datetime64[ns]" if arr.dtype.kind == "M" else "timedelta64[ns]").astype(
+                "int64"
+            )
+        )
+    return str(value)
+
+
+# ----------------------------------------------------------------- chart figure
+
+
+def _assemble_chart(items, user_layout):
+    grid = user_layout.get("grid") or {}
+    cells = (grid.get("rows") or 1) * (grid.get("columns") or 1)
+    explicit = any(t.get("xaxis") or t.get("yaxis") for _, t, _ in items)
+    coupled = grid.get("pattern") == "coupled"
+    data = []
+    layout = {}
+    axis_titles: dict[str, dict] = {}
+    for k, (i, spec_trace, bound) in enumerate(items):
+        uid = spec_trace.get("uid") or f"trace{i}"
+        xa, ya = spec_trace.get("xaxis") or "x", spec_trace.get("yaxis") or "y"
+        if cells > 1 and not explicit and k < cells:
+            xa = "x" if coupled and grid.get("columns", 1) == 1 else f"x{axis_suffix(k)}"
+            ya = f"y{axis_suffix(k)}"
+        if bound is None:
+            tr = copy.deepcopy(spec_trace)
+            tr["uid"] = safe_uid(uid)
+            data.append(tr)
+            continue
+        for j, gen in enumerate(bound.panels[0].traces):
+            tr = _concrete(spec_trace, gen, uid if j == 0 else f"{uid}-{j}")
+            if tr.get("type") != "barpolar":
+                tr["xaxis"], tr["yaxis"] = xa, ya
+            data.append(tr)
+        layout = deep_merge(layout, bound.layout)
+        xs, ys = xa[1:], ya[1:]
+        if bound.axis_titles.get("x") is not None:
+            axis_titles.setdefault(f"xaxis{xs}", {"title": {"text": bound.axis_titles["x"]}})
+        if bound.axis_titles.get("y") is not None:
+            axis_titles.setdefault(f"yaxis{ys}", {"title": {"text": bound.axis_titles["y"]}})
+        if bound.axis_titles.get("y_nonnegative"):
+            axis_titles.setdefault(f"yaxis{ys}", {}).setdefault("rangemode", "nonnegative")
+        if bound.x_tickformat:
+            # Seasonal overlays sit on a stand-in year; show day and month only.
+            axis = axis_titles.setdefault(f"xaxis{xs}", {})
+            axis.setdefault("tickformat", bound.x_tickformat)
+            axis.setdefault("hoverformat", bound.x_tickformat)
+        if bound.title:
+            layout.setdefault("title", {"text": bound.title})
+    layout.update(axis_titles)
+    # Room above the plot only for what is there: a title, a legend row.
+    titled = bool((user_layout.get("title") or layout.get("title") or {}).get("text"))
+    named = [tr for tr in data if tr.get("name") and tr.get("showlegend") is not False]
+    top = 60 if titled else 20
+    # Legend order follows the inputs even with filled bands (Plotly reverses those).
+    layout["legend"] = {**(layout.get("legend") or {}), "traceorder": "normal"}
+    if len(named) < 2:
+        layout["showlegend"] = False
+    elif not any(tr.get("type") == "barpolar" for tr in data):
+        layout["legend"].update(orientation="h", x=0, xanchor="left", y=1.02, yanchor="bottom")
+        # One row of room per row the legend wraps to, so it never runs into the title.
+        plot_px = (user_layout.get("width") or 700) - 160
+        entries_px = sum(7 * len(str(tr["name"])) + 45 for tr in named)
+        top += 24 * max(1, math.ceil(entries_px / max(plot_px, 200)))
+    layout["margin"] = {"t": top}
+    for name, axis in user_layout.items():
+        if name.startswith("yaxis") and isinstance(axis, dict) and axis.get("overlaying"):
+            # Plotly syncs an overlaid axis to the left grid (ticks at 1.01, 2.02, …);
+            # give it round ticks of its own and no second grid.
+            layout[name] = {"tickmode": "auto", "showgrid": False, **(layout.get(name) or {})}
+    return data, layout

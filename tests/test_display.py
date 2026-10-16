@@ -3,10 +3,9 @@
 import json
 
 import numpy as np
-from conftest import make_forecast, make_gridded
-from weather_skills_core.errors import UsageError
 from weather_skills_core.units import PRECIP_AMOUNT_LONG_NAME, STANDARD
 
+from conftest import make_forecast, make_gridded
 from weather_skills_plotting import display as dl
 
 
@@ -52,19 +51,16 @@ def test_dataset_display_label_source_wins_over_history():
     ds = make_gridded()
     ds.attrs["weather_skills_source"] = "dynamical:nasa-imerg-analysis-late"
     ds.attrs["weather_skills_history"] = json.dumps([{"skill": "dynamical-fetch"}])
-    assert dl.dataset_display_label(ds, "fallback") == "Nasa IMERG Analysis Late"
+    assert dl.dataset_display_label(ds, "fallback") == "NASA IMERG LATE"
 
 
 def test_label_from_source_token_colon_catalog():
-    assert (
-        dl.label_from_source_token("dynamical:nasa-imerg-analysis-late")
-        == "Nasa IMERG Analysis Late"
-    )
+    assert dl.label_from_source_token("dynamical:nasa-imerg-analysis-late") == "NASA IMERG LATE"
 
 
 def test_label_from_source_token_colon_path():
     assert dl.label_from_source_token("kenya-forecasting-data:gefs/gefs_kenya.zarr") == "GEFS"
-    assert dl.label_from_source_token("cmip6:ACCESS-CM2/ssp585/r1i1p1f1/Amon/pr/gn") == "Access Cm2"
+    assert dl.label_from_source_token("cmip6:ACCESS-CM2/ssp585/r1i1p1f1/Amon/pr/gn") == "ACCESS CM2"
 
 
 def test_label_from_source_token_path_stem():
@@ -73,21 +69,6 @@ def test_label_from_source_token_path_stem():
 
 def test_dataset_display_label_fallback():
     assert dl.dataset_display_label(make_gridded(), "input 1") == "input 1"
-
-
-def test_resolve_input_labels_empty():
-    assert dl.resolve_input_labels(None, 2) == [None, None]
-    assert dl.resolve_input_labels([], 2) == [None, None]
-    assert dl.resolve_input_labels([None, None], 1) == [None]
-
-
-def test_resolve_input_labels_count_mismatch():
-    try:
-        dl.resolve_input_labels(["A"], 2)
-    except UsageError as exc:
-        assert "expected 2 --label" in str(exc)
-    else:
-        raise AssertionError("expected UsageError")
 
 
 def test_combine_display_labels():
@@ -101,6 +82,8 @@ def test_format_units_for_display():
     assert dl.format_units_for_display("millimeter / day") == "mm/day"
     assert dl.format_units_for_display("mm") == "mm"
     assert dl.format_units_for_display("degree_Celsius") == "°C"
+    assert dl.format_units_for_display("delta_degC") == "°C"
+    assert dl.format_units_for_display("delta_degree_Celsius") == "°C"
     assert dl.format_units_for_display("") == ""
     assert dl.format_units_for_display(None) == ""
 
@@ -114,8 +97,8 @@ def test_variable_label_for_display_prefers_long_name():
         long_name="Total precipitation",
         GRIB_name="Precipitation rate",
     )
-    assert dl.variable_label_for_display(da) == "Total precipitation [mm]"
-    assert dl.variable_label_for_display(da, include_units=False) == "Total precipitation"
+    assert dl.variable_label_for_display(da) == "Precipitation [mm]"
+    assert dl.variable_label_for_display(da, include_units=False) == "Precipitation"
 
     product = make_gridded()["precip"]
     product.attrs["long_name"] = "IMERG daily precipitation"
@@ -128,7 +111,7 @@ def test_variable_label_for_display_prefers_long_name():
         long_name="precipitation rate",
         GRIB_name="Precipitation rate",
     )
-    assert dl.variable_label_for_display(amount) == "Total precipitation [mm]"
+    assert dl.variable_label_for_display(amount) == "Precipitation [mm]"
 
     bare = make_gridded()["precip"]
     assert dl.variable_label_for_display(bare) == "precip [mm/day]"
@@ -164,3 +147,19 @@ def test_precip_for_display_noop_without_period():
     ds = make_gridded(name="precip", units="mm day-1")
     out = dl.precip_for_display(ds, "precip")
     assert out["precip"].attrs["units"] == "mm day-1"
+
+
+def test_sub_daily_rate_stays_a_rate():
+    from weather_skills_plotting.display import precip_for_display
+
+    ds = make_gridded(name="precip", fill=2.0, units="mm h-1")
+    ds["precip"].attrs.update(standard_name="lwe_precipitation_rate", aggregation_period="6 hour")
+    assert precip_for_display(ds, "precip") is ds
+    ds["precip"].attrs["aggregation_period"] = "1 day"
+    assert precip_for_display(ds, "precip")["precip"].attrs["units"] == "mm"
+
+
+def test_dimensionless_units():
+    assert dl.format_units_for_display("dimensionless") == ""
+    assert dl.format_units_for_display("m3 m-3") == "m3 m-3"
+    assert dl.format_units_for_display("mm h-1") == "mm/h"
