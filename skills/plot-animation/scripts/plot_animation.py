@@ -40,7 +40,8 @@ _SKILL_VERSION = "0.0.1"
 @weather_skill.argument(
     "--theme-file",
     default=None,
-    help="Theme JSON/TOML layered on the standard look: {template, palettes, defaults, overlays}.",
+    help="Theme JSON/TOML, or a shipped theme name (tropical_tidbits), layered on the "
+    "standard look: {template, palettes, defaults, overlays}.",
 )
 @weather_skill.argument(
     "--dump-spec", nargs="?", const="-", default=None, probe=True, help=DUMP_SPEC_HELP
@@ -66,7 +67,17 @@ def plot_animation(ds, output, spec=None, theme_file=None, dump_spec=None, **kwa
     return run(base, spec, datasets, output, dump_spec, theme_file=theme_file, animate=True)
 
 
-install_spec_help(plot_animation)
+install_spec_help(
+    plot_animation,
+    [
+        ("Slower frames", '{"layout": {"meta": {"animation": {"duration": 900}}}}'),
+        (
+            "First 12 steps only",
+            '{"data": [{"uid": "0", "meta": {"source": {"isel": {"step": {"start": 0, "stop": 12}}}}}]}',
+        ),
+        ("Class palette", '{"data": [{"uid": "0", "meta": {"palette": "ppt_daily"}}]}'),
+    ],
+)
 
 if __name__ == "__main__":
     plot_animation()

@@ -380,3 +380,13 @@ def test_mixed_rate_and_aggregated_precip_stay_rates_on_shared_axis(tmp_path, pl
     spec["layout"] = {"grid": {"rows": 2, "columns": 1, "pattern": "coupled"}}
     kept = keep_mixed_precip_as_rates(spec, {"a": daily, "b": weekly})
     assert kept["b"]["precip"].attrs["aggregation_period"] == "7 day"
+
+
+def test_one_station_over_time_defaults_to_a_series(tmp_path, plot_fn, capsys):
+    stn = make_point_obs().isel(point_id=[0])
+    path = write_zarr(stn, tmp_path / "stn.zarr")
+    spec = _dump(plot_fn, capsys, "-i", f"{path}=STN")
+    (trace,) = spec["data"]
+    assert trace["type"] == "scatter" and "bind" not in trace["meta"]
+    assert trace["meta"]["source"]["isel"] == {"point_id": 0}
+    assert trace["name"] == "STN"

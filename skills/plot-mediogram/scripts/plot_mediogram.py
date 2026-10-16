@@ -18,7 +18,12 @@ from weather_skills_core.cf import auto_variable, cf_dim
 from weather_skills_plotting import parse_spec_arg
 from weather_skills_plotting.cli import run, skeleton
 from weather_skills_plotting.display import variable_label_for_display
-from weather_skills_plotting.labels import _TRAILING, format_plot_date, format_step
+from weather_skills_plotting.labels import (
+    _TRAILING,
+    format_plot_date,
+    format_step,
+    period_axis_title,
+)
 from weather_skills_plotting.palettes import is_precip
 from weather_skills_plotting.reference import install_spec_help
 from weather_skills_plotting.spec import DUMP_SPEC_HELP, SPEC_ARGUMENT_HELP, merge_spec
@@ -39,7 +44,9 @@ def _box(uid, name, color, source):
         "name": name,
         "fillcolor": color,
         "line": {"color": "black"},
-        "marker": {"color": "black"},
+        "marker": {"color": color, "line": {"color": "black", "width": 1}},
+        # Grouped side by side per lead; the forecast mean shares the forecast slot.
+        "offsetgroup": uid,
         "meta": {"bind": "samples", "source": source},
     }
 
@@ -60,7 +67,8 @@ def _variable(ds, user, uid):
 @weather_skill.argument("--spec", type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
 @weather_skill.argument(
     "--theme-file",
-    help="Theme JSON/TOML layered on the standard look: {template, palettes, defaults, overlays}.",
+    help="Theme JSON/TOML, or a shipped theme name (tropical_tidbits), layered on the "
+    "standard look: {template, palettes, defaults, overlays}.",
 )
 @weather_skill.argument("--dump-spec", nargs="?", const="-", probe=True, help=DUMP_SPEC_HELP)
 def plot_mediogram(ds, output, spec, theme_file, dump_spec, **kwargs):
@@ -102,6 +110,7 @@ def plot_mediogram(ds, output, spec, theme_file, dump_spec, **kwargs):
             "name": "forecast mean",
             "line": {"color": "black"},
             "marker": {"color": "black"},
+            "offsetgroup": "forecast",
             "meta": {"bind": "samples", "source": fc},
         },
     ]
@@ -127,7 +136,7 @@ def plot_mediogram(ds, output, spec, theme_file, dump_spec, **kwargs):
         shift = np.timedelta64(1, "D") if trailing else np.timedelta64(0, "D")
         days = [init + s - shift for s in da["step"].values[:n_steps]]
         xaxis = {
-            "title": {"text": "Valid date"},
+            "title": {"text": period_axis_title(da, "Valid date")},
             "tickvals": leads,
             "ticktext": [format_plot_date(d, year=False) for d in days],
         }
@@ -141,14 +150,27 @@ def plot_mediogram(ds, output, spec, theme_file, dump_spec, **kwargs):
         user = {**user, "layout": {k: v for k, v in user_layout.items() if k != "title"}}
     else:
         title = f"Mediogram: {qty} at {where}{suffix}"
-    layout = {"title": {"text": title}, "boxmode": "group", "xaxis": xaxis}
+    layout = {"title": {"text": title}, "boxmode": "group", "scattermode": "group", "xaxis": xaxis}
     if is_precip(da):
         layout["yaxis"] = {"rangemode": "nonnegative"}
     base = skeleton("plot-mediogram", datasets, data, layout)
     return run(merge_spec(base, user), None, datasets, output, dump_spec, theme_file=theme_file)
 
 
-install_spec_help(plot_mediogram)
+install_spec_help(
+    plot_mediogram,
+    [
+        (
+            "Pick leads (same isel on all three traces)",
+            '{"data": [{"uid": "forecast", "meta": {"source": {"isel": {"step": [0, 2, 4]}}}}, {"uid": "mclimate", "meta": {"source": {"isel": {"step": [0, 2, 4]}}}}, {"uid": "forecast-mean", "meta": {"source": {"isel": {"step": [0, 2, 4]}}}}]}',
+        ),
+        (
+            "Title (place and init date are appended)",
+            '{"layout": {"title": {"text": "Nairobi weekly rain"}}}',
+        ),
+        ("Hide the mean line", '{"data": [{"uid": "forecast-mean", "visible": false}]}'),
+    ],
+)
 
 if __name__ == "__main__":
     plot_mediogram()

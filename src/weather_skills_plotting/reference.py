@@ -47,7 +47,8 @@ _SOURCE = {
     "input": "input id: NAME from -i PATH=NAME, else the position 0, 1, … (obs, forecast1 … for plot-verify)",
     "variable": "data variable (default: auto-detected)",
     "isel": '0-based positions, e.g. {"number": 0, "step": [0, 1]}; -1 is the last. One '
-    "integer picks one value (one map); a list keeps the dim (one panel each)",
+    "integer picks one value (one map); a list keeps the dim (one panel each); a range is "
+    '{"start": 0, "stop": 12, "step": 3} (stop excluded)',
     "sel": 'labels to select (nearest for numbers and dates), e.g. {"time": "2026-09-21"}',
     "u / v": "wind component variables (default: found by CF standard_name eastward_wind / "
     "northward_wind, or names such as u10/v10, u/v)",
@@ -80,9 +81,46 @@ _RECIPES = [
         "H / L with the central value",
         '{"data": [{"uid": "MSLP", "contours": {"coloring": "none", "showlabels": true, '
         '"start": 900, "end": 1080, "size": 4}}, {"uid": "HIGHS", "mode": "text", '
-        '"texttemplate": "<b>H</b><br>%{customdata:.0f}", "textfont": {"color": "#1f4fbf"}}, '
+        '"texttemplate": "<b>H</b><br>%{customdata:.0f}", "textfont": {"color": "#1f4fbf", "shadow": "0 0 3px white"}}, '
         '{"uid": "LOWS", "mode": "text", "texttemplate": "<b>L</b><br>%{customdata:.0f}", '
-        '"textfont": {"color": "#c8102e"}}]}',
+        '"textfont": {"color": "#c8102e", "shadow": "0 0 3px white"}}]}',
+    ),
+    (
+        "Tropical Tidbits MSLP & precip (--theme-file tropical_tidbits; precip: aggregate-temporal "
+        "--period '6 hour' --time-dim step, select the step 6 h before the MSLP lead, unit-convert "
+        "to mm h-1): --layer heatmap:precip.zarr=PRECIP --layer contour:msl.zarr=MSLP --layer "
+        "scatter:highs.zarr=HIGHS --layer scatter:lows.zarr=LOWS; value above H / L",
+        '{"data": [{"uid": "PRECIP", "meta": {"palette": "tt_precip_rate"}}, {"uid": "MSLP", '
+        '"contours": {"coloring": "none", "showlabels": true, "start": 900, "end": 1080, '
+        '"size": 2}}, {"uid": "HIGHS", "mode": "text", "texttemplate": '
+        '"<b>%{customdata:.0f}</b><br><b>H</b>", "textfont": {"color": "#1f3fbf", "shadow": "0 0 3px white"}}, '
+        '{"uid": "LOWS", "mode": "text", "texttemplate": "<b>%{customdata:.0f}</b><br><b>L</b>", '
+        '"textfont": {"color": "#b5121b", "shadow": "0 0 3px white"}}]}',
+    ),
+    (
+        "Tropical Tidbits MSLP & 10 m wind (--theme-file tropical_tidbits colors the speed): "
+        "--layer heatmap:uv.zarr=WIND --layer quiver:uv.zarr=ARROWS --layer contour:msl.zarr=MSLP",
+        '{"data": [{"uid": "WIND", "meta": {"bind": "speed"}}, {"uid": "ARROWS", "meta": '
+        '{"arrows": {"step": 12}}}, {"uid": "MSLP", "contours": {"coloring": "none", '
+        '"showlabels": true, "start": 900, "end": 1080, "size": 2}}]}',
+    ),
+    (
+        "Tropical Tidbits total precip (aggregate-temporal, then convert-to-totals; "
+        "--theme-file tropical_tidbits makes tt_precip_total the precip default): -i total.zarr",
+        '{"layout": {"title": {"text": "Total precipitation, 0–48 h"}}}',
+    ),
+    (
+        "Tropical Tidbits MSLP & precipitable water (--theme-file tropical_tidbits): "
+        "--layer heatmap:pwat.zarr=PWAT --layer contour:msl.zarr=MSLP",
+        '{"data": [{"uid": "PWAT", "meta": {"palette": "tt_pwat"}}, {"uid": "MSLP", "contours": '
+        '{"coloring": "none", "showlabels": true, "start": 900, "end": 1080, "size": 2}}]}',
+    ),
+    (
+        "Tropical Tidbits 500 mb height & MSLP (--theme-file tropical_tidbits; select vertical "
+        "500, unit-convert to dam): --layer contour:z500.zarr=Z500 --layer contour:msl.zarr=MSLP",
+        '{"data": [{"uid": "Z500", "meta": {"palette": "tt_z500"}, "line": {"width": 0}}, '
+        '{"uid": "MSLP", "contours": {"coloring": "none", "showlabels": true, "start": 900, '
+        '"end": 1080, "size": 4}, "line": {"color": "white"}}]}',
     ),
     (
         "Color limits and colorscale (continuous)",
@@ -204,8 +242,8 @@ def _block(title: str, rows: dict) -> str:
     return "\n".join(lines)
 
 
-def spec_reference() -> str:
-    """Plain-text reference appended to ``--help``."""
+def spec_reference(recipes=None) -> str:
+    """Plain-text reference appended to ``--help``; ``recipes`` defaults to plot's."""
     parts = [
         "PLOT SPEC (--spec)",
         '  A standard Plotly figure: {"data": [traces], "layout": {…}}. Every key is Plotly\'s',
@@ -228,15 +266,28 @@ def spec_reference() -> str:
         "",
         _block("layout.meta", _LAYOUT_META),
         "",
+        "THEMES (--theme-file PATH, or a shipped name: tropical_tidbits)",
+        "  JSON or TOML with any of four sections, layered on the standard look:",
+        "  template  Plotly template (fonts, colorway, backgrounds)",
+        "  palettes  name -> {colors, bounds[, under, over, labels]} or a color list; adds to the",
+        "            built-ins ppt_daily / ppt_week / ppt_month / ppt_season, ppt_anom_*, ppt_total,",
+        "            ppt_poa, ppt_spp, spi, rocket (a theme entry of the same name replaces one)",
+        "  defaults  field kind -> palette or Plotly colorscale: precip, precip_anomaly, precip_poa,",
+        "            spi, wind_speed, diverging, sea_level_pressure, temperature, sequential",
+        "  overlays  coastline / borders / lakes / rivers / admin1 -> Plotly scatter style",
+        "            (admin1 also styles a many-polygon outline layer, e.g. county lines)",
+        "  --dump-spec shows your spec before draw-time defaults (palette, limits) are chosen;",
+        "  render once to see those.",
+        "",
         "RECIPES (each is a complete --spec)",
     ]
-    for title, example in _RECIPES:
+    for title, example in _RECIPES if recipes is None else recipes:
         parts += [f"  {title}:", f"    {example}"]
     return "\n".join(parts)
 
 
-def install_spec_help(skill) -> None:
-    """Append the spec reference to a skill's ``--help``."""
+def install_spec_help(skill, recipes=None) -> None:
+    """Append the spec reference to a skill's ``--help``, with that skill's recipes."""
     parser = skill.parser
     parser.formatter_class = argparse.RawDescriptionHelpFormatter
-    parser.epilog = f"{spec_reference()}\n\n{parser.epilog or ''}".rstrip()
+    parser.epilog = f"{spec_reference(recipes)}\n\n{parser.epilog or ''}".rstrip()

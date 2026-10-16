@@ -200,6 +200,16 @@ def merge_traces(base: list, overlay: list) -> list:
         if uid is not None:
             idx = next((j for j, t in enumerate(out) if t.get("uid") == uid), None)
             if idx is None:
+                if not set(trace) & {"type", "meta", "x", "y", "z", "lat", "lon", "r", "theta"}:
+                    # Only styling for a uid nothing has: a typo, not a new trace.
+                    have = [str(t.get("uid")) for t in out if t.get("uid") is not None]
+                    near = [h for h in have if h.lower() == str(uid).lower()]
+                    raise UsageError(
+                        f"--spec data[{i}] uid {uid!r} matches no trace (uids: "
+                        f"{', '.join(have) or 'none'})"
+                        + (f"; did you mean {near[0]!r}?" if near else "")
+                        + "; a new trace needs a type"
+                    )
                 out.append(copy.deepcopy(trace))
                 continue
         else:
@@ -414,6 +424,8 @@ def plotly_error(exc: Exception, loc: str = "") -> UsageError:
             '\nA colorbar belongs to a color axis: {"layout": {"coloraxis": {"colorbar": {…}}}} '
             "(coloraxis2, … for a second bar)"
         )
+    if "'bbox'" in head and "Geo" in head:
+        msg += '\nThe map window is layout.meta.geo.bbox: {"layout": {"meta": {"geo": {"bbox": [N, W, S, E]}}}}'
     prefix = f"plot spec {loc}: " if loc else "plot spec: "
     return UsageError(
         prefix + msg + "\nKeys are standard Plotly: https://plotly.com/python/reference/"

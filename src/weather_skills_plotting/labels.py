@@ -227,6 +227,11 @@ def format_calendar_panel(value, bin_width=None):
         return format_plot_date(value)
     if days <= 1.5:
         return format_plot_date(value)
+    ymd = _ymd(value)
+    if 27.5 <= days <= 31.5 and days != 30.0 and ymd is not None:
+        # A month, however it is stamped (CMIP6 puts it mid-month): "Jan 2090".
+        # An exact "30 day" window keeps its date range.
+        return f"{_MONTHS[ymd[1] - 1]} {ymd[0]}"
 
     offset_days = int(round(days)) - 1
     if hasattr(value, "calendar"):
@@ -267,7 +272,14 @@ def panel_title(da, sdim, step_value, all_steps):
             if dt is None:
                 dt = step_arr[1] - step_arr[0] if step_arr.size > 1 else np.timedelta64(1, "D")
             spacing = _spacing_seconds(step_arr)
-            if spacing is not None and spacing < 86_400:
+            if days is not None and days < 1:
+                # A sub-daily mean (6 hour precip): its window, then the lead it starts at.
+                end = start + dt
+                lead = f"{_hours(step_value)[:-1]}–{_hours(np.asarray(step_value) + dt)[1:]}"
+                return (
+                    f"{format_plot_time(start)}–{str(end.astype('datetime64[m]'))[11:16]} ({lead})"
+                )
+            if (spacing is not None and spacing < 86_400) or dt < np.timedelta64(1, "D"):
                 return f"{format_plot_time(start)} ({_hours(step_value)})"
             if _TRAILING.search(str(da.attrs.get("long_name") or "")):
                 # "… in the last 24 hours": the step labels the end of its window.
@@ -286,15 +298,18 @@ def panel_title(da, sdim, step_value, all_steps):
         spacing = _spacing_seconds(step_arr)
         if spacing is not None and spacing < 86_400:
             return format_plot_time(step_value)
+        if spacing is None and not format_plot_time(step_value).endswith(" 00:00"):
+            # One map at 12 UTC is a time of day, not a whole day.
+            return format_plot_time(step_value)
         return format_calendar_panel(step_value, calendar_bin_width(da, all_steps))
+    if sdim == "number":
+        return f"Member {format_step(step_value)}"
     units = str(da[sdim].attrs.get("units") or "") if sdim in da.coords else ""
     if not units and sdim in ("vertical", "level", "pressure_level", "isobaricInhPa"):
         units = "hPa"
     if units and value_arr.dtype.kind in "iuf":
         # A pressure level reads "850 hPa", not "vertical=850".
         return f"{float(value_arr):g} {units}"
-    if sdim == "number":
-        return f"Member {format_step(step_value)}"
     return f"{sdim}={format_step(step_value)}"
 
 
@@ -312,3 +327,14 @@ def timeseries_axis(da, sdim):
     if init.dtype.kind != "M":
         return da[sdim].values, sdim
     return (init + steps).astype("datetime64[ns]"), "Valid time"
+
+
+def period_axis_title(da, default):
+    """A date axis of multi-day totals says what each date starts: "Week starting"."""
+    days = aggregation_days(da)
+    if not days or days < 2:
+        return default
+    if 27.5 <= days <= 31.5 and days != 30.0:
+        return "Month"
+    names = {7: "Week starting", 10: "Dekad starting"}
+    return names.get(round(days), f"{days:g}-day period starting")

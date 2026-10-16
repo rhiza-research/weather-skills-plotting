@@ -32,7 +32,7 @@ The plot type follows the data: a lat/lon grid is a colored map, stations are co
 
 ### Arguments
 - `--input`, `-i` — Zarr to draw, as `PATH` or `PATH=NAME`; repeat for side-by-side maps or more lines.
-- `--layer` — `KIND:PATH` or `KIND:PATH=NAME` to stack on one map; repeat. Kinds: `heatmap`, `contour`, `scatter` (stations), `quiver` (wind u/v), `outline` and `mask` (GeoJSON). `outline` and `mask` also work with `-i`.
+- `--layer` — `KIND:PATH` or `KIND:PATH=NAME` to stack on one map; repeat. Kinds: `heatmap`, `contour`, `scatter` (stations), `quiver` (wind u/v), `outline` and `mask` (GeoJSON). `outline` and `mask` layers also combine with `-i` inputs (`-i grid.zarr --layer outline:counties.geojson`); `-i` itself takes Zarr paths only.
 - `--spec` — Plotly figure JSON, inline or a file path.
 - `--theme-file` — house style: Plotly `template`, `palettes`, per-field `defaults`, base-map `overlays` (see Colors).
 - `--dump-spec` — print (`-`) or save (a path) the spec, without drawing.
@@ -59,7 +59,7 @@ The figure at `-o`. PNG/JPG also print `data: NULL` when every value drawn is Na
 
 ### Notes
 - A map shows one value per cell: pick one value of any extra dim (`number`, `vertical`) with `isel` / `sel`, panel it with `"meta": {"facet": "number"}`, or average it first with summarize-dim.
-- Precip rates with an `aggregation_period` are drawn as period totals (mm). If only some lines on an axis have one, all stay rates.
+- Precip rates with an `aggregation_period` of a day or more are drawn as period totals (mm); sub-daily means (`6 hour`) stay rates (mm/h after unit-convert). If only some lines on an axis have one, all stay rates.
 
 ### Example
 ```bash
@@ -91,7 +91,7 @@ CHIRPS and ECMWF week-1 rainfall side by side over Kenya, each on its own grid, 
 - The y-axis label is the variable's `long_name` and units. A rainfall axis does not go below zero.
 
 ### Colors
-- Precip totals use the mm class palette `default_precip`; anomalies use `default_precip_anom`. The range follows `aggregation_period`: under 2 days 0–50 mm, under 10 days 0–200, under 40 days 0–400, longer 0–1000 (anomalies ±50 / ±200 / ±300 / ±500).
+- Precip totals use the mm class palette `default_precip`; anomalies use `default_precip_anom`. The range follows `aggregation_period`: under 2 days 0–50 mm, up to 10 days (a dekad) 0–200, under 40 days 0–400, longer 0–1000 (anomalies ±50 / ±200 / ±300 / ±500).
 - Set a palette with `"meta": {"palette": NAME}`: `default_precip`, `default_precip_anom`, `ppt_daily` … `ppt_season`, `ppt_anom_*`, `spi`, or your own `{colors, bounds}`.
 - Temperatures use `RdYlBu_r`; fields spanning zero use `RdBu_r`; flag fields (verify hits) get one color per flag.
 - `{"layout": {"coloraxis": {"colorbar": {"orientation": "h"}}}}` puts the colorbar under the maps.
@@ -119,8 +119,15 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -o mslp.png \
   --layer heatmap:msl_anom.zarr --layer contour:msl.zarr=MSLP \
   --layer scatter:highs.zarr=HIGHS --layer scatter:lows.zarr=LOWS --spec '{"data": [
   {"uid": "MSLP", "contours": {"coloring": "none", "showlabels": true, "start": 900, "end": 1080, "size": 4}},
-  {"uid": "HIGHS", "mode": "text", "texttemplate": "<b>H</b><br>%{customdata:.0f}", "textfont": {"color": "#1f4fbf"}},
-  {"uid": "LOWS", "mode": "text", "texttemplate": "<b>L</b><br>%{customdata:.0f}", "textfont": {"color": "#c8102e"}}]}'
+  {"uid": "HIGHS", "mode": "text", "texttemplate": "<b>H</b><br>%{customdata:.0f}", "textfont": {"color": "#1f4fbf", "shadow": "0 0 3px white"}},
+  {"uid": "LOWS", "mode": "text", "texttemplate": "<b>L</b><br>%{customdata:.0f}", "textfont": {"color": "#c8102e", "shadow": "0 0 3px white"}}]}'
+# Tropical Tidbits look: --theme-file tropical_tidbits adds TT's palettes (tt_precip_rate in
+# mm/h, tt_precip_total, tt_pwat, tt_wind, tt_z500 in dam). --help RECIPES has MSLP & precip,
+# MSLP & 10 m wind, total precip, MSLP & PWAT, and 500 mb height & MSLP.
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -o tt_pwat.png --theme-file tropical_tidbits \
+  --layer heatmap:pwat.zarr=PWAT --layer contour:msl.zarr=MSLP --spec '{"data": [
+  {"uid": "PWAT", "meta": {"palette": "tt_pwat"}},
+  {"uid": "MSLP", "contours": {"coloring": "none", "showlabels": true, "start": 900, "end": 1080, "size": 2}}]}'
 # Ensemble members as lines with a 10–90% band
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i ens_area_mean.zarr -o ens.png \
   --spec '{"data": [{"uid": "0", "meta": {"along": "number", "band": [10, 90]}}]}'

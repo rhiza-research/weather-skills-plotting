@@ -16,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 from weather_skills_core.errors import UsageError
-from weather_skills_core.units import parse_aggregation_period, variable_units
+from weather_skills_core.units import parse_aggregation_period, ureg, variable_units
 
 from weather_skills_plotting.geodata import OVERLAY_NAMES
 
@@ -220,7 +220,8 @@ def precip_window_name(days: float | None) -> str:
         return "ppt_week"
     if days < 2:
         return "ppt_daily"
-    if days < 10:
+    if days <= 10:
+        # A dekad is the week window, as chc-plot-theme picks it.
         return "ppt_week"
     if days < 40:
         return "ppt_month"
@@ -579,13 +580,26 @@ def builtin_palettes() -> dict:
 
 def _read_theme_file(path: Path) -> dict:
     """The standard theme with the file at ``path`` layered on top, validated."""
+    if not path.is_file():
+        shipped = sorted(
+            p.name.removesuffix(".json")
+            for p in DEFAULT_THEME_FILE.parent.iterdir()
+            if p.name.endswith(".json") and p.name != "default.json"
+        )
+        raise UsageError(
+            f"--theme-file {path}: no such file and not a shipped theme "
+            f"(shipped: {', '.join(shipped)})"
+        )
     text = path.read_text(encoding="utf-8")
-    if path.suffix.lower() == ".toml":
-        import tomllib
+    try:
+        if path.suffix.lower() == ".toml":
+            import tomllib
 
-        data = tomllib.loads(text)
-    else:
-        data = json.loads(text)
+            data = tomllib.loads(text)
+        else:
+            data = json.loads(text)
+    except ValueError as exc:  # JSONDecodeError and TOMLDecodeError are ValueErrors
+        raise UsageError(f"plot theme file {path} is not valid JSON/TOML: {exc}") from None
     if not isinstance(data, dict):
         raise UsageError(f"plot theme file {path} must contain an object")
     unknown = sorted(set(data) - THEME_FILE_KEYS)
@@ -662,11 +676,18 @@ def default_theme() -> dict:
 def load_theme(path=None) -> dict:
     """The standard theme with ``--theme-file`` layered on top.
 
+    ``path`` is a JSON/TOML file, or the name of a theme shipped in
+    ``themes/`` (``tropical_tidbits``).
+
     Falls back to ``$WEATHER_SKILLS_PLOT_THEME``, then
     ``~/.config/weather-skills/plot.{json,toml}``. Palettes and defaults
     replace by name; overlay styles merge into the standard line styles.
     """
     candidates = [Path(path)] if path is not None else []
+    shipped = DEFAULT_THEME_FILE.parent / f"{path}.json"
+    if path is not None and not Path(path).exists() and shipped.is_file():
+        # A shipped theme by name: --theme-file tropical_tidbits.
+        candidates = [Path(str(shipped))]
     if not candidates and os.environ.get(_THEME_ENV):
         candidates = [Path(os.environ[_THEME_ENV])]
     if not candidates:
@@ -684,7 +705,7 @@ def parse_palette(value, *, loc="meta.palette", registry: dict | None = None) ->
                 f"{loc} {value!r} is not a known palette; known: "
                 f"{', '.join(sorted({*palettes, *DEFAULT_PRECIP_PALETTES}))}. "
                 "For a Plotly colorscale name (Viridis, RdBu, YlGn, …) set the trace's "
-                "colorscale instead"
+                "colorscale instead; a palette from a theme file needs that --theme-file"
             )
         return {"name": key, **parse_palette(palettes[key], loc=f"{loc} {key!r}", registry={})}
     if isinstance(value, list):
@@ -764,17 +785,38 @@ def default_palette(da, *others, theme: dict | None = None, diverging: bool = Fa
     if flags is not None:
         return flags
     theme = theme or default_theme()
-    value = theme["defaults"][default_kind(da, diverging=diverging)]
+    kind = default_kind(da, diverging=diverging)
+    if kind == "precip_anomaly" and theme["defaults"][kind] == "default_precip_anom":
+        from weather_skills_core.units import classify_variable
+
+        rate = classify_variable(
+            da.name or "", units=variable_units(da), standard_name=da.attrs.get("standard_name")
+        )
+        if rate == "precip" and not aggregation_days(da):
+            # A change in rate (a CMIP6 future-minus-historical, mm/day) is not a period
+            # total: the mm anomaly classes would leave it all in the white ±10 class.
+            return {"name": "BrBG", "colorscale": "BrBG"}
+    value = theme["defaults"][kind]
     palettes = theme["palettes"]
     key = value.lower() if isinstance(value, str) else None
     if key in DEFAULT_PRECIP_PALETTES and not any(k.lower() == key for k in palettes):
         # A --theme-file entry of the same name wins over the window-following default.
-        # A rate (mm/day) with no period is a daily amount: the daily window, not the weekly.
-        days = [
-            aggregation_days(d) or (1.0 if "day" in str(variable_units(d) or "") else None)
-            for d in (da, *others)
-            if d is not None
-        ]
+        # A rate with no period is an amount per its unit's time step: mm/day is a
+        # daily amount, mm/h an hourly one (still the daily window, not the weekly).
+        days = []
+        for d in (da, *others):
+            if d is None:
+                continue
+            step = None
+            try:
+                step = (
+                    (ureg.Quantity(1, "mm") / ureg.Quantity(1, variable_units(d)))
+                    .to("day")
+                    .magnitude
+                )
+            except Exception:  # noqa: BLE001 — not a length-per-time rate
+                pass
+            days.append(aggregation_days(d) or step)
         value = default_precip_window(*(days or [None]), anomaly=DEFAULT_PRECIP_PALETTES[key])
     if isinstance(value, str) and not any(k.lower() == value.lower() for k in palettes):
         return {"name": value, "colorscale": value}

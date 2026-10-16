@@ -16,6 +16,7 @@ import copy
 import json
 import math
 import re
+import sys
 
 import numpy as np
 from weather_skills_core.errors import UsageError
@@ -24,12 +25,14 @@ from weather_skills_core.units import convert_values, variable_units
 
 from weather_skills_plotting.bind import Context, bind_of, bind_trace
 from weather_skills_plotting.geodata import (
+    dateline_bbox,
     geoms_to_xy,
     overlay_geoms,
     overlay_settings,
 )
 from weather_skills_plotting.layout import (
     DEFAULT_TEMPLATE,
+    WIDE_MAP,
     axis_suffix,
     choose_grid,
     colorbar_mode,
@@ -43,6 +46,7 @@ from weather_skills_plotting.palettes import (
     DEEP,
     DEFAULT_PRECIP_PALETTES,
     STANDARD_SEA_LEVEL_PRESSURE_HPA,
+    _class_slots,
     aggregation_days,
     continuous_colorscale,
     default_palette,
@@ -51,6 +55,7 @@ from weather_skills_plotting.palettes import (
     discretize,
     is_precip_anomaly,
     is_sea_level_pressure,
+    is_temperature,
     load_theme,
     parse_palette,
 )
@@ -63,6 +68,8 @@ from weather_skills_plotting.spec import (
 )
 
 # Draw order inside a map panel: fields under overlays, then arrows, stations, outlines.
+NO_DATA_COLOR = "#cccccc"  # map background, seen where cells are NaN
+MANY_PANELS = 24  # more map panels than this get a warning
 _MAP_RANK = {"field": 0, "speed": 0, "overlay": 1, "arrows": 2, "points": 3, "geojson": 4, None: 5}
 _TRACE_COLOR_KEYS = ("colorscale", "reversescale", "showscale", "colorbar")
 _TRACE_LIMIT_KEYS = {"zmin": "cmin", "zmax": "cmax", "zmid": "cmid"}
@@ -81,11 +88,17 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
     lmeta = user_layout.pop("meta", None) or {}
     geo = lmeta.get("geo") or {}
     bbox = geo.get("bbox")
+    bbox = tuple(parse_bbox(bbox)) if isinstance(bbox, str) else (tuple(bbox) if bbox else None)
+    if bbox is None:
+        # A grid that crosses the dateline is drawn on one continuous 0..360 window.
+        bbox = dateline_bbox(datasets.values())
+    elif bbox[0] < bbox[2]:
+        raise UsageError(f"layout.meta.geo.bbox {list(bbox)} is [N, W, S, E]; north is below south")
     ctx = Context(
         datasets=datasets,
         palettes=theme["palettes"],
         theme=theme,
-        bbox=tuple(parse_bbox(bbox)) if isinstance(bbox, str) else (tuple(bbox) if bbox else None),
+        bbox=bbox,
         polygon=polygon_from_geojson(geo["mask_geojson"]) if geo.get("mask_geojson") else None,
         point=geo.get("point"),
     )
@@ -238,7 +251,14 @@ def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
     lo = float(finite.min()) if finite.size else 0.0
     hi = float(finite.max()) if finite.size else 1.0
     # Limits the user set decide whether the scale straddles zero; they are kept as given.
-    diverging = user.get("cmin", lo) < 0 < user.get("cmax", hi)
+    # A temperature difference (delta_degC) is centred on zero whatever its sign; an
+    # absolute temperature crossing 0 °C (sea ice, the Arctic) keeps the temperature scale.
+    color_das = [b.color_da for _, b, _ in members if b.color_da is not None]
+    difference = any("delta_" in str(variable_units(d) or "") for d in color_das)
+    absolute_temp = bool(color_das) and not difference and all(map(is_temperature, color_das))
+    diverging = difference or (
+        not absolute_temp and user.get("cmin", lo) < 0 < user.get("cmax", hi)
+    )
     axis = {"colorbar": {"title": {"text": first.color_title or ""}}}
     if palette is None and "colorscale" not in user:
         # The theme's color for this kind of field: precip, wind speed, diverging, temperature …
@@ -247,7 +267,19 @@ def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
         if palette.get("colorscale"):
             axis["colorscale"] = palette["colorscale"]
             palette = None
+    if palette and palette.get("bounds") and stretch:
+        print(
+            f"Warning: zmin/zmax turn the class palette {palette.get('name') or ''} into a "
+            "continuous scale; drop them to keep its classes, or set bounds in the palette",
+            file=sys.stderr,
+        )
     if palette and palette.get("bounds") and not stretch and "colorscale" not in user:
+        under, classes, over = _class_slots(palette)
+        if under and finite.size and finite.min() >= palette["bounds"][0]:
+            # Nothing falls below the first edge (rain is never negative): no empty
+            # box under "0" on the colorbar.
+            palette = {k: v for k, v in palette.items() if k not in ("colors", "under", "over")}
+            palette.update(colors=list(classes), **({"over": over} if over else {}))
         for _, bound, traces in members:
             for tr in traces:
                 raw = _get_path(tr, bound.color_key)
@@ -277,6 +309,12 @@ def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
         )
         m = max(abs(lo - mid), abs(hi - mid))
         lo, hi = mid - m, mid + m
+    probability = bool(color_das) and all(
+        "probab" in f"{d.name} {d.attrs.get('long_name') or ''}".lower() for d in color_das
+    )
+    if not stretch and probability and 0 <= lo and hi <= 1:
+        # A probability reads against its whole range: 0.85 is not "the maximum".
+        lo, hi = 0.0, 1.0
     if lo == hi:
         lo, hi = lo - 1, hi + 1
     axis.setdefault("cmin", lo)
@@ -334,6 +372,8 @@ def _input_label(ctx, trace):
     if trace.get("name"):
         return str(trace["name"])
     source = (trace.get("meta") or {}).get("source") or {}
+    if source.get("input") is not None and not str(source["input"]).isdigit():
+        return str(source["input"])  # the NAME from -i PATH=NAME
     ds = ctx.datasets.get(str(source.get("input"))) if source.get("input") else None
     path = getattr(ds, "attrs", {}).get(INPUT_PATH_ATTR) if ds is not None else None
     return Path(path).stem if path else None
@@ -341,8 +381,13 @@ def _input_label(ctx, trace):
 
 def _assemble_map(items, user_layout, lmeta, ctx):
     groups: dict[int, list] = {}
+    # A plain Plotly trace (city markers, a box) with no axis of its own goes on every map.
+    floating = [item for item in items if item[2] is None and not item[1].get("xaxis")]
     for item in items:
-        groups.setdefault(_anchor(item[1]), []).append(item)
+        if not any(item is f for f in floating):
+            groups.setdefault(_anchor(item[1]), []).append(item)
+    if not groups:
+        groups[1] = []
     order = sorted(groups)
     plan = []  # per group: list of panel keys (None for an unfaceted group)
     for g in order:
@@ -377,6 +422,12 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     else:
         panels = [(0, k) for k in plan[0]]
     n = len(panels)
+    if n > MANY_PANELS:
+        print(
+            f"Warning: {n} map panels; each will be small. Pick the ones you need with "
+            'meta.source.isel (e.g. {"step": [0, 6, 12, 18]}) or aggregate first.',
+            file=sys.stderr,
+        )
 
     # Bind results per panel.
     panel_traces = [[] for _ in range(n)]  # (rank, trace dict, spec_trace, bound)
@@ -386,13 +437,18 @@ def _assemble_map(items, user_layout, lmeta, ctx):
         if gi is None:
             continue
         g = order[gi]
-        for i, spec_trace, bound in groups[g]:
+        for i, spec_trace, bound in [*groups[g], *floating]:
             uid = spec_trace.get("uid") or f"trace{i}"
             if bound is None:
                 tr = copy.deepcopy(
                     {k: v for k, v in spec_trace.items() if k not in ("xaxis", "yaxis")}
                 )
                 tr["uid"] = safe_uid(f"{uid}-p{p + 1}" if n > 1 else uid)
+                if any(spec_trace is f[1] for f in floating):
+                    # One color on every panel, not the next colorway entry per copy.
+                    fill_defaults(
+                        tr, {"marker": {"color": "#262626"}, "line": {"color": "#262626"}}
+                    )
                 panel_traces[p].append((_MAP_RANK[None], tr, spec_trace, None))
                 continue
             if len(bound.panels) == 1:
@@ -414,15 +470,20 @@ def _assemble_map(items, user_layout, lmeta, ctx):
         if extents[p] is None:
             raise UsageError("a map panel has no data extent; set layout.meta.geo.bbox")
     if len(order) > 1:
-        # Side by side, a panel is named for its dataset (trace name, else file name).
+        # Side by side, a panel is named for its dataset (trace name, else file name),
+        # and keeps its date too when the panels show different dates.
+        dates = [t for t in panel_titles if t]
+        differ = len(set(dates)) > 1
         for p, (gi, _) in enumerate(panels):
             if gi is None:
                 continue
             bound_items = [
                 (t, b) for _, t, b in groups[order[gi]] if b is not None and not b.static
             ]
-            if bound_items:
-                panel_titles[p] = _input_label(ctx, bound_items[0][0]) or panel_titles[p]
+            name = _input_label(ctx, bound_items[0][0]) if bound_items else None
+            if name:
+                date = panel_titles[p]
+                panel_titles[p] = f"{name} · {date}" if differ and date else name
 
     # Color axes: explicit coloraxis wins; else traces showing the same quantity
     # (color title, palette, anomaly or not) share one, side by side included.
@@ -449,8 +510,17 @@ def _assemble_map(items, user_layout, lmeta, ctx):
                     if bound.color_da is not None
                     else None
                 )
+                difference = bound.color_da is not None and "delta_" in str(
+                    variable_units(bound.color_da) or ""
+                )
                 quantity = (
-                    (sn, title.rpartition("[")[2], "anomaly" in title, "std. dev." in title)
+                    (
+                        sn,
+                        title.rpartition("[")[2],
+                        "anomaly" in title,
+                        "std. dev." in title,
+                        difference,
+                    )
                     if sn
                     else title
                 )
@@ -534,6 +604,9 @@ def _assemble_map(items, user_layout, lmeta, ctx):
         ]
     panels_of = dict(sorted(panels_of.items(), key=lambda item: min(item[1])))
     mode = colorbar_mode(panels_of, cols)
+    if mode in ("right", "rows") and aspect > WIDE_MAP:
+        # A strip (a Pacific band, a polar belt) is too short for a vertical bar's title.
+        mode = "below"
     if mode in ("right", "rows") and any(
         ((user_layout.get(name) or {}).get("colorbar") or {}).get("orientation") == "h"
         for name in panels_of
@@ -552,7 +625,9 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     )
     slots = place_colorbars(mode, panels_of, domains)
     # No-data cells show the plot background: a neutral grey, not the template's tint.
-    layout["plot_bgcolor"] = "#ebebeb"
+    # Darker than the near-white of a diverging zero or a dry class, so a missing cell
+    # never reads as zero.
+    layout["plot_bgcolor"] = NO_DATA_COLOR
     layout["annotations"] = []
     for p in range(n):
         s = axis_suffix(p)
@@ -731,4 +806,9 @@ def _assemble_chart(items, user_layout):
         entries_px = sum(7 * len(str(tr["name"])) + 45 for tr in named)
         top += 24 * max(1, math.ceil(entries_px / max(plot_px, 200)))
     layout["margin"] = {"t": top}
+    for name, axis in user_layout.items():
+        if name.startswith("yaxis") and isinstance(axis, dict) and axis.get("overlaying"):
+            # Plotly syncs an overlaid axis to the left grid (ticks at 1.01, 2.02, …);
+            # give it round ticks of its own and no second grid.
+            layout[name] = {"tickmode": "auto", "showgrid": False, **(layout.get(name) or {})}
     return data, layout

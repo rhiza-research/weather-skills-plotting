@@ -11,6 +11,7 @@ from __future__ import annotations
 import copy
 import math
 
+import numpy as np
 from weather_skills_core.errors import UsageError
 
 from weather_skills_plotting.palettes import COLORBLIND, default_theme
@@ -85,7 +86,8 @@ def choose_grid(n: int, aspect: float, rows=None, columns=None) -> tuple[int, in
 
 # Largest map area, in pixels, for one panel alone and per panel in a grid.
 MAP_BOX_SINGLE = (760, 560)
-MAP_BOX_PANEL = (340, 340)
+MAP_BOX_PANEL = (340, 340)  # area per grid panel: width x height of a square map
+PANEL_MAX_H = 420  # tallest grid panel, for maps taller than wide
 MAX_PLOT_WIDTH = 1400  # panels shrink so the panel area fits this width
 # Room around map panels, in multiples of the font size. This only sizes the
 # canvas and the gaps between panels: Plotly grows the outer margins itself
@@ -93,6 +95,9 @@ MAX_PLOT_WIDTH = 1400  # panels shrink so the panel area fits this width
 TICK_ROOM = 4  # y tick labels left of a map, such as "-10°"
 LINE = 2  # one line of text: x tick labels, a panel title, the figure title
 COLORBAR_ROOM = 8  # a colorbar with its title
+SEAL_CLEAR = 0.88  # horizontal colorbars end left of the provenance seal (plot-width fraction)
+SEAL_CLEAR_Y = 0.06  # vertical colorbars start above it (plot-height fraction)
+WIDE_MAP = 2.5  # a map wider than this (lon / lat span) gets its colorbar below
 
 
 def font_size(user: dict | None) -> float:
@@ -122,8 +127,13 @@ def map_layout(
     user = user or {}
     grid = user.get("grid") or {}
     em = font_size(user)
-    box_w, box_h = MAP_BOX_SINGLE if rows * cols == 1 else MAP_BOX_PANEL
-    w = min(box_w, box_h * aspect)
+    if rows * cols == 1:
+        box_w, box_h = MAP_BOX_SINGLE
+        w = min(box_w, box_h * aspect)
+    else:
+        # Same area per panel whatever its shape: a Pacific strip gets width, not a sliver.
+        box_w, box_h = MAP_BOX_PANEL
+        w = min(MAP_BOX_SINGLE[0], (box_w * box_h * aspect) ** 0.5, PANEL_MAX_H * aspect)
     h = w / aspect
     title_lines = LINE if panel_titles else 0
     ml = TICK_ROOM * em
@@ -193,6 +203,16 @@ def map_axes(p: int, extent, domain=None) -> tuple[dict, dict]:
     }
     s = axis_suffix(p)
     xaxis = {"range": [extent[0], extent[1]], **common, "anchor": f"y{s}"}
+    if extent[1] > 180:
+        # A map across the dateline runs on 0..360: label 200 as -160, like every other map.
+        span = extent[1] - extent[0]
+        step = next(d for d in (1, 2, 5, 10, 20, 30, 45, 60, 90) if span / d <= 8)
+        ticks = np.arange(np.ceil(extent[0] / step) * step, extent[1] + 1e-9, step)
+        xaxis.update(
+            tickmode="array",
+            tickvals=[float(t) for t in ticks],
+            ticktext=[f"{180 if t % 360 == 180 else (t + 180) % 360 - 180:g}°" for t in ticks],
+        )
     yaxis = {
         "range": [extent[2], extent[3]],
         **common,
@@ -232,6 +252,8 @@ def place_colorbars(mode: str, panels_of: dict, domains) -> dict:
         ds = [domains[p] for p in panels]
         if mode in ("right", "rows"):
             y0, y1 = min(d[2] for d in ds), max(d[3] for d in ds)
+            # Clear of the provenance seal in the bottom-right corner.
+            y0 = max(y0, SEAL_CLEAR_Y)
             out[name] = {
                 "len": y1 - y0,
                 "y": (y0 + y1) / 2,
@@ -253,9 +275,12 @@ def place_colorbars(mode: str, panels_of: dict, domains) -> dict:
         }
         if mode == "columns":
             x0, x1 = min(d[0] for d in ds), max(d[1] for d in ds)
-            bar.update(len=(x1 - x0) * 0.9, x=(x0 + x1) / 2, xanchor="center")
         else:
-            bar.update(len=0.9 / k, x=(i + 0.5) / k, xanchor="center")
+            x0, x1 = i / k, (i + 1) / k
+        # The provenance seal sits in the bottom-right corner: bars and their
+        # titles stop short of it.
+        x1 = min(x1, SEAL_CLEAR)
+        bar.update(len=(x1 - x0) * 0.9, x=(x0 + x1) / 2, xanchor="center")
         out[name] = bar
     return out
 

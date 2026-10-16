@@ -111,7 +111,7 @@ def test_faceted_side_by_side_is_an_error():
 def test_leftover_dim_is_an_error_with_hint():
     ds = make_forecast(n_step=2)  # tests/conftest: number × step × lat × lon
     ds = ds.expand_dims(level=[850, 500])
-    with pytest.raises(UsageError, match="dimension 'level' remains.*isel"):
+    with pytest.raises(UsageError, match="dimensions 'level', 'number' remain.*isel"):
         compile({"data": [_trace("a")]}, {"a": ds})
 
 
@@ -229,6 +229,8 @@ def test_text_only_points_skip_nan_but_markers_keep_them():
         spec = {"data": [_trace("c", type="scatter", mode=mode, meta={"bind": "points"})]}
         trace = next(t for t in compile(spec, {"c": stations}).data if t["uid"] == "c")
         assert len(trace["x"]) == n and len(trace["customdata"]) == n
+    # The station with no value is a ×, not a filled dot that reads as a class.
+    assert list(trace["marker"]["symbol"]) == ["circle", "x", "circle"]
 
 
 def test_non_precip_gets_continuous_scale_symmetric_when_diverging():
@@ -495,8 +497,11 @@ def test_two_scales_on_one_panel_do_not_overlap():
     bar1, bar2 = layout["coloraxis"]["colorbar"], layout["coloraxis2"]["colorbar"]
     # Two bars sit side by side along the bottom, each in its own half.
     assert bar1["orientation"] == bar2["orientation"] == "h"
-    assert (bar1["len"], bar2["len"]) == (0.45, 0.45)
-    assert (bar1["x"], bar2["x"]) == (0.25, 0.75)
+    left = [b["x"] - b["len"] / 2 for b in (bar1, bar2)]
+    right = [b["x"] + b["len"] / 2 for b in (bar1, bar2)]
+    assert right[0] <= left[1]
+    # The provenance seal sits in the bottom-right corner; the bars stop short of it.
+    assert right[1] <= 0.88
 
 
 def test_align_dayofyear_lines_up_leap_and_non_leap_years():
@@ -696,3 +701,183 @@ def test_partial_theme_dict_gets_the_standard_keys():
     ds = make_gridded(n_time=1)
     fig = compile({"data": [_trace("a")]}, {"a": ds}, theme={"palettes": builtin_palettes()})
     assert any(str(t["uid"]).startswith("overlay-borders") for t in _data(fig, "scatter"))
+
+
+def test_precip_rate_keeps_its_mm_units_for_a_spec_palette():
+    # unit-convert to mm/h: class edges in mm/h must meet mm/h values, not mm/day.
+    ds = make_gridded(n_time=1, fill=2.0, units="mm h-1")
+    ds["precip"].attrs["standard_name"] = "lwe_precipitation_rate"
+    palette = {"colors": ["#ffffff", "#7fff7f", "#3dc83d", "#ff4d4d"], "bounds": [0, 1, 3, 5, 100]}
+    fig = compile({"data": [_trace("a", meta={"palette": palette})]}, {"a": ds})
+    heat = _data(fig, "heatmap")[0]
+    assert np.allclose(np.asarray(heat["customdata"], dtype=float), 2.0)
+    assert "mm/h" in _layout(fig)["coloraxis"]["colorbar"]["title"]["text"]
+    # A selected 6 hour mean (aggregation_period set, no step axis left) stays mm/h too.
+    one = ds.isel(time=0)
+    one["precip"].attrs["aggregation_period"] = "6 hour"
+    heat = _data(compile({"data": [_trace("a", meta={"palette": palette})]}, {"a": one}), "heatmap")
+    assert np.allclose(np.asarray(heat[0]["customdata"], dtype=float), 2.0)
+    # A flux that is not in mm still reads in mm/day.
+    ds = make_gridded(n_time=1, fill=1 / 86400, units="kg m-2 s-1")
+    ds["precip"].attrs["standard_name"] = "lwe_precipitation_rate"
+    heat = _data(compile({"data": [_trace("a")]}, {"a": ds}), "heatmap")[0]
+    assert np.allclose(np.asarray(heat["customdata"], dtype=float), 1.0)
+
+
+def test_dateline_grid_and_points_draw_on_one_continuous_window():
+    # A 150E..80W fetch comes back on -180..180 with a gap; it must not span the globe.
+    lons = tuple(float(x) for x in [*range(-180, -79, 10), *range(150, 180, 10)])
+    grid = make_gridded(n_time=1, lats=(-5.0, 0.0, 5.0), lons=lons)
+    station = make_station(n_station=1, n_time=1).isel(time=0)
+    station = station.assign_coords(
+        latitude=("station_id", [0.0]), longitude=("station_id", [-150.0])
+    )
+    spec = {"data": [_trace("a"), _trace("b", type="scatter", meta={"bind": "points"})]}
+    fig = compile(spec, {"a": grid, "b": station})
+    lo, hi = _layout(fig)["xaxis"]["range"]
+    assert 140 < lo < 155 and 275 < hi < 290
+    marker = next(t for t in _data(fig, "scatter") if t["uid"].startswith("b"))
+    assert np.allclose(np.asarray(marker["x"], dtype=float), [210.0])
+    labels = _layout(fig)["xaxis"]["ticktext"]
+    assert "180°" in labels and "-160°" in labels
+
+
+def test_sel_on_a_model_calendar_picks_the_nearest_date():
+    import cftime
+
+    times = [cftime.datetime(2099, m, 16, calendar="360_day") for m in (1, 2, 3)]
+    ds = make_gridded(n_time=3).assign_coords(time=times)
+    for day in ("2099-02-20", "2099-02-30"):
+        spec = {"data": [_trace("a", source={"sel": {"time": day}})]}
+        heat = _data(compile(spec, {"a": ds}), "heatmap")
+        assert len(heat) == 1
+
+
+def test_temperature_difference_is_diverging_and_absolute_is_not():
+    warm = make_gridded(n_time=1, name="sst", fill=2.0, units="delta_degC")
+    warm["sst"].attrs["standard_name"] = "sea_surface_temperature"
+    axis = _layout(compile({"data": [_trace("a")]}, {"a": warm}))["coloraxis"]
+    # An all-positive anomaly is still centred on zero.
+    assert axis["cmin"] == -axis["cmax"]
+    sst = make_gridded(n_time=1, name="sst", units="degree_Celsius")
+    sst["sst"].values[..., 0] = -1.8
+    sst["sst"].values[..., 1:] = 28.0
+    sst["sst"].attrs["standard_name"] = "sea_surface_temperature"
+    axis = _layout(compile({"data": [_trace("a")]}, {"a": sst}))["coloraxis"]
+    assert axis["cmin"] == pytest.approx(-1.8) and axis["cmax"] == pytest.approx(28.0)
+    # Side by side they are two quantities: two colorbars.
+    spec = {"data": [_trace("a"), _trace("b", xaxis="x2", yaxis="y2")]}
+    heat = _data(compile(spec, {"a": sst, "b": warm}), "heatmap")
+    assert heat[0]["coloraxis"] != heat[1]["coloraxis"]
+
+
+def test_input_names_title_side_by_side_panels_and_plain_traces_repeat():
+    a, b = make_gridded(n_time=1), make_gridded(n_time=1, fill=3.0)
+    spec = {
+        "data": [
+            _trace("CHIRPS"),
+            _trace("IMERG", xaxis="x2", yaxis="y2"),
+            {"uid": "city", "type": "scatter", "mode": "markers", "x": [11.0], "y": [2.0]},
+        ]
+    }
+    fig = compile(spec, {"CHIRPS": a, "IMERG": b})
+    titles = [
+        x["text"] for x in _layout(fig)["annotations"] if x.get("name", "").startswith("panel")
+    ]
+    assert titles == ["CHIRPS", "IMERG"]
+    cities = [t for t in fig.data if t["uid"].startswith("city")]
+    assert sorted(t["xaxis"] for t in cities) == ["x", "x2"]
+    assert {t["marker"]["color"] for t in cities} == {"#262626"}
+
+
+def test_member_panels_are_titled_by_member():
+    from weather_skills_plotting.labels import panel_title
+
+    da = xr.DataArray(
+        [0.0, 1.0], dims=["number"], coords={"number": ("number", [0, 1], {"units": "1"})}
+    )
+    assert panel_title(da, "number", 1, [0, 1]) == "Member 1"
+
+
+def test_mistyped_uid_names_the_real_one():
+    from weather_skills_plotting.spec import merge_traces
+
+    with pytest.raises(UsageError, match="did you mean 'OBS'"):
+        merge_traces([{"uid": "OBS", "type": "heatmap"}], [{"uid": "obs", "zmin": 0}])
+
+
+def test_second_y_axis_gets_its_own_round_ticks():
+    t = np.arange(np.datetime64("2026-09-01"), np.datetime64("2026-09-05")).astype("datetime64[ns]")
+    a = xr.Dataset({"x": (("time",), [1.0, 2.0, 3.0, 4.0])}, coords={"time": t})
+    b = xr.Dataset({"y": (("time",), [10.0, 30.0, 20.0, 40.0])}, coords={"time": t})
+    spec = {
+        "data": [
+            {"uid": "a", "type": "scatter", "meta": {"source": {"input": "a"}}},
+            {"uid": "b", "type": "scatter", "yaxis": "y2", "meta": {"source": {"input": "b"}}},
+        ],
+        "layout": {"yaxis2": {"overlaying": "y", "side": "right"}},
+    }
+    axis = _layout(compile(spec, {"a": a, "b": b}))["yaxis2"]
+    assert axis["tickmode"] == "auto" and axis["showgrid"] is False
+
+
+def test_upside_down_bbox_and_several_leftover_dims_are_named():
+    ds = make_gridded(n_time=1)
+    spec = {"data": [_trace("a")], "layout": {"meta": {"geo": {"bbox": [-5, 10, 5, 13]}}}}
+    with pytest.raises(UsageError, match="north is below south"):
+        compile(spec, {"a": ds})
+    cube = make_gridded(n_time=1).expand_dims(number=[0, 1], vertical=[500, 850])
+    with pytest.raises(UsageError, match="dimensions 'number', 'vertical' remain"):
+        compile({"data": [_trace("a")]}, {"a": cube})
+
+
+def test_probability_spans_zero_to_one_and_precip_rate_change_is_brbg():
+    prob = make_gridded(n_time=1, name="probability", fill=0.4, units="1")
+    prob["probability"].values[..., 0] = 0.1
+    axis = _layout(compile({"data": [_trace("a")]}, {"a": prob}))["coloraxis"]
+    assert (axis["cmin"], axis["cmax"]) == (0.0, 1.0)
+    change = make_gridded(n_time=1, fill=2.0, units="mm day-1")
+    change["precip"].attrs["standard_name"] = "lwe_precipitation_rate"
+    change["precip"].values[..., 0] = -3.0
+    axis = _layout(compile({"data": [_trace("a")]}, {"a": change}))["coloraxis"]
+    assert "ticktext" not in axis["colorbar"]  # continuous, not the mm classes
+    assert axis["cmin"] == -axis["cmax"]
+
+
+def test_xy_year_labels_do_not_share_a_spot():
+    years = np.arange(2010, 2014)
+    ds = xr.Dataset(
+        {"a": (("year",), [1.0, 1.01, 3.0, 4.0]), "b": (("year",), [5.0, 5.02, 1.0, 2.0])},
+        coords={"year": years},
+    )
+    fig = compile(
+        {
+            "data": [
+                {
+                    "uid": "s",
+                    "type": "scatter",
+                    "meta": {"x": "a", "y": "b", "source": {"input": "s"}},
+                }
+            ]
+        },
+        {"s": ds},
+    )
+    pos = list(next(t for t in fig.data if t["uid"] == "s")["textposition"])
+    # The two near-identical points get different sides.
+    assert pos[0] != pos[1]
+
+
+def test_wind_speed_classes_are_one_ramp():
+    from weather_skills_plotting.wind import WIND_SPEED_COLORS
+
+    lum = [
+        sum(int(c[i : i + 2], 16) * w for i, w in ((1, 0.299), (3, 0.587), (5, 0.114)))
+        for c in WIND_SPEED_COLORS
+    ]
+    assert lum == sorted(lum, reverse=True)
+
+
+def test_isel_range_picks_every_nth_position():
+    ds = make_gridded(n_time=6)
+    spec = {"data": [_trace("a", source={"isel": {"time": {"start": 0, "stop": 6, "step": 2}}})]}
+    assert len(_data(compile(spec, {"a": ds}), "heatmap")) == 3

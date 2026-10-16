@@ -74,6 +74,8 @@ The trace type picks the default bind (`heatmap` → `field`, `barpolar` →
 `sel` / `facet` / `along` is an error that names the fix. The only means the
 plotter draws are a band's mean line and the `samples` scatter. Every other
 average is made upstream with `summarize-dim` or `aggregate-temporal`.
+Units go through `to_standard_units`, except a precip rate already in mm per some
+time step (mm/h from `unit-convert`), which keeps its units.
 
 ## Assembly (`figure.py`, `layout.py`)
 

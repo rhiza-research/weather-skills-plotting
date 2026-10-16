@@ -20,13 +20,19 @@ from weather_skills_core.cf import auto_variable, cf_dim
 from weather_skills_core.errors import UsageError
 from weather_skills_core.standard_utils import ensure_normalized_longitude, polygon_from_geojson
 from weather_skills_core.units import (
+    STANDARD,
     classify_variable,
     to_standard_units,
     units_equal,
+    ureg,
     variable_units,
 )
 
-from weather_skills_plotting.display import precip_for_display, variable_label_for_display
+from weather_skills_plotting.display import (
+    format_units_for_display,
+    precip_for_display,
+    variable_label_for_display,
+)
 from weather_skills_plotting.geodata import (
     extent_from_da,
     plain,
@@ -40,6 +46,7 @@ from weather_skills_plotting.labels import (
     format_step,
     is_datetime_axis,
     panel_title,
+    period_axis_title,
     timeseries_axis,
 )
 from weather_skills_plotting.palettes import (
@@ -150,12 +157,26 @@ def _dataset(ctx: Context, source: dict, loc: str):
 
 
 def _display(ds, variable):
+    da = ds[variable]
+    units = variable_units(da)
     try:
-        ds = to_standard_units(ds, variables=[variable])
-    except UsageError:
-        # Totals or anomalies can carry a rate/temperature standard_name that
-        # the standard-units table would force into an incompatible target.
-        pass
+        mm_rate = str(ureg.Unit(units)).startswith("millimeter / ")
+    except Exception:  # noqa: BLE001 — no or unparseable units
+        mm_rate = False
+    kind = classify_variable(variable, units=units, standard_name=da.attrs.get("standard_name"))
+    if mm_rate and kind == "precip":
+        # A rate already in mm per hour, day, ... keeps the units it was written in
+        # (unit-convert's choice), so class edges in a spec palette mean those units.
+        ds = ds.copy(deep=False)
+        ds[variable] = da.copy(deep=False)
+        ds[variable].attrs["standard_name"] = STANDARD["precip"]["standard_name"]
+    else:
+        try:
+            ds = to_standard_units(ds, variables=[variable])
+        except UsageError:
+            # Totals or anomalies can carry a rate/temperature standard_name that
+            # the standard-units table would force into an incompatible target.
+            pass
     out = precip_for_display(ds, variable)
     if out is not ds:
         print(
@@ -202,6 +223,16 @@ def _sel(da, source: dict, loc: str):
                 f"{loc}.isel dimension {dim!r} is not in the data (dims: {list(da.dims)})"
             )
         size = da.sizes[dim]
+        if isinstance(idx, dict):
+            # A range: {"start": 0, "stop": 12, "step": 3} (stop excluded, like Python).
+            unknown = set(idx) - {"start", "stop", "step"}
+            if unknown:
+                raise UsageError(
+                    f"{loc}.isel {dim} range takes start, stop, step; got {sorted(unknown)}"
+                )
+            idx = list(range(size))[slice(idx.get("start"), idx.get("stop"), idx.get("step"))]
+            if not idx:
+                raise UsageError(f"{loc}.isel {dim} range selects nothing (size {size})")
         for pos in idx if isinstance(idx, list) else [idx]:
             if isinstance(pos, bool) or not isinstance(pos, int) or not -size <= pos < size:
                 raise UsageError(f"{loc}.isel {dim}={pos!r} is out of range (size {size})")
@@ -228,12 +259,28 @@ def _sel(da, source: dict, loc: str):
                 da = da.sel({dim: target})
             elif kind in "iuf":
                 da = da.sel({dim: value}, method="nearest")
+            elif coord.size and hasattr(coord.flat[0], "calendar"):
+                # Model calendars (360_day, noleap): nearest date, like datetime64 axes.
+                import cftime
+
+                targets = []
+                for v in value if isinstance(value, list) else [value]:
+                    # "2099-02-30" or "2099-02-30T12": parsed by hand, since it may not
+                    # exist in the standard calendar.
+                    y, m, d = (int(x) for x in str(v)[:10].split("-"))
+                    hour = int(str(v)[11:13]) if len(str(v)) >= 13 else 0
+                    targets.append(cftime.datetime(y, m, d, hour, calendar=coord.flat[0].calendar))
+                target = targets if isinstance(value, list) else targets[0]
+                da = da.sel({dim: target}, method="nearest")
             else:
                 da = da.sel({dim: value})
         except (KeyError, ValueError, TypeError) as exc:
             raise UsageError(
                 f"{loc}.sel {dim}={value!r} does not match the coordinate ({exc})"
             ) from None
+    empty = [d for d in da.dims if da.sizes[d] == 0]
+    if empty:
+        raise UsageError(f"{loc}.isel / sel left no values on {', '.join(empty)}")
     # A one-value dim (a single pressure level or member) has nothing to choose
     # or average; time and step stay so a single map keeps its date, and a
     # one-station file keeps its station axis.
@@ -306,8 +353,10 @@ def _facet_dim(meta: dict, da, keep: tuple, loc: str):
 def _leftover_error(da, allowed, what, loc):
     extra = [d for d in da.dims if d not in allowed]
     if extra:
+        names = ", ".join(repr(d) for d in extra)
         raise UsageError(
-            f"dimension {extra[0]!r} remains for {what}; select a position with "
+            f"dimension{'s' if len(extra) > 1 else ''} {names} remain{'' if len(extra) > 1 else 's'} "
+            f"for {what}; select a position with "
             f"{loc}.source.isel / sel, panel it with {loc}.facet, or average it first with "
             f"summarize-dim. Side-by-side maps are separate inputs on separate axes, "
             f"not one dataset concatenated along {extra[0]!r}"
@@ -389,7 +438,11 @@ def bind_field(trace, meta, ctx, loc, *, speed=False):
         x = np.array([x[0] - half, x[0] + half]) if len(x) == 1 else x
         y = np.array([y[0] - half, y[0] + half]) if len(y) == 1 else y
     panels, values = [], []
-    hover = "%{x:.2f}°, %{y:.2f}°: %{customdata:.4g}<extra></extra>"
+    units = format_units_for_display(variable_units(da))
+    hover = (
+        f"lat %{{y:.2f}}, lon %{{x:.2f}}: %{{customdata:.4g}}{' ' + units if units else ''}"
+        "<extra></extra>"
+    )
     for key, ptitle, part in _slices(da, fdim):
         z = np.asarray(part.values, dtype=float)
         values.append(z)
@@ -539,15 +592,27 @@ def bind_points(trace, meta, ctx, loc):
         da = da.transpose(fdim, pdim)
     lat = np.asarray(da[cf_dim(da, "latitude")].values, dtype=float)
     lon = np.asarray(da[cf_dim(da, "longitude")].values, dtype=float)
+    if _wrapped(ctx):
+        # Same continuous axis as the wrapped grid: 150E..80W is 150..280.
+        lon = ((lon - ctx.bbox[1]) % 360.0) + ctx.bbox[1]
     names = [str(v) for v in da[pdim].values]
+    units = format_units_for_display(variable_units(da))
     panels, values = [], []
     for key, ptitle, part in _slices(da, fdim):
         vals = np.asarray(part.values, dtype=float)
         values.append(vals)
+        finite = np.isfinite(vals)
         keep = np.ones(vals.shape, bool)
         if "markers" not in (trace.get("mode") or "markers"):
             # A text-only trace prints values: "NaN" says nothing, so skip those points.
-            keep = np.isfinite(vals)
+            keep = finite
+        elif not finite.all():
+            print(
+                f"Note: {loc}: {int((~finite).sum())} of {finite.size} stations have no value"
+                + (f" for {ptitle}" if ptitle else "")
+                + "; drawn as ×",
+                file=sys.stderr,
+            )
         panels.append(
             Panel(
                 [
@@ -563,8 +628,13 @@ def bind_points(trace, meta, ctx, loc):
                             "color": vals[keep],
                             "size": 13 if vals.size <= 50 else 8,
                             "line": {"width": 1},
+                            # No value: a grey ×, so it never reads as a color class (a white
+                            # ring is the < 1 mm class).
+                            "symbol": np.where(finite[keep], "circle", "x").tolist(),
                         },
-                        "hovertemplate": "%{text}: %{customdata:.4g}<extra></extra>",
+                        "hovertemplate": "%{text}: %{customdata:.4g}"
+                        + (f" {units}" if units else "")
+                        + "<extra></extra>",
                         "showlegend": False,
                     }
                 ],
@@ -620,8 +690,13 @@ def bind_geojson(trace, meta, ctx, loc):
         "y": ys,
         "hoverinfo": "skip",
         "showlegend": False,
-        # One boundary stands out; dozens of county lines would smother the data.
-        "line": {"color": "black", "width": 2 if parts <= 5 else 0.8},
+        # One boundary stands out; dozens of county lines would smother the data, so they
+        # take the theme's admin-1 style (KMSA: dark grey).
+        "line": (
+            {"color": "black", "width": 2}
+            if parts <= 5
+            else dict((ctx.theme["overlays"].get("admin1") or {}).get("line") or {"width": 0.8})
+        ),
     }
     return Bound([Panel([line])], is_map=True, static=True, extent=[w, e, s, n])
 
@@ -679,6 +754,8 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
         )
     x, xname = timeseries_axis(da, sdim)
     x = np.asarray(x)
+    if x.dtype.kind == "M":
+        xname = period_axis_title(da, xname)
     aligned = meta.get("align") == "dayofyear"
     if aligned:
         x = seasonal_dates(da[sdim], loc)
@@ -806,7 +883,12 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
                     "line": {"color": _color_name(trace, color)},
                 }
             )
-    titles = {"x": "" if is_date else axis_label(xname), "y": variable_label_for_display(da)}
+    # Dates need no axis title, except to say a date starts a multi-day total.
+    period = is_date and xname.endswith(("starting", "Month"))
+    titles = {
+        "x": axis_label(xname) if period or not is_date else "",
+        "y": variable_label_for_display(da),
+    }
     finite = np.asarray(da.values, dtype=float)
     finite = finite[np.isfinite(finite)]
     if is_precip(da) and finite.size and finite.min() >= 0:
@@ -859,12 +941,40 @@ def bind_xy(trace, meta, ctx, loc):
             str(v) if isinstance(v, (int, np.integer)) else format_plot_date(v)
             for v in x_da[x_da.dims[0]].values
         ]
-        out.update(
-            mode="markers+text",
-            text=[label for label, ok in zip(labels, keep, strict=True) if ok],
-            textposition="top right",
-            cliponaxis=False,
-        )
+        text = [label for label, ok in zip(labels, keep, strict=True) if ok]
+        # Greedy placement in axis fractions (a label ~ 0.018 wide per character, 0.05 tall):
+        # each label takes the first side that does not cover one already placed.
+        x0, y0 = out["x"], out["y"]
+        fx = (x0 - x0.min()) / max(float(np.ptp(x0)), 1e-12)
+        fy = (y0 - y0.min()) / max(float(np.ptp(y0)), 1e-12)
+        sides = {
+            "top right": (0, 1),
+            "bottom right": (0, -1),
+            "top left": (-1, 1),
+            "bottom left": (-1, -1),
+            "middle right": (0, 0),
+            "middle left": (-1, 0),
+        }
+        boxes, positions = [], []
+        for px, py, label in zip(fx, fy, text, strict=True):
+            w, h = 0.018 * len(label), 0.05
+            candidates = []
+            for name, (dx, dy) in sides.items():
+                bx = px + 0.01 + dx * (w + 0.02)
+                by = py + (dy * h if dy else -h / 2)
+                candidates.append((name, (bx, by, bx + w, by + h)))
+            free = [
+                (name, box)
+                for name, box in candidates
+                if not any(
+                    box[0] < b[2] and b[0] < box[2] and box[1] < b[3] and b[1] < box[3]
+                    for b in boxes
+                )
+            ]
+            name, box = (free or candidates)[0]
+            boxes.append(box)
+            positions.append(name)
+        out.update(mode="markers+text", text=text, textposition=positions, cliponaxis=False)
     x_qty = variable_label_for_display(x_da, include_units=False)
     y_qty = variable_label_for_display(y_da, include_units=False)
     return Bound(
@@ -921,6 +1031,15 @@ def bind_windrose(trace, meta, ctx, loc):
         where = {lat: point["lat"], lon: point["lon"]}
         u_da = u_da.sel(where, method="nearest")
         v_da = v_da.sel(where, method="nearest")
+    else:
+        lat, lon = cf_dim(u_da, "latitude"), cf_dim(u_da, "longitude")
+        cells = (u_da.sizes.get(lat, 1) if lat else 1) * (u_da.sizes.get(lon, 1) if lon else 1)
+        if cells > 1:
+            print(
+                f"Note: {loc}: the rose pools {cells} grid cells; for one place set "
+                'layout.meta.geo.point {"lat": …, "lon": …}',
+                file=sys.stderr,
+            )
     extra = [d for d in u_da.dims if not is_sample_dim(u_da, d)]
     if extra:
         raise UsageError(
@@ -974,8 +1093,15 @@ def bind_windrose(trace, meta, ctx, loc):
                 "tickvals": [i * 45 for i in range(8)],
                 "ticktext": compass,
             },
-            # Radial labels along the NE diagonal, clear of the N label.
-            "radialaxis": {"ticksuffix": "%", "angle": 45, "tickangle": 45},
+            # Radial labels in the gap between the NNE and NE sectors, small, clear of bars.
+            "radialaxis": {
+                "ticksuffix": "%",
+                "angle": 56.25,  # math degrees: bearing 33.75, between NNE and NE
+                "tickangle": 56.25,
+                "tickfont": {"size": 10},
+                "showline": False,
+            },
+            "bargap": 0.18,
         },
         "legend": {"title": {"text": "Wind speed"}},
         "barmode": "stack",

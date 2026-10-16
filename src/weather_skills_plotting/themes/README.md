@@ -6,6 +6,12 @@ anything it sets is layered on top of `default.json`. So a theme lists only
 what it changes. To start a house style, copy `default.json`, delete the
 parts you keep as they are, and edit the rest.
 
+`--theme-file` also takes the name of a theme shipped here:
+
+| Name | Look |
+|---|---|
+| [`tropical_tidbits`](tropical_tidbits.json) | Tropical Tidbits model-chart colors, sampled from its colorbars: `tt_precip_rate` (mm/h), `tt_precip_total` (mm, the precip default), `tt_pwat` (mm), `tt_wind` (m/s, the wind-speed default; TT's knot classes converted), `tt_z500` (dam). Black coastlines and borders. A precip *rate* still gets the totals default: unit-convert it to mm/h and set `meta.palette` `tt_precip_rate` (rate data usually arrives in mm/day, which mm/h classes would color 24x too dry). |
+
 Without `--theme-file`, `$WEATHER_SKILLS_PLOT_THEME` or
 `~/.config/weather-skills/plot.json|toml` is used if present.
 
@@ -79,7 +85,9 @@ Plotly scatter line styles for the base-map layers: `admin1`, `rivers`,
 `lakes`, `borders`, `coastline`, drawn in that order (later on top). A theme's
 style merges into the standard one, so `{"borders": {"line": {"color":
 "#333333"}}}` keeps the standard width. A spec's `layout.meta.overlays` turns
-layers on or off.
+layers on or off. `admin1` also styles an outline layer with many polygons (county
+boundaries from a GeoJSON), so a theme's county-line color applies to official
+boundary files too.
 
 Water is slate (`#708090`), so lakes and rivers never read as rainfall blues.
 Lakes are filled opaque over the data, so a lake never reads as a rainfall

@@ -11,7 +11,7 @@ metadata:
 
 # plot-animation
 
-Turns one gridded Zarr into an animated map, one frame per time or step.
+Turns one gridded Zarr into an animated map, one frame per time or step. It takes one input: to animate precip under isobars, `merge` the two fields into one Zarr and add a second trace (e.g. a contour) that reads another variable of it.
 
 ## Usage
 

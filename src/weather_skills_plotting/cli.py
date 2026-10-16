@@ -18,6 +18,7 @@ from weather_skills_plotting.spec import (
 )
 
 LARGE_HTML_MB = 50
+LARGE_PNG_MP = 40  # megapixels: a PNG/JPG above this gets a warning
 
 
 def input_path(ds) -> str | None:
@@ -137,7 +138,21 @@ def run(
                 "(meta.source.isel / sel) or a smaller layout.meta.geo.bbox"
             )
     export_meta = layout_meta.get("export") or {}
-    return export(fig, Path(output), datasets=datasets, scale=scale or export_meta.get("scale"))
+    scale = scale or export_meta.get("scale") or 1
+    width, height = fig.layout.width or 700, fig.layout.height or 500
+    if Path(output).suffix.lower() not in (".html", ".htm"):
+        if min(width, height) < 300:
+            warn(
+                f"a {width:.0f}x{height:.0f} px canvas is too small for titles, ticks and the "
+                "colorbar to fit; leave layout width/height unset or use 300 px or more "
+                "(layout.meta.export.scale changes pixel density, not the layout)"
+            )
+        if width * height * scale**2 > LARGE_PNG_MP * 1e6:
+            warn(
+                f"export.scale {scale:g} writes a {width * scale:.0f}x{height * scale:.0f} px "
+                f"image ({width * height * scale**2 / 1e6:.0f} MP); 2-4 is plenty for print"
+            )
+    return export(fig, Path(output), datasets=datasets, scale=scale)
 
 
 def warn(message: str) -> None:

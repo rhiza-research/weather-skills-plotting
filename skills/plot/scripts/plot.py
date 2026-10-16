@@ -73,7 +73,12 @@ def _default_trace(uid: str, ds, *, xaxis=None) -> dict:
     """Heatmap for a lat/lon grid, station markers for points, else a line."""
     source = {"input": uid}
     lat, lon = cf_dim(ds, "latitude"), cf_dim(ds, "longitude")
-    if point_dim(ds) is not None:
+    pdim = point_dim(ds)
+    tdim = next((d for d in ("time", "step") if d in ds.dims and ds.sizes[d] > 1), None)
+    if pdim is not None and ds.sizes[pdim] == 1 and tdim:
+        # One station over time is a time series, not one dot on a map.
+        trace = {"type": "scatter", "meta": {"source": {**source, "isel": {pdim: 0}}}}
+    elif pdim is not None:
         trace = {"type": "scatter", "meta": {"bind": "points", "source": source}}
     elif lat in ds.dims and lon in ds.dims:
         trace = {"type": "heatmap", "meta": {"source": source}}
@@ -144,7 +149,8 @@ def _layer_traces(layers):
 @weather_skill.argument("--spec", type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
 @weather_skill.argument(
     "--theme-file",
-    help="Theme JSON/TOML layered on the standard look: {template, palettes, defaults, overlays}.",
+    help="Theme JSON/TOML, or a shipped theme name (tropical_tidbits), layered on the "
+    "standard look: {template, palettes, defaults, overlays}.",
 )
 @weather_skill.argument("--dump-spec", nargs="?", const="-", probe=True, help=DUMP_SPEC_HELP)
 def plot(
@@ -189,8 +195,8 @@ def plot(
                     f"--input may be passed at most {MAX_INPUTS} times for series; got "
                     f'{len(data)}. For ensemble members use meta.along "number" on one input'
                 )
-            for i, (trace, d) in enumerate(zip(data, datasets.values(), strict=True)):
-                trace["name"] = trace_label(d, i)
+            for i, (key, d) in enumerate(datasets.items()):
+                data[i]["name"] = trace_label(d, i, key)
         elif cli:
             data = [
                 _default_trace(key, d, xaxis=None if i == 0 else f"x{i + 1}")

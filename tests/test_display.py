@@ -135,3 +135,19 @@ def test_precip_for_display_noop_without_period():
     ds = make_gridded(name="precip", units="mm day-1")
     out = dl.precip_for_display(ds, "precip")
     assert out["precip"].attrs["units"] == "mm day-1"
+
+
+def test_sub_daily_rate_stays_a_rate():
+    from weather_skills_plotting.display import precip_for_display
+
+    ds = make_gridded(name="precip", fill=2.0, units="mm h-1")
+    ds["precip"].attrs.update(standard_name="lwe_precipitation_rate", aggregation_period="6 hour")
+    assert precip_for_display(ds, "precip") is ds
+    ds["precip"].attrs["aggregation_period"] = "1 day"
+    assert precip_for_display(ds, "precip")["precip"].attrs["units"] == "mm"
+
+
+def test_dimensionless_units():
+    assert dl.format_units_for_display("dimensionless") == ""
+    assert dl.format_units_for_display("m3 m-3") == "m3 m-3"
+    assert dl.format_units_for_display("mm h-1") == "mm/h"

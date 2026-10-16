@@ -149,6 +149,34 @@ def pad_cell_extent(lat_vals, lon_vals):
     return [lon_min, lon_max, lat_min, lat_max]
 
 
+def dateline_bbox(datasets):
+    """``(N, W, S, E)`` with ``W > E`` for a grid that crosses the dateline, else None.
+
+    A regional fetch across 180° comes back on -180..180 with a gap in the middle
+    (e.g. 150E..80W is -180..-80 plus 150..180); drawn as is it spans the globe.
+    """
+    for ds in datasets:
+        lat_dim, lon_dim = cf_dim(ds, "latitude"), cf_dim(ds, "longitude")
+        if lat_dim not in ds.dims or lon_dim not in ds.dims or ds.sizes[lon_dim] < 3:
+            continue
+        lon = np.sort(((np.asarray(ds[lon_dim].values, dtype=float) + 180.0) % 360.0) - 180.0)
+        gaps = np.diff(lon)
+        step = float(np.median(gaps))
+        widest = int(np.argmax(gaps))
+        touches = lon[0] - step <= -180.0 + 1e-6 and lon[-1] + 2 * step >= 180.0 - 1e-6
+        if not touches or gaps[widest] <= 3 * step:
+            continue
+        lat = np.asarray(ds[lat_dim].values, dtype=float)
+        half = step / 2
+        return (
+            float(lat.max()) + half,
+            float(lon[widest + 1]) - half,
+            float(lat.min()) - half,
+            float(lon[widest]) + half,
+        )
+    return None
+
+
 def subset_spatial(da, lat_dim, lon_dim, bbox_nwse, region_polygon, extent_vals):
     if bbox_nwse is None and region_polygon is None:
         return da, extent_vals

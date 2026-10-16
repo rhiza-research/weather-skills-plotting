@@ -30,7 +30,7 @@ The model climate (m-climate) is the same forecast system's reforecasts of past 
 - `--output`, `-o` — `.png`, `.jpg`, or `.html`.
 
 ### Inputs
-Both files need ensemble members (`number`), leads (`step`), and latitude/longitude. The m-climate must hold individual reforecast members for the same leads; a climatology mean and standard deviation is not one. Up to 15 leads are drawn, those both files have.
+Both files need ensemble members (`number`), leads (`step`), and latitude/longitude. The m-climate must hold individual reforecast members for the same leads; a climatology mean and standard deviation is not one. No fetcher here supplies reforecasts; a past init of the same system (same leads) is a rough stand-in. Say so in the title if you use one. Up to 15 leads are drawn, those both files have.
 
 ### Customizing with `--spec`
 `--spec` takes [Plotly figure](https://plotly.com/python/reference/) JSON, `{"data": [...], "layout": {...}}`; write only the parts you want to change. The figure has three entries in `data`, chosen by `"uid"`: `"forecast"` and `"mclimate"` (Plotly `box` traces) and `"forecast-mean"` (a line).
