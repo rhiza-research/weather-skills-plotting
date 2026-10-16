@@ -21,7 +21,7 @@ There is no `--rows`, `--title`, `--fontsize`, `--cbar-label`, `--patch`, or any
 
 1. Run `--help`. After the flags it prints the **plot spec reference**: every kind, every spec section and key with what it does, annotation coordinates, shapes, artist-block keys, and copy-paste recipes (bigger titles, panel spacing, colorbar, annotations, outlines). This is the reference — it is generated from the validator's own key lists, so it is always complete.
 2. To change a figure you already drew, run the same command with `--dump-spec -` in place of `--spec`. It prints the spec that command would draw; edit that JSON and pass it back as `--spec`. It is the current spec, not documentation.
-3. Write one `--spec`, render once, and look at the resulting PNG before trying another variation. The `plot hash` printed after a render tells you only that the image changed, not what changed or how it looks — never use hash comparisons to choose between layout options (a title's position, panel spacing, colorbar placement). Look at the pixels.
+3. Write one `--spec` and render once rather than trying several variations. The `plot hash` printed after a render tells you only that the image changed, not what changed or how it looks — never use hash comparisons to choose between layout options (a title's position, panel spacing, colorbar placement).
 
 ## Side by side, or one map
 
@@ -186,7 +186,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --x /tmp/iod_sep.zarr --y /tmp/rain_o
 
 ## Output
 
-A PNG at `--output`. Stdout prints a pixel `plot hash` (sha256 of RGB pixels) and `data: not null (<var> N/M finite)` or `data: NULL`. Only the variables actually drawn are listed. `NULL` means every plotted variable is all-NaN — run `inspect-zarr` on the input. A changed hash only proves the pixels differ, not what changed or whether it looks right (a title moved above vs. inside a panel hashes just as differently as a broken render) — comparing hashes across a few candidate specs is never a substitute for looking at the PNG. Always look at the PNG. `--dump-spec` skips the PNG and this report.
+A PNG at `--output`. Stdout prints a pixel `plot hash` (sha256 of RGB pixels) and `data: not null (<var> N/M finite)` or `data: NULL`. Only the variables actually drawn are listed. `NULL` means every plotted variable is all-NaN — run `inspect-zarr` on the input. A changed hash only proves the pixels differ, not what changed or whether it looks right (a title moved above vs. inside a panel hashes just as differently as a broken render) — comparing hashes across a few candidate specs never answers a layout question. `--dump-spec` skips the PNG and this report.
 
 The colorbar and timeseries y-axis label come from variable attrs: `long_name`, then `GRIB_name`, then the variable name, then `"value"`, with `[units]` when present. Dates stay on panel titles. Display units are short (`mm/day`, `°C`, `mm`, `m/s`). A wind rose labels speed stacks in those units and the radial axis as frequency percent. Prefer an amount Zarr from `convert-to-totals` (`Total precipitation [mm]`). A precip rate that already has `aggregation_period` is converted to a period total for the figure only. Unaggregated fetch rates stay `mm day-1`.
 

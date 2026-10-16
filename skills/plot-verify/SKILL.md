@@ -30,9 +30,8 @@ no-op. If you don't already know the shape of `--spec`, run `--help`: after
 the flags it prints the plot spec reference (every section and key, with
 recipes), rather than guessing keys one at a time. To modify a figure you
 already drew, `--dump-spec -` with the same files prints its current spec to
-edit and pass back. And render once and look at
-the PNG before trying another variation —
-the `plot hash` printed after a render only tells you the pixels changed,
+edit and pass back. The `plot hash`
+printed after a render only tells you the pixels changed,
 never what changed or how it looks.
 
 **`--obs` and each `--forecast` must have a single time (size 1).** If you
@@ -106,7 +105,7 @@ the right. Stdout also prints `plot hash` (sha256 of RGB pixels) and
 `data: not null` or `data: NULL`, then each column's `verify_score_summary`.
 A changed hash only proves the pixels differ, not what changed or whether
 it looks right — never use hash comparisons to answer a layout or
-appearance question; always look at the PNG. `NULL` means inspect-zarr the
+appearance question. `NULL` means inspect-zarr the
 inputs. Hits
 use false alarm / miss / below / hit (verify's `disagree` split by whether
 the obs had the event), and the colorbar names the threshold from the
