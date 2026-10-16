@@ -74,7 +74,7 @@ _RECIPES = [
     ("Title and font size", '{"layout": {"title": {"text": "Week 1"}, "font": {"size": 20}}}'),
     ("Contour instead of heatmap", '{"data": [{"uid": "a", "type": "contour"}]}'),
     (
-        "MSLP chart: --layer heatmap:ANOM --layer contour:MSLP_hPa --layer scatter:HIGHS "
+        "MSLP chart: --layer heatmap:ANOM --layer contour:MSLP --layer scatter:HIGHS "
         "--layer scatter:LOWS (HIGHS / LOWS from local-extrema); black isobars every 4 hPa, "
         "H / L with the central value",
         '{"data": [{"uid": "b", "contours": {"coloring": "none", "showlabels": true, '
