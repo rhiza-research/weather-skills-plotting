@@ -285,7 +285,7 @@ def place_colorbars(mode: str, panels_of: dict, domains) -> dict:
     return out
 
 
-def panel_title(p: int, text: str) -> dict:
+def panel_title_annotation(p: int, text: str) -> dict:
     """Title annotation centred above panel ``p`` (named so a spec can override it)."""
     s = axis_suffix(p)
     return {

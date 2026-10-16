@@ -45,7 +45,7 @@ from weather_skills_plotting.layout import (
     colorbar_mode,
     map_axes,
     map_layout,
-    panel_title,
+    panel_title_annotation,
     place_colorbars,
     register_templates,
 )
@@ -656,7 +656,7 @@ def _assemble_map(items, user_layout, lmeta, ctx):
             continue
         layout[f"xaxis{s}"], layout[f"yaxis{s}"] = map_axes(p, extents[p], domains[p])
         if panel_titles[p]:
-            layout["annotations"].append(panel_title(p, panel_titles[p]))
+            layout["annotations"].append(panel_title_annotation(p, panel_titles[p]))
     for name, members in axis_members.items():
         contours = [tr for _, b, trs in members for tr in trs if tr.get("type") == "contour"]
         for tr in contours:

@@ -28,10 +28,6 @@ from weather_skills_core.units import (
     variable_units,
 )
 
-from weather_skills_plotting.display import (
-    format_units_for_display,
-    variable_label_for_display,
-)
 from weather_skills_plotting.geodata import (
     extent_from_da,
     plain,
@@ -44,10 +40,12 @@ from weather_skills_plotting.labels import (
     axis_label,
     format_plot_date,
     format_step,
+    format_units_for_display,
     is_datetime_axis,
     panel_title,
     period_axis_title,
     timeseries_axis,
+    variable_label_for_display,
 )
 from weather_skills_plotting.palettes import (
     along_dim,
