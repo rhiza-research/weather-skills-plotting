@@ -241,8 +241,8 @@ def _block(title: str, rows: dict) -> str:
     return "\n".join(lines)
 
 
-def spec_reference() -> str:
-    """Plain-text reference appended to ``--help``."""
+def spec_reference(recipes=None) -> str:
+    """Plain-text reference appended to ``--help``; ``recipes`` defaults to plot's."""
     parts = [
         "PLOT SPEC (--spec)",
         '  A standard Plotly figure: {"data": [traces], "layout": {…}}. Every key is Plotly\'s',
@@ -267,13 +267,13 @@ def spec_reference() -> str:
         "",
         "RECIPES (each is a complete --spec)",
     ]
-    for title, example in _RECIPES:
+    for title, example in _RECIPES if recipes is None else recipes:
         parts += [f"  {title}:", f"    {example}"]
     return "\n".join(parts)
 
 
-def install_spec_help(skill) -> None:
-    """Append the spec reference to a skill's ``--help``."""
+def install_spec_help(skill, recipes=None) -> None:
+    """Append the spec reference to a skill's ``--help``, with that skill's recipes."""
     parser = skill.parser
     parser.formatter_class = argparse.RawDescriptionHelpFormatter
-    parser.epilog = f"{spec_reference()}\n\n{parser.epilog or ''}".rstrip()
+    parser.epilog = f"{spec_reference(recipes)}\n\n{parser.epilog or ''}".rstrip()

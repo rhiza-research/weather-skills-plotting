@@ -28,6 +28,7 @@ from weather_skills_plotting.display import (
     dataset_display_label,
     format_units_for_display,
 )
+from weather_skills_plotting.geodata import plain
 from weather_skills_plotting.labels import format_plot_date_range
 from weather_skills_plotting.layout import axis_suffix, panel_title
 from weather_skills_plotting.palettes import aggregation_days, is_precip
@@ -292,7 +293,10 @@ def plot_verify(obs, forecast, verify, output, spec, theme_file, dump_spec, **kw
         colors = PRECIP_BIAS_COLORS if is_precip(obs_da) else BIAS_COLORS
         # Symmetric about zero, set by the bulk of the errors, not the few largest.
         values = np.concatenate(
-            [np.abs(np.asarray(v[VERIFY_VARS[metric]].values, float)).ravel() for v in verifies]
+            [
+                np.abs(np.asarray(plain(v[VERIFY_VARS[metric]]).values, float)).ravel()
+                for v in verifies
+            ]
         )
         values = values[np.isfinite(values)]
         limit = float(np.percentile(values, 98)) if values.size else 1.0
@@ -337,7 +341,23 @@ def plot_verify(obs, forecast, verify, output, spec, theme_file, dump_spec, **kw
     return run(merge_spec(base, user), None, datasets, output, dump_spec, theme_file=theme_file)
 
 
-install_spec_help(plot_verify)
+install_spec_help(
+    plot_verify,
+    [
+        (
+            "Title (the verifying week is appended when the inputs carry it)",
+            '{"layout": {"title": {"text": "IMERG vs ENS, 3–9 Aug"}}}',
+        ),
+        (
+            "Rename the obs panel",
+            '{"layout": {"annotations": [{"name": "panel-title-1", "text": "CHIRPS"}]}}',
+        ),
+        (
+            "Fixed range for the verify row (coloraxis2)",
+            '{"layout": {"coloraxis2": {"cmin": -20, "cmax": 20}}}',
+        ),
+    ],
+)
 
 if __name__ == "__main__":
     plot_verify()

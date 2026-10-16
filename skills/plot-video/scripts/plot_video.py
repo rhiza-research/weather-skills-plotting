@@ -65,7 +65,17 @@ def plot_video(ds, output, spec=None, theme_file=None, dump_spec=None, **kwargs)
     return run(base, spec, datasets, output, dump_spec, theme_file=theme_file, animate=True)
 
 
-install_spec_help(plot_video)
+install_spec_help(
+    plot_video,
+    [
+        ("Slower frames", '{"layout": {"meta": {"animation": {"duration": 900}}}}'),
+        (
+            "First 12 steps only",
+            '{"data": [{"uid": "0", "meta": {"source": {"isel": {"step": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]}}}}]}',
+        ),
+        ("Class palette", '{"data": [{"uid": "0", "meta": {"palette": "ppt_daily"}}]}'),
+    ],
+)
 
 if __name__ == "__main__":
     plot_video()

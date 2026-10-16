@@ -152,7 +152,20 @@ def plot_mediogram(ds, output, spec, theme_file, dump_spec, **kwargs):
     return run(merge_spec(base, user), None, datasets, output, dump_spec, theme_file=theme_file)
 
 
-install_spec_help(plot_mediogram)
+install_spec_help(
+    plot_mediogram,
+    [
+        (
+            "Pick leads (same isel on all three traces)",
+            '{"data": [{"uid": "forecast", "meta": {"source": {"isel": {"step": [0, 2, 4]}}}}, {"uid": "mclimate", "meta": {"source": {"isel": {"step": [0, 2, 4]}}}}, {"uid": "forecast-mean", "meta": {"source": {"isel": {"step": [0, 2, 4]}}}}]}',
+        ),
+        (
+            "Title (place and init date are appended)",
+            '{"layout": {"title": {"text": "Nairobi weekly rain"}}}',
+        ),
+        ("Hide the mean line", '{"data": [{"uid": "forecast-mean", "visible": false}]}'),
+    ],
+)
 
 if __name__ == "__main__":
     plot_mediogram()
