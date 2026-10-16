@@ -141,8 +141,8 @@ PNG export needs Chrome. kaleido uses an installed Chrome; otherwise run
 ```python
 from weather_skills_plotting import compile, export, load_spec, merge_spec
 
-fig = compile(spec, {"a": dataset})  # plotly.graph_objects.Figure
-export(fig, "out.png", datasets={"a": dataset})
+fig = compile(spec, {"0": dataset})  # plotly.graph_objects.Figure
+export(fig, "out.png", datasets={"0": dataset})
 ```
 
 ## Skill catalog

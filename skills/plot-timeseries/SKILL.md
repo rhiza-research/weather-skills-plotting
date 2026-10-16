@@ -1,6 +1,6 @@
 ---
 name: plot-timeseries
-description: Overlay one series per input Zarr on a shared time axis, as lines or bars, to PNG or interactive HTML. Name files with repeatable -i. The --spec is a standard Plotly figure JSON; each input is a trace with uid a, b, … whose meta.source.isel / sel picks one value of a leftover dim and meta.along fans one out (number for ensemble spaghetti, with meta.band for a percentile band). Settings on the first trace apply to the rest. The plotter never averages: run summarize-dim first for an area or ensemble mean. --dump-spec prints the merged spec. For precipitation, run aggregate-temporal then convert-to-totals first.
+description: Overlay one series per input Zarr on a shared time axis, as lines or bars, to PNG or interactive HTML. Name files with repeatable -i. The --spec is a standard Plotly figure JSON; each input is a trace with uid NAME (from -i PATH=NAME) or 0, 1, … whose meta.source.isel / sel picks one value of a leftover dim and meta.along fans one out (number for ensemble spaghetti, with meta.band for a percentile band). Settings on the first trace apply to the rest. The plotter never averages: run summarize-dim first for an area or ensemble mean. --dump-spec prints the merged spec. For precipitation, run aggregate-temporal then convert-to-totals first.
 license: MIT
 compatibility: Requires Python 3.12 and uv. PNG/JPG export needs Chrome (installed, or `plotly_get_chrome -y`).
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py *)
@@ -11,7 +11,7 @@ metadata:
 
 # plot-timeseries
 
-Each `-i` becomes one trace on a shared time axis: uid `a`, `b`, … in order, named after the file (or the station id). `--spec` is a **standard Plotly figure** merged onto that, with traces matched by `uid`. Everything except `meta` is plain Plotly: `type: "bar"`, `line`, `marker`, `layout.barmode`, `layout.yaxis2`, `layout.grid`. The `-o` suffix picks `.png`, `.jpg`, or `.html`.
+Each `-i` becomes one trace on a shared time axis: uid NAME from `-i PATH=NAME`, else `0`, `1`, … in order, named after the file (or the station id). `--spec` is a **standard Plotly figure** merged onto that, with traces matched by `uid`. Everything except `meta` is plain Plotly: `type: "bar"`, `line`, `marker`, `layout.barmode`, `layout.yaxis2`, `layout.grid`. The `-o` suffix picks `.png`, `.jpg`, or `.html`.
 
 **Settings on `data[0]` apply to every series that leaves them unset:** `meta.source.variable`, `meta.along`, `meta.along_color`, `meta.band`, `meta.members`, `meta.align`. Set them once on trace `a`. `along` (with its band and colours) passes only to inputs that have that dim, so an ensemble's spread does not land on a climatology line. Set a key to `null` on a later trace to drop an inherited value.
 
@@ -31,12 +31,12 @@ A leftover dim is an error that names the fix. For 101 ensemble members use `alo
 
 | Goal | `--spec` |
 | --- | --- |
-| Bars for one series | `{"data": [{"uid": "a", "type": "bar"}]}` |
+| Bars for one series | `{"data": [{"uid": "0", "type": "bar"}]}` |
 | Stacked or overlaid bars | `{"layout": {"barmode": "stack"}}` (`group` is the default, `overlay`) |
-| Highlight a series | `{"data": [{"uid": "b", "line": {"color": "black", "width": 3, "dash": "dash"}}]}` |
+| Highlight a series | `{"data": [{"uid": "1", "line": {"color": "black", "width": 3, "dash": "dash"}}]}` |
 | One panel per series (independent y) | `{"layout": {"grid": {"rows": 2, "columns": 1, "pattern": "coupled"}}}` |
-| Second y-axis | `{"data": [{"uid": "b", "yaxis": "y2"}], "layout": {"yaxis2": {"overlaying": "y", "side": "right"}}}` |
-| Seasonal overlay of years | `{"data": [{"uid": "a", "meta": {"align": "dayofyear"}}]}` |
+| Second y-axis | `{"data": [{"uid": "1", "yaxis": "y2"}], "layout": {"yaxis2": {"overlaying": "y", "side": "right"}}}` |
+| Seasonal overlay of years | `{"data": [{"uid": "0", "meta": {"align": "dayofyear"}}]}` |
 | Title, labels, size | `{"layout": {"title": {"text": "…"}, "yaxis": {"title": {"text": "mm"}}, "width": 1200, "font": {"size": 18}}}` |
 
 `align: "dayofyear"` puts every year on one calendar (labelled `1 Oct`, `15 Nov`, …), so dates line up across leap and non-leap years; 29 Feb folds onto 28 Feb. A season that crosses New Year (e.g. DJF) splits at 1 Jan.
@@ -59,19 +59,19 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py -i <a.zarr> --dump-spec -
 ```bash
 # CHIRPS and IMERG area means (each from summarize-dim --lat-weighted), one panel each
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py -i /tmp/chirps_area.zarr -i /tmp/imerg_area.zarr -o /tmp/precip.png \
-    --spec '{"data": [{"uid": "a", "name": "CHIRPS"},
-                      {"uid": "b", "name": "IMERG"}],
+    --spec '{"data": [{"uid": "0", "name": "CHIRPS"},
+                      {"uid": "1", "name": "IMERG"}],
              "layout": {"grid": {"rows": 2, "columns": 1, "pattern": "coupled"}}}'
 
 # Every ensemble member of an area mean, interactive
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py -i /tmp/ens_diff_area.zarr -o /tmp/members.html \
-    --spec '{"data": [{"uid": "a", "meta": {"along": "number"}}],
+    --spec '{"data": [{"uid": "0", "meta": {"along": "number"}}],
              "layout": {"title": {"text": "Ensemble difference traces"}}}'
 
 # Observed bars with a dashed climatology line
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py -i /tmp/obs_area.zarr -i /tmp/clim_area.zarr -o /tmp/obs_vs_clim.png \
-    --spec '{"data": [{"uid": "a", "type": "bar"},
-                      {"uid": "b", "mode": "lines", "line": {"dash": "dash", "width": 2.5}}],
+    --spec '{"data": [{"uid": "0", "type": "bar"},
+                      {"uid": "1", "mode": "lines", "line": {"dash": "dash", "width": 2.5}}],
              "layout": {"title": {"text": "30-day precip vs climatology"}}}'
 ```
 

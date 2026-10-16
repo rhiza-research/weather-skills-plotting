@@ -17,7 +17,14 @@ from weather_skills_core import Dataset, UsageError, weather_skill
 from weather_skills_core.cf import cf_dim
 
 from weather_skills_plotting import parse_spec_arg
-from weather_skills_plotting.cli import letter, run, skeleton, spec_datasets
+from weather_skills_plotting.cli import (
+    input_ids,
+    parse_input,
+    run,
+    skeleton,
+    spec_datasets,
+    split_name,
+)
 from weather_skills_plotting.geodata import point_dim
 from weather_skills_plotting.reference import install_spec_help
 from weather_skills_plotting.spec import DUMP_SPEC_HELP, SPEC_ARGUMENT_HELP
@@ -30,17 +37,17 @@ _ZARR_LAYERS = frozenset({"heatmap", "contour", "scatter", "quiver"})
 
 
 class LayerArg:
-    """``--layer KIND:PATH``. The decorator opens Zarr layers (``.ds``)."""
+    """``--layer KIND:PATH[=NAME]``. The decorator opens Zarr layers (``.ds``)."""
 
-    def __init__(self, kind: str, path: str):
-        self.kind, self.path, self.ds = kind, path, None
+    def __init__(self, kind: str, path: str, name: str | None):
+        self.kind, self.path, self.name, self.ds = kind, path, name, None
 
     def zarr_paths(self):
         return [Path(self.path)] if self.kind in _ZARR_LAYERS else []
 
     def __str__(self):
-        # Provenance records str(); keep the flag's own KIND:PATH form.
-        return f"{self.kind}:{self.path}"
+        # Provenance records str(); keep the flag's own form.
+        return f"{self.kind}:{self.path}" + (f"={self.name}" if self.name else "")
 
 
 def parse_layer(value):
@@ -48,10 +55,10 @@ def parse_layer(value):
     kind = kind.strip().lower()
     if not sep or not path.strip() or kind not in LAYER_KINDS:
         raise argparse.ArgumentTypeError(
-            f"--layer expects KIND:PATH with KIND one of {', '.join(LAYER_KINDS)}; got {value!r}. "
-            "Style a layer in --spec on the data[] entry with uid a, b, … (in --layer order)"
+            f"--layer expects KIND:PATH[=NAME] with KIND one of {', '.join(LAYER_KINDS)}; "
+            f"got {value!r}"
         )
-    return LayerArg(kind, path.strip())
+    return LayerArg(kind, *split_name(path.strip(), "--layer"))
 
 
 def _default_trace(uid: str, ds, *, xaxis=None) -> dict:
@@ -72,8 +79,7 @@ def _default_trace(uid: str, ds, *, xaxis=None) -> dict:
 
 def _layer_traces(layers):
     data, datasets, mask = [], {}, None
-    for i, layer in enumerate(layers):
-        uid = letter(i)
+    for uid, layer in zip(input_ids([x.name for x in layers]), layers, strict=True):
         if layer.kind == "mask":
             mask = layer.path
             continue
@@ -112,10 +118,12 @@ def _layer_traces(layers):
 @weather_skill.argument(
     "-i",
     "--input",
-    type=Dataset("any"),
+    dest="inputs",
+    type=parse_input,
     action="append",
-    help="Input Zarr. Repeat for side-by-side maps, one panel per file on its own grid "
-    "(input ids a, b, … in order). Exclusive with --layer and --x/--y.",
+    help="Input Zarr as PATH or PATH=NAME. Repeat for side-by-side maps, one panel per file on "
+    "its own grid. In --spec the input is uid NAME, else its position: 0, 1, …. Exclusive with "
+    "--layer and --x/--y.",
 )
 @weather_skill.argument(
     "--x",
@@ -133,9 +141,9 @@ def _layer_traces(layers):
     "--layer",
     action="append",
     type=parse_layer,
-    help="KIND:PATH layer drawn on one shared map; repeat to stack. Kinds: heatmap, contour, "
-    "scatter (stations), quiver (u/v), outline (GeoJSON), mask (GeoJSON). Trace uids are a, b, … "
-    "in order.",
+    help="KIND:PATH or KIND:PATH=NAME layer drawn on one shared map; repeat to stack, bottom "
+    "first. Kinds: heatmap, contour, scatter (stations), quiver (u/v), outline (GeoJSON), mask "
+    "(GeoJSON). In --spec the layer is uid NAME, else its position: 0, 1, ….",
 )
 @weather_skill.argument("--spec", type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
 @weather_skill.argument(
@@ -144,7 +152,7 @@ def _layer_traces(layers):
 )
 @weather_skill.argument("--dump-spec", nargs="?", const="-", probe=True, help=DUMP_SPEC_HELP)
 def plot(
-    ds,
+    inputs,
     output,
     layer,
     x_ds,
@@ -155,7 +163,8 @@ def plot(
     **kwargs,
 ):
     """Render a map, time series, xy scatter, or wind rose from weather-skills Zarrs."""
-    files = [d for d in (ds or []) if d is not None]
+    inputs = list(inputs or [])
+    files = [x.ds for x in inputs]
     layers = list(layer or [])
     # Boundaries and masks go on -i maps too: an outline on every panel.
     shapes = [x for x in layers if x.kind in ("outline", "mask")] if files else []
@@ -182,7 +191,7 @@ def plot(
             }
         ]
     else:
-        datasets = {letter(i): d for i, d in enumerate(files)}
+        datasets = dict(zip(input_ids([x.name for x in inputs]), files, strict=True))
         data = [
             _default_trace(key, d, xaxis=None if i == 0 else f"x{i + 1}")
             for i, (key, d) in enumerate(datasets.items())

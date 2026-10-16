@@ -19,7 +19,7 @@ The output format follows the `-o` suffix: `.png`, `.jpg`, or `.html` (interacti
 
 The command builds a figure from the files you name, then merges `--spec` onto it:
 
-- `data[]` merges by `uid`. Files are `a`, `b`, `c`, … in `-i` / `--layer` order, and `x` / `y` for `--x` / `--y`. A `data[]` entry with no `uid` merges by position, and a new `uid` adds a trace.
+- `data[]` merges by `uid`. A file's uid is its NAME from `-i PATH=NAME` (or `--layer KIND:PATH=NAME`), else its position: `0`, `1`, `2`, …; `x` / `y` for `--x` / `--y`. A `data[]` entry with no `uid` merges by position, and a new `uid` adds a trace.
 - `layout.annotations` and `layout.shapes` merge by `name`. Everything else in `layout` is deep-merged.
 - Your values win.
 - Dotted names in the tables below are nested keys: `geo.bbox` is `{"layout": {"meta": {"geo": {"bbox": […]}}}}`.
@@ -45,7 +45,7 @@ What the command builds from each file:
 | Several times or steps of one dataset | One `-i`. The trace panels its `time` / `step` dim. `layout.grid.rows` / `columns` shape the grid (default: the grid closest to a landscape page with no empty row, e.g. 10 panels → 5×2). |
 | Some of the times or steps | `meta.source.isel` takes 0-based positions; `-1` is the last. One integer picks one map (`{"time": -1}` is the latest), a list keeps one panel each (`{"step": [0, 1]}` is the first two weeks). `sel` picks by label (`{"time": "2026-10-01"}`). |
 | Ensemble members as panels | `meta.facet: "number"` with `meta.source.isel: {"number": [0, 1, 2, 3]}`; panels are titled `Member 0`, `Member 1`, …. Without the `isel`, every member gets a panel. |
-| A station file with a `time` dim over a map | Select the day on the station trace: `{"uid": "b", "meta": {"source": {"sel": {"time": "2026-10-01"}}}}`. |
+| A station file with a `time` dim over a map | Select the day on the station trace: `{"uid": "1", "meta": {"source": {"sel": {"time": "2026-10-01"}}}}`. |
 | Separate colorbars for side-by-side maps | Give one trace its own axis: `"coloraxis": "coloraxis2"`. Traces naming the same axis always share it; a station trace names it as `marker.coloraxis`. |
 | Week N of a daily forecast | aggregate-temporal to weekly first (then convert-to-totals for a total), and pick the week with `meta.source.isel: {"step": 1}` (an arrows trace takes the same selection from its speed trace). A field described as "in the last 24 hours" covers the day before each step, so its step 0 is empty: day 1 is step 1. |
 
@@ -106,8 +106,8 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --x <x.zarr> --y <y.zarr> -o <out.png
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i <in.zarr> --dump-spec -
 ```
 
-- `-i` — repeatable Zarr; exclusive with `--x`/`--y` and with data layers (`--layer outline:` / `mask:` go with `-i`).
-- `--layer KIND:PATH` — `heatmap`, `contour`, `scatter` (stations), `quiver` (u/v: speed plus arrows), `outline` (GeoJSON edge), `mask` (GeoJSON mask).
+- `-i` — repeatable Zarr, as `PATH` or `PATH=NAME`; exclusive with `--x`/`--y` and with data layers (`--layer outline:` / `mask:` go with `-i`).
+- `--layer KIND:PATH[=NAME]` — `heatmap`, `contour`, `scatter` (stations), `quiver` (u/v: speed plus arrows), `outline` (GeoJSON edge), `mask` (GeoJSON mask).
 - `--spec` — inline JSON or a file path.
 - `--dump-spec [PATH]` — print or write the merged spec and skip drawing.
 - `--theme-file` — JSON/TOML `{"template": <Plotly template>, "palettes": {name: {colors, bounds}}}`. `layout.template` also accepts `weather_skills` (the default: Plotly's `seaborn` look with seaborn's colour cycle), `colorblind` (the same with seaborn's colourblind-safe cycle), or any Plotly template name, e.g. `plotly_white` or `simple_white`.
@@ -125,7 +125,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/chirps_weekly_mm.zarr -o /tmp
 # one colorbar label, 2x pixels
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/chirps_week.zarr -i /tmp/ecmwf_week.zarr \
     -o /tmp/obs_vs_fc.png --spec '{
-  "data": [{"uid": "a", "name": "CHIRPS 0.05°"}, {"uid": "b", "name": "ECMWF 1.5°"}],
+  "data": [{"uid": "0", "name": "CHIRPS 0.05°"}, {"uid": "1", "name": "ECMWF 1.5°"}],
   "layout": {"title": {"text": "Week 1"}, "coloraxis": {"colorbar": {"title": {"text": "Rain [mm]"}}},
              "meta": {"geo": {"bbox": [5, 33.5, -5, 42]}, "export": {"scale": 2}}}}'
 
@@ -133,24 +133,24 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/chirps_week.zarr -i /tmp/ecmw
 # county lines on top, in the bbox resolve-region printed
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/ecmwf_weekly.zarr --layer outline:/tmp/kenya_counties.geojson \
     -o /tmp/kenya_weeks.png --spec '{
-  "data": [{"uid": "a", "meta": {"source": {"isel": {"step": [0, 1]}},
+  "data": [{"uid": "0", "meta": {"source": {"isel": {"step": [0, 1]}},
     "palette": {"colors": ["#ffffff", "#d1ffbe", "#55ff00", "#73dfff", "#00a9e6", "#ffaa00"],
                 "bounds": [0, 1, 10, 20, 50, 70, 100], "over": "#ff5500"}}}],
   "layout": {"title": {"text": "ECMWF weekly rainfall"}, "meta": {"geo": {"bbox": "5.41/33.91/-4.71/41.91"}}}}'
 
 # Latest day of a daily SST anomaly, fixed ±2 range, no rivers
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/sst_anom.zarr -o /tmp/sst.png --spec '{
-  "data": [{"uid": "a", "zmin": -2, "zmax": 2, "meta": {"source": {"isel": {"time": -1}}}}],
+  "data": [{"uid": "0", "zmin": -2, "zmax": 2, "meta": {"source": {"isel": {"time": -1}}}}],
   "layout": {"meta": {"geo": {"bbox": [20, 35, -20, 75]}, "overlays": {"rivers": false}}}}'
 
 # Filled contours, interactive
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/forecast_mm.zarr -o /tmp/fc.html \
-    --spec '{"data": [{"uid": "a", "type": "contour"}]}'
+    --spec '{"data": [{"uid": "0", "type": "contour"}]}'
 
 # Stations and a county outline over a forecast
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -o /tmp/layers.png \
-    --layer heatmap:/tmp/imerg.zarr --layer scatter:/tmp/tahmo.zarr --layer outline:/tmp/nairobi.geojson \
-    --spec '{"data": [{"uid": "b", "marker": {"size": 14}}, {"uid": "c", "line": {"width": 3}}]}'
+    --layer heatmap:/tmp/imerg.zarr --layer scatter:/tmp/tahmo.zarr=STATIONS --layer outline:/tmp/nairobi.geojson=COUNTY \
+    --spec '{"data": [{"uid": "STATIONS", "marker": {"size": 14}}, {"uid": "COUNTY", "line": {"width": 3}}]}'
 
 # MSLP chart like a model-centre map: anomaly shading, labeled black isobars every 4 hPa,
 # and H / L centres with their central pressure (from local-extrema --kind high / low).
@@ -166,8 +166,8 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -o /tmp/mslp.png \
 
 # Wind speed with arrows
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/wind.zarr -o /tmp/wind.png --spec '{"data": [
-  {"uid": "a", "meta": {"bind": "speed"}},
-  {"uid": "arrows", "type": "scatter", "meta": {"bind": "arrows", "source": {"input": "a"}, "arrows": {"step": 3}}}]}'
+  {"uid": "0", "meta": {"bind": "speed"}},
+  {"uid": "arrows", "type": "scatter", "meta": {"bind": "arrows", "source": {"input": "0"}, "arrows": {"step": 3}}}]}'
 
 # City markers and a dashed box over a map (plain scatter + a shape in lon/lat)
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/rain.zarr -o /tmp/cities.png --spec '{"data": [
@@ -177,10 +177,10 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/rain.zarr -o /tmp/cities.png 
    "line": {"color": "red", "dash": "dash"}}]}}'
 
 # Wind rose
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/wind.zarr -o /tmp/rose.png --spec '{"data": [{"uid": "a", "type": "barpolar"}]}'
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/wind.zarr -o /tmp/rose.png --spec '{"data": [{"uid": "0", "type": "barpolar"}]}'
 
 # Area-mean ensemble spaghetti with a 10–90% band (ens_area.zarr from summarize-dim --dim latitude --dim longitude --method mean --lat-weighted)
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/ens_area.zarr -o /tmp/ens.png --spec '{"data": [{"uid": "a", "type": "scatter",
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/ens_area.zarr -o /tmp/ens.png --spec '{"data": [{"uid": "0", "type": "scatter",
   "meta": {"bind": "series", "along": "number", "band": [10, 90]}}]}'
 
 # September IOD against October rainfall, one point per year
