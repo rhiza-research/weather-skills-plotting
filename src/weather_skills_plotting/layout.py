@@ -87,7 +87,8 @@ def choose_grid(n: int, aspect: float, rows=None, columns=None) -> tuple[int, in
 
 # Pixel room around map panels.
 MAP_BOX_SINGLE = (760, 560)  # largest map area for a one-panel figure
-MAP_BOX_PANEL = (340, 340)  # largest map area per panel in a grid
+MAP_BOX_PANEL = (340, 340)  # map area per panel in a grid (width x height of a square map)
+PANEL_MAX_H = 420  # tallest grid panel, for maps taller than wide
 MAX_PLOT_WIDTH = 1400  # panels shrink so the panel area fits this width
 TICK_LEFT = 46  # y tick labels left of each map
 TICK_BELOW = 24  # x tick labels under each map
@@ -110,8 +111,13 @@ def map_layout(
     """
     user = user or {}
     grid = user.get("grid") or {}
-    box_w, box_h = MAP_BOX_SINGLE if rows * cols == 1 else MAP_BOX_PANEL
-    w = min(box_w, box_h * aspect)
+    if rows * cols == 1:
+        box_w, box_h = MAP_BOX_SINGLE
+        w = min(box_w, box_h * aspect)
+    else:
+        # Same area per panel whatever its shape: a Pacific strip gets width, not a sliver.
+        box_w, box_h = MAP_BOX_PANEL
+        w = min(MAP_BOX_SINGLE[0], (box_w * box_h * aspect) ** 0.5, PANEL_MAX_H * aspect)
     h = w / aspect
     title_px = PANEL_TITLE if panel_titles else 0
     ml, mr = TICK_LEFT, 16 + right

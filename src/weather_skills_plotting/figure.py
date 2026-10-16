@@ -55,6 +55,7 @@ from weather_skills_plotting.palettes import (
     discretize,
     is_precip_anomaly,
     is_sea_level_pressure,
+    is_temperature,
     load_theme,
     parse_palette,
 )
@@ -245,7 +246,14 @@ def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
     lo = float(finite.min()) if finite.size else 0.0
     hi = float(finite.max()) if finite.size else 1.0
     # Limits the user set decide whether the scale straddles zero; they are kept as given.
-    diverging = user.get("cmin", lo) < 0 < user.get("cmax", hi)
+    # A temperature difference (delta_degC) is centred on zero whatever its sign; an
+    # absolute temperature crossing 0 °C (sea ice, the Arctic) keeps the temperature scale.
+    color_das = [b.color_da for _, b, _ in members if b.color_da is not None]
+    difference = any("delta_" in str(variable_units(d) or "") for d in color_das)
+    absolute_temp = bool(color_das) and not difference and all(map(is_temperature, color_das))
+    diverging = difference or (
+        not absolute_temp and user.get("cmin", lo) < 0 < user.get("cmax", hi)
+    )
     axis = {"colorbar": {"title": {"text": first.color_title or ""}}}
     if palette is None and "colorscale" not in user:
         # The theme's color for this kind of field: precip, wind speed, diverging, temperature …
@@ -456,8 +464,17 @@ def _assemble_map(items, user_layout, lmeta, ctx):
                     if bound.color_da is not None
                     else None
                 )
+                difference = bound.color_da is not None and "delta_" in str(
+                    variable_units(bound.color_da) or ""
+                )
                 quantity = (
-                    (sn, title.rpartition("[")[2], "anomaly" in title, "std. dev." in title)
+                    (
+                        sn,
+                        title.rpartition("[")[2],
+                        "anomaly" in title,
+                        "std. dev." in title,
+                        difference,
+                    )
                     if sn
                     else title
                 )
@@ -541,7 +558,7 @@ def _assemble_map(items, user_layout, lmeta, ctx):
         ]
     panels_of = dict(sorted(panels_of.items(), key=lambda item: min(item[1])))
     mode = colorbar_mode(panels_of, cols)
-    if mode == "right" and rows == 1 and aspect > WIDE_MAP:
+    if mode in ("right", "rows") and aspect > WIDE_MAP:
         # A strip (a Pacific band, a polar belt) is too short for a vertical bar's title.
         mode = "below"
     if mode in ("right", "rows") and any(

@@ -749,3 +749,21 @@ def test_sel_on_a_model_calendar_picks_the_nearest_date():
         spec = {"data": [_trace("a", source={"sel": {"time": day}})]}
         heat = _data(compile(spec, {"a": ds}), "heatmap")
         assert len(heat) == 1
+
+
+def test_temperature_difference_is_diverging_and_absolute_is_not():
+    warm = make_gridded(n_time=1, name="sst", fill=2.0, units="delta_degC")
+    warm["sst"].attrs["standard_name"] = "sea_surface_temperature"
+    axis = _layout(compile({"data": [_trace("a")]}, {"a": warm}))["coloraxis"]
+    # An all-positive anomaly is still centred on zero.
+    assert axis["cmin"] == -axis["cmax"]
+    sst = make_gridded(n_time=1, name="sst", units="degree_Celsius")
+    sst["sst"].values[..., 0] = -1.8
+    sst["sst"].values[..., 1:] = 28.0
+    sst["sst"].attrs["standard_name"] = "sea_surface_temperature"
+    axis = _layout(compile({"data": [_trace("a")]}, {"a": sst}))["coloraxis"]
+    assert axis["cmin"] == pytest.approx(-1.8) and axis["cmax"] == pytest.approx(28.0)
+    # Side by side they are two quantities: two colorbars.
+    spec = {"data": [_trace("a"), _trace("b", xaxis="x2", yaxis="y2")]}
+    heat = _data(compile(spec, {"a": sst, "b": warm}), "heatmap")
+    assert heat[0]["coloraxis"] != heat[1]["coloraxis"]
