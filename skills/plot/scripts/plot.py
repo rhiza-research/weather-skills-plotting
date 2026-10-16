@@ -190,8 +190,8 @@ def plot(
                     f"--input may be passed at most {MAX_INPUTS} times for series; got "
                     f'{len(data)}. For ensemble members use meta.along "number" on one input'
                 )
-            for i, (trace, d) in enumerate(zip(data, datasets.values(), strict=True)):
-                trace["name"] = trace_label(d, i)
+            for i, (key, d) in enumerate(datasets.items()):
+                data[i]["name"] = trace_label(d, i, key)
         elif cli:
             data = [
                 _default_trace(key, d, xaxis=None if i == 0 else f"x{i + 1}")

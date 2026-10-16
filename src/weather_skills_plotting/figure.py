@@ -349,6 +349,8 @@ def _input_label(ctx, trace):
     if trace.get("name"):
         return str(trace["name"])
     source = (trace.get("meta") or {}).get("source") or {}
+    if source.get("input") is not None and not str(source["input"]).isdigit():
+        return str(source["input"])  # the NAME from -i PATH=NAME
     ds = ctx.datasets.get(str(source.get("input"))) if source.get("input") else None
     path = getattr(ds, "attrs", {}).get(INPUT_PATH_ATTR) if ds is not None else None
     return Path(path).stem if path else None
@@ -356,8 +358,13 @@ def _input_label(ctx, trace):
 
 def _assemble_map(items, user_layout, lmeta, ctx):
     groups: dict[int, list] = {}
+    # A plain Plotly trace (city markers, a box) with no axis of its own goes on every map.
+    floating = [item for item in items if item[2] is None and not item[1].get("xaxis")]
     for item in items:
-        groups.setdefault(_anchor(item[1]), []).append(item)
+        if not any(item is f for f in floating):
+            groups.setdefault(_anchor(item[1]), []).append(item)
+    if not groups:
+        groups[1] = []
     order = sorted(groups)
     plan = []  # per group: list of panel keys (None for an unfaceted group)
     for g in order:
@@ -401,13 +408,18 @@ def _assemble_map(items, user_layout, lmeta, ctx):
         if gi is None:
             continue
         g = order[gi]
-        for i, spec_trace, bound in groups[g]:
+        for i, spec_trace, bound in [*groups[g], *floating]:
             uid = spec_trace.get("uid") or f"trace{i}"
             if bound is None:
                 tr = copy.deepcopy(
                     {k: v for k, v in spec_trace.items() if k not in ("xaxis", "yaxis")}
                 )
                 tr["uid"] = safe_uid(f"{uid}-p{p + 1}" if n > 1 else uid)
+                if any(spec_trace is f[1] for f in floating):
+                    # One color on every panel, not the next colorway entry per copy.
+                    fill_defaults(
+                        tr, {"marker": {"color": "#262626"}, "line": {"color": "#262626"}}
+                    )
                 panel_traces[p].append((_MAP_RANK[None], tr, spec_trace, None))
                 continue
             if len(bound.panels) == 1:

@@ -299,14 +299,14 @@ def panel_title(da, sdim, step_value, all_steps):
             # One map at 12 UTC is a time of day, not a whole day.
             return format_plot_time(step_value)
         return format_calendar_panel(step_value, calendar_bin_width(da, all_steps))
+    if sdim == "number":
+        return f"Member {format_step(step_value)}"
     units = str(da[sdim].attrs.get("units") or "") if sdim in da.coords else ""
     if not units and sdim in ("vertical", "level", "pressure_level", "isobaricInhPa"):
         units = "hPa"
     if units and value_arr.dtype.kind in "iuf":
         # A pressure level reads "850 hPa", not "vertical=850".
         return f"{float(value_arr):g} {units}"
-    if sdim == "number":
-        return f"Member {format_step(step_value)}"
     return f"{sdim}={format_step(step_value)}"
 
 

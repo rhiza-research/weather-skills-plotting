@@ -200,6 +200,16 @@ def merge_traces(base: list, overlay: list) -> list:
         if uid is not None:
             idx = next((j for j, t in enumerate(out) if t.get("uid") == uid), None)
             if idx is None:
+                if not set(trace) & {"type", "meta", "x", "y", "z", "lat", "lon", "r", "theta"}:
+                    # Only styling for a uid nothing has: a typo, not a new trace.
+                    have = [str(t.get("uid")) for t in out if t.get("uid") is not None]
+                    near = [h for h in have if h.lower() == str(uid).lower()]
+                    raise UsageError(
+                        f"--spec data[{i}] uid {uid!r} matches no trace (uids: "
+                        f"{', '.join(have) or 'none'})"
+                        + (f"; did you mean {near[0]!r}?" if near else "")
+                        + "; a new trace needs a type"
+                    )
                 out.append(copy.deepcopy(trace))
                 continue
         else:

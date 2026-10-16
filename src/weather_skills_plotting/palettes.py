@@ -220,7 +220,8 @@ def precip_window_name(days: float | None) -> str:
         return "ppt_week"
     if days < 2:
         return "ppt_daily"
-    if days < 10:
+    if days <= 10:
+        # A dekad is the week window, as chc-plot-theme picks it.
         return "ppt_week"
     if days < 40:
         return "ppt_month"
@@ -579,13 +580,26 @@ def builtin_palettes() -> dict:
 
 def _read_theme_file(path: Path) -> dict:
     """The standard theme with the file at ``path`` layered on top, validated."""
+    if not path.is_file():
+        shipped = sorted(
+            p.name.removesuffix(".json")
+            for p in DEFAULT_THEME_FILE.parent.iterdir()
+            if p.name.endswith(".json") and p.name != "default.json"
+        )
+        raise UsageError(
+            f"--theme-file {path}: no such file and not a shipped theme "
+            f"(shipped: {', '.join(shipped)})"
+        )
     text = path.read_text(encoding="utf-8")
-    if path.suffix.lower() == ".toml":
-        import tomllib
+    try:
+        if path.suffix.lower() == ".toml":
+            import tomllib
 
-        data = tomllib.loads(text)
-    else:
-        data = json.loads(text)
+            data = tomllib.loads(text)
+        else:
+            data = json.loads(text)
+    except ValueError as exc:  # JSONDecodeError and TOMLDecodeError are ValueErrors
+        raise UsageError(f"plot theme file {path} is not valid JSON/TOML: {exc}") from None
     if not isinstance(data, dict):
         raise UsageError(f"plot theme file {path} must contain an object")
     unknown = sorted(set(data) - THEME_FILE_KEYS)

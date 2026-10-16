@@ -162,3 +162,19 @@ def test_reference_recipes_are_json():
 
     for _, example in _RECIPES:
         json.loads(example)
+
+
+def test_theme_file_mistakes_are_usage_errors(tmp_path):
+    with pytest.raises(UsageError, match="shipped: tropical_tidbits"):
+        load_theme("tropical")
+    bad = tmp_path / "bad.json"
+    bad.write_text("{bad")
+    with pytest.raises(UsageError, match="not valid JSON/TOML"):
+        load_theme(bad)
+
+
+def test_a_dekad_uses_the_week_window():
+    from weather_skills_plotting.palettes import precip_window_name
+
+    assert precip_window_name(10.0) == "ppt_week"
+    assert precip_window_name(11.0) == "ppt_month"

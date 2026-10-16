@@ -767,3 +767,38 @@ def test_temperature_difference_is_diverging_and_absolute_is_not():
     spec = {"data": [_trace("a"), _trace("b", xaxis="x2", yaxis="y2")]}
     heat = _data(compile(spec, {"a": sst, "b": warm}), "heatmap")
     assert heat[0]["coloraxis"] != heat[1]["coloraxis"]
+
+
+def test_input_names_title_side_by_side_panels_and_plain_traces_repeat():
+    a, b = make_gridded(n_time=1), make_gridded(n_time=1, fill=3.0)
+    spec = {
+        "data": [
+            _trace("CHIRPS"),
+            _trace("IMERG", xaxis="x2", yaxis="y2"),
+            {"uid": "city", "type": "scatter", "mode": "markers", "x": [11.0], "y": [2.0]},
+        ]
+    }
+    fig = compile(spec, {"CHIRPS": a, "IMERG": b})
+    titles = [
+        x["text"] for x in _layout(fig)["annotations"] if x.get("name", "").startswith("panel")
+    ]
+    assert titles == ["CHIRPS", "IMERG"]
+    cities = [t for t in fig.data if t["uid"].startswith("city")]
+    assert sorted(t["xaxis"] for t in cities) == ["x", "x2"]
+    assert {t["marker"]["color"] for t in cities} == {"#262626"}
+
+
+def test_member_panels_are_titled_by_member():
+    from weather_skills_plotting.labels import panel_title
+
+    da = xr.DataArray(
+        [0.0, 1.0], dims=["number"], coords={"number": ("number", [0, 1], {"units": "1"})}
+    )
+    assert panel_title(da, "number", 1, [0, 1]) == "Member 1"
+
+
+def test_mistyped_uid_names_the_real_one():
+    from weather_skills_plotting.spec import merge_traces
+
+    with pytest.raises(UsageError, match="did you mean 'OBS'"):
+        merge_traces([{"uid": "OBS", "type": "heatmap"}], [{"uid": "obs", "zmin": 0}])
