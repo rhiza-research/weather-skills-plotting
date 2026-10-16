@@ -338,8 +338,10 @@ def _facet_dim(meta: dict, da, keep: tuple, loc: str):
 def _leftover_error(da, allowed, what, loc):
     extra = [d for d in da.dims if d not in allowed]
     if extra:
+        names = ", ".join(repr(d) for d in extra)
         raise UsageError(
-            f"dimension {extra[0]!r} remains for {what}; select a position with "
+            f"dimension{'s' if len(extra) > 1 else ''} {names} remain{'' if len(extra) > 1 else 's'} "
+            f"for {what}; select a position with "
             f"{loc}.source.isel / sel, panel it with {loc}.facet, or average it first with "
             f"summarize-dim. Side-by-side maps are separate inputs on separate axes, "
             f"not one dataset concatenated along {extra[0]!r}"

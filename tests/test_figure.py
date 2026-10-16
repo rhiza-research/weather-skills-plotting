@@ -111,7 +111,7 @@ def test_faceted_side_by_side_is_an_error():
 def test_leftover_dim_is_an_error_with_hint():
     ds = make_forecast(n_step=2)  # tests/conftest: number × step × lat × lon
     ds = ds.expand_dims(level=[850, 500])
-    with pytest.raises(UsageError, match="dimension 'level' remains.*isel"):
+    with pytest.raises(UsageError, match="dimensions 'level', 'number' remain.*isel"):
         compile({"data": [_trace("a")]}, {"a": ds})
 
 
@@ -819,3 +819,13 @@ def test_second_y_axis_gets_its_own_round_ticks():
     }
     axis = _layout(compile(spec, {"a": a, "b": b}))["yaxis2"]
     assert axis["tickmode"] == "auto" and axis["showgrid"] is False
+
+
+def test_upside_down_bbox_and_several_leftover_dims_are_named():
+    ds = make_gridded(n_time=1)
+    spec = {"data": [_trace("a")], "layout": {"meta": {"geo": {"bbox": [-5, 10, 5, 13]}}}}
+    with pytest.raises(UsageError, match="north is below south"):
+        compile(spec, {"a": ds})
+    cube = make_gridded(n_time=1).expand_dims(number=[0, 1], vertical=[500, 850])
+    with pytest.raises(UsageError, match="dimensions 'number', 'vertical' remain"):
+        compile({"data": [_trace("a")]}, {"a": cube})

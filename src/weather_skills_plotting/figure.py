@@ -88,14 +88,17 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
     lmeta = user_layout.pop("meta", None) or {}
     geo = lmeta.get("geo") or {}
     bbox = geo.get("bbox")
-    if not bbox:
+    bbox = tuple(parse_bbox(bbox)) if isinstance(bbox, str) else (tuple(bbox) if bbox else None)
+    if bbox is None:
         # A grid that crosses the dateline is drawn on one continuous 0..360 window.
         bbox = dateline_bbox(datasets.values())
+    elif bbox[0] < bbox[2]:
+        raise UsageError(f"layout.meta.geo.bbox {list(bbox)} is [N, W, S, E]; north is below south")
     ctx = Context(
         datasets=datasets,
         palettes=theme["palettes"],
         theme=theme,
-        bbox=tuple(parse_bbox(bbox)) if isinstance(bbox, str) else (tuple(bbox) if bbox else None),
+        bbox=bbox,
         polygon=polygon_from_geojson(geo["mask_geojson"]) if geo.get("mask_geojson") else None,
         point=geo.get("point"),
     )

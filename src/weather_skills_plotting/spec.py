@@ -424,6 +424,8 @@ def plotly_error(exc: Exception, loc: str = "") -> UsageError:
             '\nA colorbar belongs to a color axis: {"layout": {"coloraxis": {"colorbar": {…}}}} '
             "(coloraxis2, … for a second bar)"
         )
+    if "'bbox'" in head and "Geo" in head:
+        msg += '\nThe map window is layout.meta.geo.bbox: {"layout": {"meta": {"geo": {"bbox": [N, W, S, E]}}}}'
     prefix = f"plot spec {loc}: " if loc else "plot spec: "
     return UsageError(
         prefix + msg + "\nKeys are standard Plotly: https://plotly.com/python/reference/"
