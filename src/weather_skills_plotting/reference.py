@@ -85,8 +85,9 @@ _RECIPES = [
         '"textfont": {"color": "#c8102e"}}]}',
     ),
     (
-        "Tropical Tidbits MSLP & precip (--theme-file tropical_tidbits; precip unit-convert to "
-        "mm h-1): --layer heatmap:precip.zarr=PRECIP --layer contour:msl.zarr=MSLP --layer "
+        "Tropical Tidbits MSLP & precip (--theme-file tropical_tidbits; precip: aggregate-temporal "
+        "--period '6 hour' --time-dim step, select the step 6 h before the MSLP lead, unit-convert "
+        "to mm h-1): --layer heatmap:precip.zarr=PRECIP --layer contour:msl.zarr=MSLP --layer "
         "scatter:highs.zarr=HIGHS --layer scatter:lows.zarr=LOWS; value above H / L",
         '{"data": [{"uid": "PRECIP", "meta": {"palette": "tt_precip_rate"}}, {"uid": "MSLP", '
         '"contours": {"coloring": "none", "showlabels": true, "start": 900, "end": 1080, '

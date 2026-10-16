@@ -707,6 +707,11 @@ def test_precip_rate_keeps_its_mm_units_for_a_spec_palette():
     heat = _data(fig, "heatmap")[0]
     assert np.allclose(np.asarray(heat["customdata"], dtype=float), 2.0)
     assert "mm/h" in _layout(fig)["coloraxis"]["colorbar"]["title"]["text"]
+    # A selected 6 hour mean (aggregation_period set, no step axis left) stays mm/h too.
+    one = ds.isel(time=0)
+    one["precip"].attrs["aggregation_period"] = "6 hour"
+    heat = _data(compile({"data": [_trace("a", meta={"palette": palette})]}, {"a": one}), "heatmap")
+    assert np.allclose(np.asarray(heat[0]["customdata"], dtype=float), 2.0)
     # A flux that is not in mm still reads in mm/day.
     ds = make_gridded(n_time=1, fill=1 / 86400, units="kg m-2 s-1")
     ds["precip"].attrs["standard_name"] = "lwe_precipitation_rate"
