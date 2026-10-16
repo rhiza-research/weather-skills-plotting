@@ -21,8 +21,7 @@ every valid key at that level, not a silent no-op. If you don't already
 know the shape of `--spec`, run `--help`: after the flags it prints the plot
 spec reference (every section and key, with recipes), rather than guessing
 keys one at a time. To modify a figure you already drew, `--dump-spec -`
-with the same two files prints its current spec to edit and pass back. And render once and look
-at the PNG before trying another variation — the `plot hash` printed after
+with the same two files prints its current spec to edit and pass back. The `plot hash` printed after
 a render only tells you the pixels changed, never what changed or how it
 looks.
 
@@ -75,7 +74,7 @@ A PNG at `--output`, single axes, default figsize `(10, 5)` (override with
 RGB pixels) and `data: not null` or `data: NULL`. `NULL` means inspect-zarr
 the inputs. A changed hash only proves the pixels differ, not what changed
 or whether it looks right — never use hash comparisons to answer a layout
-or appearance question; always look at the PNG.
+or appearance question.
 `--dump-spec` skips the PNG and this report. Up to 6 forecast steps on the x-axis labeled with actual leads (`+7d`, `+10d`, …). The y-axis (and default title) use the variable `long_name`.
 
 ### Provenance

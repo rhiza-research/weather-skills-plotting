@@ -22,9 +22,7 @@ and transforms when those are available (for example a fetch skill,
 3. Pick the right plotting skill and put every drawing choice in its
    `--spec` JSON, not a flag — read that skill's SKILL.md and
    `docs/plotting.md` before guessing a key.
-4. Run the skill script and report the output PNG path, and look at the
-   pixels before calling a render
-   correct.
+4. Run the skill script and report the output PNG path.
 5. On failure, report the actual error — do not paper over it.
 
 ## Plotting-specific notes
