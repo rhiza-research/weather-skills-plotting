@@ -1,6 +1,6 @@
 ---
 name: plot
-description: "Draw weather-skills Zarrs as a map (heatmap, contour, stations, wind arrows), time series, xy scatter, or wind rose, to PNG, JPG, or interactive HTML. --spec is a standard Plotly figure; each trace's meta says which dataset it draws. Maps on different grids (CHIRPS 0.05° beside ECMWF 1.5°) go side by side with one -i per file; do not coarsen them. --layer stacks files on one map. The plotter selects but never averages: run summarize-dim first for an ensemble or area mean, and aggregate-temporal for weekly or monthly totals. Named places: get a bbox from resolve-region. For a lead-week verification grid, use plot-verify."
+description: "Draw weather-skills Zarrs as maps (heatmap, contour, stations, wind arrows), time series, xy scatter plots, or wind roses, saved as PNG, JPG, or interactive HTML. Titles, colors, panels, and layout are set with a standard Plotly figure JSON. For a forecast verification grid use plot-verify; for an animation use plot-video."
 license: MIT
 compatibility: Requires Python 3.12 and uv. PNG/JPG export needs Chrome (installed, or `plotly_get_chrome -y`).
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py *)
