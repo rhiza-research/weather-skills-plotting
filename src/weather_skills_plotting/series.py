@@ -1,19 +1,11 @@
-# /// script
-# requires-python = ">=3.12,<3.13"
-# dependencies = [
-#   "weather-skills-plotting",
-#   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
-# ]
-#
-# [tool.uv.sources]
-# weather-skills-plotting = { path = "../../..", editable = true }
-# ///
-"""Overlay one series per input Zarr on a shared time axis, as PNG or HTML."""
+"""Several 1-D series on one shared time axis: labels, inherited settings, warnings."""
+
+from __future__ import annotations
 
 import copy
 from pathlib import Path
 
-from weather_skills_core import Dataset, UsageError, weather_skill
+from weather_skills_core import UsageError
 from weather_skills_core.cf import auto_variable
 from weather_skills_core.units import (
     AGGREGATION_PERIOD_ATTR,
@@ -22,14 +14,9 @@ from weather_skills_core.units import (
     variable_units,
 )
 
-from weather_skills_plotting import parse_spec_arg
-from weather_skills_plotting.cli import input_path, letter, run, skeleton, spec_datasets, warn
+from weather_skills_plotting.cli import input_path, warn
 from weather_skills_plotting.display import dataset_display_label, precip_for_display
-from weather_skills_plotting.reference import install_spec_help
-from weather_skills_plotting.spec import DUMP_SPEC_HELP, SPEC_ARGUMENT_HELP, merge_spec
-
-# Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.2"
+from weather_skills_plotting.layout import axis_suffix
 
 MAX_INPUTS = 26
 # meta keys a later trace takes from data[0] when it leaves them unset.
@@ -89,6 +76,32 @@ def inherit_from_first(spec: dict, datasets: dict | None = None) -> dict:
     return spec
 
 
+def _by_yaxis(spec: dict, datasets: dict) -> dict:
+    """``{y-axis: [(uid, input key, ds, variable), …]}`` for the series each axis draws.
+
+    Mirrors the chart layout: with ``layout.grid`` and no trace axes set, the
+    k-th trace gets the k-th panel's y-axis.
+    """
+    grid = (spec.get("layout") or {}).get("grid") or {}
+    cells = (grid.get("rows") or 1) * (grid.get("columns") or 1)
+    data = spec.get("data") or []
+    explicit = any(t.get("xaxis") or t.get("yaxis") for t in data)
+    by_axis = {}
+    for k, trace in enumerate(data):
+        meta = trace.get("meta") or {}
+        source = meta.get("source") or {}
+        key = str(source.get("input"))
+        ds = datasets.get(key)
+        if ds is None:
+            continue
+        var = meta.get("y") or source.get("variable") or auto_variable(ds)
+        axis = trace.get("yaxis") or "y"
+        if cells > 1 and not explicit and k < cells:
+            axis = f"y{axis_suffix(k)}"
+        by_axis.setdefault(axis, []).append((trace.get("uid") or key, key, ds, var))
+    return by_axis
+
+
 def keep_mixed_precip_as_rates(spec: dict, datasets: dict) -> dict:
     """Draw every precip series on a y-axis as a rate unless all become totals.
 
@@ -96,28 +109,20 @@ def keep_mixed_precip_as_rates(spec: dict, datasets: dict) -> dict:
     one without stays a rate (mm/day). Mixed on one axis, a weekly 35 mm
     total would read as 35 mm/day, so drop the period from those inputs.
     """
-    by_axis = {}
-    for trace in spec.get("data") or []:
-        source = (trace.get("meta") or {}).get("source") or {}
-        key = str(source.get("input"))
-        ds = datasets.get(key)
-        if ds is None:
-            continue
-        var = source.get("variable") or auto_variable(ds)
-        if var not in ds:
-            continue
-        try:
-            rate = to_standard_units(ds, variables=[var])
-        except UsageError:
-            rate = ds
-        converted = precip_for_display(rate, var) is not rate
-        by_axis.setdefault(trace.get("yaxis") or "y", []).append((key, var, converted))
     out = dict(datasets)
-    for items in by_axis.values():
-        converted = [c for _, _, c in items]
-        if not any(converted) or all(converted):
+    for items in _by_yaxis(spec, datasets).values():
+        converted = []
+        for _, key, ds, var in items:
+            if var not in ds:
+                continue
+            try:
+                rate = to_standard_units(ds, variables=[var])
+            except UsageError:
+                rate = ds
+            converted.append((key, var, precip_for_display(rate, var) is not rate))
+        if not any(c for _, _, c in converted) or all(c for _, _, c in converted):
             continue
-        for key, var, c in items:
+        for key, var, c in converted:
             if c:
                 ds = out[key].copy(deep=False)
                 ds[var] = ds[var].copy(deep=False)
@@ -156,16 +161,10 @@ def warn_disjoint_dates(spec: dict, datasets: dict) -> None:
 
 def warn_mixed_units(spec: dict, datasets: dict) -> None:
     """Series on one y-axis in different units are drawn on one scale; say so."""
-    by_axis = {}
-    for trace in spec.get("data") or []:
-        source = (trace.get("meta") or {}).get("source") or {}
-        ds = datasets.get(str(source.get("input")))
-        if ds is None:
-            continue
-        var = source.get("variable") or auto_variable(ds)
-        units = variable_units(ds[var]) if var in ds else None
-        by_axis.setdefault(trace.get("yaxis") or "y", []).append((trace.get("uid"), units))
-    for axis, items in by_axis.items():
+    for axis, entries in _by_yaxis(spec, datasets).items():
+        items = [
+            (uid, variable_units(ds[var]) if var in ds else None) for uid, _, ds, var in entries
+        ]
         unknown = [str(uid) for uid, u in items if not u]
         items = [(uid, u) for uid, u in items if u]
         if items and unknown:
@@ -180,52 +179,3 @@ def warn_mixed_units(spec: dict, datasets: dict) -> None:
                 'Give each its own panel with layout.grid {"rows": N, "columns": 1, '
                 '"pattern": "coupled"}, or a second axis with yaxis "y2"'
             )
-
-
-@weather_skill(name="plot-timeseries", version=_SKILL_VERSION)
-@weather_skill.argument(
-    "-i",
-    "--input",
-    type=Dataset("any"),
-    action="append",
-    help="Input Zarr; repeat once per series (legend order; trace uids a, b, …).",
-)
-@weather_skill.argument("--spec", type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
-@weather_skill.argument(
-    "--theme-file",
-    help="Theme JSON/TOML: {template: <Plotly template>, palettes: {…}}.",
-)
-@weather_skill.argument("--dump-spec", nargs="?", const="-", probe=True, help=DUMP_SPEC_HELP)
-def plot_timeseries(ds, output, spec, theme_file, dump_spec, **kwargs):
-    """Overlay one series per input Zarr on a shared time axis."""
-    files = [d for d in (ds or []) if d is not None]
-    if len(files) > MAX_INPUTS:
-        raise UsageError(
-            f"--input may be passed at most {MAX_INPUTS} times; got {len(files)}. "
-            'For ensemble members use meta.along "number" on one input'
-        )
-    datasets = spec_datasets(spec, {letter(i): d for i, d in enumerate(files)})
-    if not datasets:
-        raise UsageError("pass -i/--input, or a --spec with layout.meta.inputs")
-    data = [
-        {
-            "uid": key,
-            "type": "scatter",
-            "name": trace_label(d, i),
-            "meta": {"bind": "series", "source": {"input": key}},
-        }
-        for i, (key, d) in enumerate(datasets.items())
-    ]
-    base = skeleton("plot-timeseries", datasets, data)
-    user = spec.data if spec is not None else {}
-    merged = inherit_from_first(merge_spec(base, user), datasets)
-    datasets = keep_mixed_precip_as_rates(merged, datasets)
-    warn_mixed_units(merged, datasets)
-    warn_disjoint_dates(merged, datasets)
-    return run(merged, None, datasets, output, dump_spec, theme_file=theme_file)
-
-
-install_spec_help(plot_timeseries)
-
-if __name__ == "__main__":
-    plot_timeseries()

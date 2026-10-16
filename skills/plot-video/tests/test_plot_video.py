@@ -42,7 +42,7 @@ def first_z(z):
 def test_dump_spec_is_one_heatmap(grid, video_fn, capsys):
     run_skill(video_fn, "-i", grid, "--dump-spec", "-")
     spec = json.loads(capsys.readouterr().out)
-    assert [(t["uid"], t["type"]) for t in spec["data"]] == [("a", "heatmap")]
+    assert [(t["uid"], t["type"]) for t in spec["data"]] == [("0", "heatmap")]
 
 
 def test_one_frame_per_time_with_controls(grid, video_fn, tmp_path, capsys):

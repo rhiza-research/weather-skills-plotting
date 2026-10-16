@@ -13,14 +13,29 @@
 import argparse
 from pathlib import Path
 
-from weather_skills_core import Dataset, UsageError, weather_skill
+from weather_skills_core import UsageError, weather_skill
 from weather_skills_core.cf import cf_dim
 
 from weather_skills_plotting import parse_spec_arg
-from weather_skills_plotting.cli import letter, run, skeleton, spec_datasets
+from weather_skills_plotting.cli import (
+    input_ids,
+    parse_input,
+    run,
+    skeleton,
+    spec_datasets,
+    split_name,
+)
 from weather_skills_plotting.geodata import point_dim
 from weather_skills_plotting.reference import install_spec_help
-from weather_skills_plotting.spec import DUMP_SPEC_HELP, SPEC_ARGUMENT_HELP
+from weather_skills_plotting.series import (
+    MAX_INPUTS,
+    inherit_from_first,
+    keep_mixed_precip_as_rates,
+    trace_label,
+    warn_disjoint_dates,
+    warn_mixed_units,
+)
+from weather_skills_plotting.spec import DUMP_SPEC_HELP, SPEC_ARGUMENT_HELP, merge_spec
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
 _SKILL_VERSION = "0.0.2"
@@ -30,17 +45,17 @@ _ZARR_LAYERS = frozenset({"heatmap", "contour", "scatter", "quiver"})
 
 
 class LayerArg:
-    """``--layer KIND:PATH``. The decorator opens Zarr layers (``.ds``)."""
+    """``--layer KIND:PATH[=NAME]``. The decorator opens Zarr layers (``.ds``)."""
 
-    def __init__(self, kind: str, path: str):
-        self.kind, self.path, self.ds = kind, path, None
+    def __init__(self, kind: str, path: str, name: str | None):
+        self.kind, self.path, self.name, self.ds = kind, path, name, None
 
     def zarr_paths(self):
         return [Path(self.path)] if self.kind in _ZARR_LAYERS else []
 
     def __str__(self):
-        # Provenance records str(); keep the flag's own KIND:PATH form.
-        return f"{self.kind}:{self.path}"
+        # Provenance records str(); keep the flag's own form.
+        return f"{self.kind}:{self.path}" + (f"={self.name}" if self.name else "")
 
 
 def parse_layer(value):
@@ -48,10 +63,10 @@ def parse_layer(value):
     kind = kind.strip().lower()
     if not sep or not path.strip() or kind not in LAYER_KINDS:
         raise argparse.ArgumentTypeError(
-            f"--layer expects KIND:PATH with KIND one of {', '.join(LAYER_KINDS)}; got {value!r}. "
-            "Style a layer in --spec on the data[] entry with uid a, b, … (in --layer order)"
+            f"--layer expects KIND:PATH[=NAME] with KIND one of {', '.join(LAYER_KINDS)}; "
+            f"got {value!r}"
         )
-    return LayerArg(kind, path.strip())
+    return LayerArg(kind, *split_name(path.strip(), "--layer"))
 
 
 def _default_trace(uid: str, ds, *, xaxis=None) -> dict:
@@ -63,7 +78,7 @@ def _default_trace(uid: str, ds, *, xaxis=None) -> dict:
     elif lat in ds.dims and lon in ds.dims:
         trace = {"type": "heatmap", "meta": {"source": source}}
     else:
-        trace = {"type": "scatter", "meta": {"bind": "series", "source": source}}
+        trace = {"type": "scatter", "meta": {"source": source}}
     trace["uid"] = uid
     if xaxis:
         trace.update(xaxis=xaxis, yaxis="y" + xaxis[1:])
@@ -72,8 +87,7 @@ def _default_trace(uid: str, ds, *, xaxis=None) -> dict:
 
 def _layer_traces(layers):
     data, datasets, mask = [], {}, None
-    for i, layer in enumerate(layers):
-        uid = letter(i)
+    for uid, layer in zip(input_ids([x.name for x in layers]), layers, strict=True):
         if layer.kind == "mask":
             mask = layer.path
             continue
@@ -112,30 +126,20 @@ def _layer_traces(layers):
 @weather_skill.argument(
     "-i",
     "--input",
-    type=Dataset("any"),
+    dest="inputs",
+    type=parse_input,
     action="append",
-    help="Input Zarr. Repeat for side-by-side maps, one panel per file on its own grid "
-    "(input ids a, b, … in order). Exclusive with --layer and --x/--y.",
-)
-@weather_skill.argument(
-    "--x",
-    dest="x_ds",
-    type=Dataset("any"),
-    help="X series Zarr for an xy scatter (input id x).",
-)
-@weather_skill.argument(
-    "--y",
-    dest="y_ds",
-    type=Dataset("any"),
-    help="Y series Zarr for an xy scatter (input id y).",
+    help="Input Zarr as PATH or PATH=NAME. Repeat for side-by-side maps, one panel per file on "
+    "its own grid. In --spec the input is uid NAME, else its position: 0, 1, …. Exclusive with "
+    "data layers.",
 )
 @weather_skill.argument(
     "--layer",
     action="append",
     type=parse_layer,
-    help="KIND:PATH layer drawn on one shared map; repeat to stack. Kinds: heatmap, contour, "
-    "scatter (stations), quiver (u/v), outline (GeoJSON), mask (GeoJSON). Trace uids are a, b, … "
-    "in order.",
+    help="KIND:PATH or KIND:PATH=NAME layer drawn on one shared map; repeat to stack, bottom "
+    "first. Kinds: heatmap, contour, scatter (stations), quiver (u/v), outline (GeoJSON), mask "
+    "(GeoJSON). In --spec the layer is uid NAME, else its position: 0, 1, ….",
 )
 @weather_skill.argument("--spec", type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
 @weather_skill.argument(
@@ -144,49 +148,56 @@ def _layer_traces(layers):
 )
 @weather_skill.argument("--dump-spec", nargs="?", const="-", probe=True, help=DUMP_SPEC_HELP)
 def plot(
-    ds,
+    inputs,
     output,
     layer,
-    x_ds,
-    y_ds,
     spec,
     theme_file,
     dump_spec,
     **kwargs,
 ):
     """Render a map, time series, xy scatter, or wind rose from weather-skills Zarrs."""
-    files = [d for d in (ds or []) if d is not None]
+    inputs = list(inputs or [])
+    files = [x.ds for x in inputs]
     layers = list(layer or [])
     # Boundaries and masks go on -i maps too: an outline on every panel.
     shapes = [x for x in layers if x.kind in ("outline", "mask")] if files else []
     if shapes and len(shapes) == len(layers):
         layers = []
-    if sum(bool(x) for x in (files, layers, x_ds is not None or y_ds is not None)) > 1:
+    if files and layers:
         raise UsageError(
-            "pass one of -i/--input, --layer, or --x/--y (-i takes only outline: and mask: layers)"
+            "pass -i/--input or --layer, not both (-i takes only outline: and mask: layers)"
         )
-    if (x_ds is None) != (y_ds is None):
-        raise UsageError("an xy scatter needs both --x and --y")
     layout = {}
+    series = False
     if layers:
         data, datasets, mask = _layer_traces(layers)
+        datasets = spec_datasets(spec, datasets)
         if mask:
             layout["meta"] = {"geo": {"mask_geojson": mask}}
-    elif x_ds is not None:
-        datasets = {"x": x_ds, "y": y_ds}
-        data = [
-            {
-                "uid": "xy",
-                "type": "scatter",
-                "meta": {"bind": "pair", "x": {"input": "x"}, "y": {"input": "y"}},
-            }
-        ]
     else:
-        datasets = {letter(i): d for i, d in enumerate(files)}
-        data = [
-            _default_trace(key, d, xaxis=None if i == 0 else f"x{i + 1}")
-            for i, (key, d) in enumerate(datasets.items())
-        ]
+        cli = dict(zip(input_ids([x.name for x in inputs]), files, strict=True))
+        datasets = spec_datasets(spec, cli)
+        data = [_default_trace(key, d) for key, d in datasets.items()]
+        # 1-D series share one x/y axis, one legend entry per file.
+        series = bool(data) and all(
+            t["type"] == "scatter" and "bind" not in t["meta"] for t in data
+        )
+        if series:
+            if len(data) > MAX_INPUTS:
+                raise UsageError(
+                    f"--input may be passed at most {MAX_INPUTS} times for series; got "
+                    f'{len(data)}. For ensemble members use meta.along "number" on one input'
+                )
+            for i, (trace, d) in enumerate(zip(data, datasets.values(), strict=True)):
+                trace["name"] = trace_label(d, i)
+        elif cli:
+            data = [
+                _default_trace(key, d, xaxis=None if i == 0 else f"x{i + 1}")
+                for i, (key, d) in enumerate(datasets.items())
+            ]
+        else:
+            data = []
         for j, shape in enumerate(shapes):
             if shape.kind == "mask":
                 layout["meta"] = {"geo": {"mask_geojson": shape.path}}
@@ -200,16 +211,21 @@ def plot(
                 if i:
                     outline.update(xaxis=f"x{i + 1}", yaxis=f"y{i + 1}")
                 data.append(outline)
-    datasets = spec_datasets(spec, datasets)
     if not datasets and not any((t.get("meta") or {}).get("bind") == "geojson" for t in data):
         if spec is None or not (spec.data.get("data")):
             raise UsageError(
-                "pass -i/--input, --layer, --x/--y, or a --spec with data and layout.meta.inputs"
+                "pass -i/--input, --layer, or a --spec with data and layout.meta.inputs"
             )
     base = skeleton("plot", datasets, data)
     if layout.get("meta"):
         base["layout"]["meta"].update(layout["meta"])
-    return run(base, spec, datasets, output, dump_spec, theme_file=theme_file)
+    merged = merge_spec(base, spec.data if spec is not None else {})
+    if series:
+        merged = inherit_from_first(merged, datasets)
+        datasets = keep_mixed_precip_as_rates(merged, datasets)
+        warn_mixed_units(merged, datasets)
+        warn_disjoint_dates(merged, datasets)
+    return run(merged, None, datasets, output, dump_spec, theme_file=theme_file)
 
 
 install_spec_help(plot)

@@ -53,11 +53,9 @@ from weather_skills_plotting.spec import DEFAULT_BIND
 from weather_skills_plotting.wind import (
     WIND_ROSE_SECTORS,
     WIND_SPEED_COLORS,
-    _calendar_year,  # noqa: F401 — re-exported for tests
     flat_numeric,
     is_sample_dim,
     native_spacing_deg,
-    pair_xy,
     quiver_step,
     resolve_uv,
     speed_bin_labels,
@@ -123,7 +121,9 @@ def bind_of(trace: dict) -> str | None:
     meta = trace.get("meta") or {}
     if meta.get("bind"):
         return meta["bind"]
-    if not any(meta.get(k) for k in ("source", "x", "y")):
+    if meta.get("x") or meta.get("y"):
+        return "xy"
+    if not meta.get("source"):
         return None
     return DEFAULT_BIND.get(trace.get("type") or "scatter", "series")
 
@@ -235,8 +235,16 @@ def _sel(da, source: dict, loc: str):
                 f"{loc}.sel {dim}={value!r} does not match the coordinate ({exc})"
             ) from None
     # A one-value dim (a single pressure level or member) has nothing to choose
-    # or average; time and step stay so a single map keeps its date.
-    keep = {"time", "step", cf_dim(da, "time"), cf_dim(da, "latitude"), cf_dim(da, "longitude")}
+    # or average; time and step stay so a single map keeps its date, and a
+    # one-station file keeps its station axis.
+    keep = {
+        "time",
+        "step",
+        cf_dim(da, "time"),
+        cf_dim(da, "latitude"),
+        cf_dim(da, "longitude"),
+        point_dim(da),
+    }
     single = [d for d in da.dims if da.sizes[d] == 1 and d not in keep]
     return da.squeeze(single) if single else da
 
@@ -650,7 +658,10 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
         if da.ndim == 1:
             sdim = da.dims[0]
         else:
-            raise UsageError(f"{loc}: a series needs a step or time axis; got {list(da.dims)}")
+            raise UsageError(
+                f"{loc}: a series needs a step or time axis; got {list(da.dims)}. To plot one "
+                "variable against another, set meta.x and meta.y to their names"
+            )
     along = along_dim(da, meta.get("along"))
     if meta.get("along") and along is None:
         raise UsageError(
@@ -826,48 +837,34 @@ def seasonal_dates(coord, loc):
     return np.array(text, dtype="datetime64[D]").astype("datetime64[ns]")
 
 
-def _xy_series(ctx, source, loc):
-    da, _ = select(ctx, source, loc)
-    sdim = "step" if "step" in da.dims else cf_dim(da, "time")
-    if sdim is None or sdim not in da.dims:
-        if da.ndim != 1:
-            raise UsageError(
-                f"{loc} needs a time or step axis to pair samples; got {list(da.dims)}"
-            )
-        sdim = da.dims[0]
-    rest = [d for d in da.dims if d != sdim]
-    if rest:
+def bind_xy(trace, meta, ctx, loc):
+    """One variable against another from the same input: a point per shared position."""
+    source = meta.get("source") or {}
+    x_da, _ = select(ctx, source, f"{loc}.source", variable=meta.get("x"))
+    y_da, _ = select(ctx, source, f"{loc}.source", variable=meta.get("y"))
+    if set(x_da.dims) != set(y_da.dims):
         raise UsageError(
-            f"{loc}: dims {rest} remain besides {sdim!r}. Pick one value with {loc}.isel / sel, "
-            "or average them first with summarize-dim (--lat-weighted for an area mean)"
+            f"{loc}: x {meta.get('x')!r} has dims {list(x_da.dims)} but y {meta.get('y')!r} has "
+            f"{list(y_da.dims)}; select one value of the extra dims with {loc}.source.isel / sel"
         )
-    axis, _ = timeseries_axis(da, sdim)
-    return da, np.asarray(axis), np.asarray(da.values, dtype=float)
-
-
-def bind_pair(trace, meta, ctx, loc):
-    pair_on = meta.get("pair_on") or "time"
-    if not meta.get("x") or not meta.get("y"):
-        raise UsageError(f'{loc}: meta.bind "pair" needs meta.x and meta.y sources')
-    x_da, x_axis, x_raw = _xy_series(ctx, meta["x"], f"{loc}.x")
-    y_da, y_axis, y_raw = _xy_series(ctx, meta["y"], f"{loc}.y")
-    xv, yv, keys = pair_xy(x_axis, x_raw, y_axis, y_raw, pair_on)
+    y_da = y_da.transpose(*x_da.dims)
+    xv = np.asarray(x_da.values, dtype=float).ravel()
+    yv = np.asarray(y_da.values, dtype=float).ravel()
     keep = np.isfinite(xv) & np.isfinite(yv)
-    xv, yv = xv[keep], yv[keep]
-    keys = [k for k, ok in zip(keys, keep, strict=True) if ok]
-    if xv.size == 0:
-        raise UsageError(f"{loc}: no finite paired samples to plot")
-    labelled = pair_on == "year" or (pair_on == "time" and xv.size <= 25)
-    out = {
-        "mode": "markers+text" if labelled else "markers",
-        "x": xv,
-        "y": yv,
-        "showlegend": False,
-    }
-    if labelled:
+    if not keep.any():
+        raise UsageError(f"{loc}: no position has a finite x and y to plot")
+    out = {"mode": "markers", "x": xv[keep], "y": yv[keep], "showlegend": False}
+    # A short 1-D series labels each point with its year or date.
+    if x_da.ndim == 1 and keep.sum() <= 25:
+        labels = [
+            str(v) if isinstance(v, (int, np.integer)) else format_plot_date(v)
+            for v in x_da[x_da.dims[0]].values
+        ]
         out.update(
-            text=[format_plot_date(k) if pair_on == "time" else str(k) for k in keys],
+            mode="markers+text",
+            text=[label for label, ok in zip(labels, keep, strict=True) if ok],
             textposition="top right",
+            cliponaxis=False,
         )
     x_qty = variable_label_for_display(x_da, include_units=False)
     y_qty = variable_label_for_display(y_da, include_units=False)
@@ -994,7 +991,7 @@ BINDERS = {
     "points": bind_points,
     "geojson": bind_geojson,
     "series": bind_series,
-    "pair": bind_pair,
+    "xy": bind_xy,
     "samples": bind_samples,
     "windrose": bind_windrose,
 }
@@ -1006,7 +1003,7 @@ _TYPES_FOR_BIND = {
     "points": {"scatter", "scattergl"},
     "geojson": {"scatter", "scattergl"},
     "series": {"scatter", "scattergl", "bar"},
-    "pair": {"scatter", "scattergl"},
+    "xy": {"scatter", "scattergl"},
     "samples": {"box", "scatter", "violin"},
     "windrose": {"barpolar"},
 }

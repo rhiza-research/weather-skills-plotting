@@ -163,6 +163,15 @@ def _pressure():
     return ds
 
 
+def test_one_station_keeps_its_station_axis():
+    # local-extrema finds a single high: a one-point file still draws as a point.
+    stations = make_station(n_station=1, n_time=1).isel(time=0)
+    spec = {"data": [_trace("a"), _trace("c", type="scatter", meta={"bind": "points"})]}
+    fig = compile(spec, {"a": _pressure(), "c": stations})
+    point = next(t for t in fig.data if t["uid"] == "c")
+    assert len(point["x"]) == 1
+
+
 def test_line_only_contour_over_shading_keeps_the_shading_colorbar():
     spec = {
         "data": [
@@ -354,31 +363,32 @@ def test_series_forecast_plots_valid_time():
     assert "tickformat" not in _layout(fig)["xaxis"]  # Plotly's own date ticks
 
 
-def test_pair_on_year_labels_points():
-    def yearly(start, values):
-        times = np.array(
-            [np.datetime64(f"{y}-09-01", "ns") for y in range(start, start + len(values))]
-        )
-        return xr.Dataset({"v": (("time",), np.asarray(values, float))}, coords={"time": times})
+def test_xy_scatter_of_two_variables():
+    years = [2019, 2020, 2021, 2022]
+    ds = xr.Dataset(
+        {"dmi": (("year",), [1.9, -0.2, -0.3, -1.0]), "precip": (("year",), [210, 60, np.nan, 30])},
+        coords={"year": years},
+    )
+    spec = {"data": [{"uid": "0", "type": "scatter", "meta": {"x": "dmi", "y": "precip"}}]}
+    tr = _data(compile(spec, {"0": ds}))[0]
+    assert list(tr["text"]) == ["2019", "2020", "2022"]
+    assert list(tr["x"]) == [1.9, -0.2, -1.0] and list(tr["y"]) == [210, 60, 30]
 
-    spec = {
-        "data": [
-            {
-                "uid": "xy",
-                "type": "scatter",
-                "meta": {
-                    "bind": "pair",
-                    "pair_on": "year",
-                    "x": {"input": "x"},
-                    "y": {"input": "y"},
-                },
-            }
-        ]
-    }
-    fig = compile(spec, {"x": yearly(2000, [1, 2, 3]), "y": yearly(2001, [5, 6, 7])})
-    tr = _data(fig)[0]
-    assert list(tr["text"]) == ["2001", "2002"]
-    assert list(tr["x"]) == [2, 3] and list(tr["y"]) == [5, 6]
+
+def test_xy_scatter_of_a_grid_is_one_point_per_cell():
+    ds = make_gridded(n_time=1)
+    ds["t2m"] = ds["precip"] * 0 + 25.0
+    spec = {"data": [{"uid": "0", "type": "scatter", "meta": {"x": "t2m", "y": "precip"}}]}
+    tr = _data(compile(spec, {"0": ds}))[0]
+    assert len(tr["x"]) == ds["precip"].size and tr["text"] is None
+
+
+def test_xy_scatter_needs_the_same_dims():
+    ds = make_forecast(n_number=3, n_step=2)
+    ds["mean"] = ds["tp"].mean("number")
+    spec = {"data": [{"uid": "0", "type": "scatter", "meta": {"x": "mean", "y": "tp"}}]}
+    with pytest.raises(UsageError, match="source.isel / sel"):
+        compile(spec, {"0": ds})
 
 
 def test_samples_box_and_mean_line():

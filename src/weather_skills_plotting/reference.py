@@ -18,7 +18,7 @@ _BINDS = {
     "points": "station_id / point_id values → colored scatter markers on a map",
     "geojson": "GeoJSON boundary → scatter lines (meta.source.geojson); repeats on every panel",
     "series": "1-D along time or step → scatter / bar (default for those types)",
-    "pair": "one series against another → scatter (meta.x, meta.y, meta.pair_on)",
+    "xy": "one variable against another from the same input → scatter markers (set by meta.x / meta.y)",
     "samples": "values at a point per step → box (all samples) or scatter (the mean)",
     "windrose": "u/v pooled into a polar wind rose → barpolar (default for that type)",
 }
@@ -26,8 +26,8 @@ _BINDS = {
 _META = {
     "bind": "how the trace's arrays are filled; see BINDS",
     "source": "the data: {input, variable, isel, sel, u, v, geojson, mask_geojson, point}",
-    "x / y": "pair only: a source each for the x and the y series",
-    "pair_on": "pair only: time (default), year, or index",
+    "x / y": "variable names for a scatter of one against the other, a point per shared "
+    "position (merge puts variables from two files in one)",
     "facet": "dim to panel (default: step or time when present); false for none",
     "along": "series: dim drawn as one line per value (e.g. number for spaghetti)",
     "along_color": "same (default; one color, one legend entry) or cycle",
@@ -44,7 +44,7 @@ _META = {
 }
 
 _SOURCE = {
-    "input": "input id: a, b, … in -i order (x / y for --x / --y; obs, forecast1 … for plot-verify)",
+    "input": "input id: NAME from -i PATH=NAME, else the position 0, 1, … (obs, forecast1 … for plot-verify)",
     "variable": "data variable (default: auto-detected)",
     "isel": '0-based positions, e.g. {"number": 0, "step": [0, 1]}; -1 is the last. One '
     "integer picks one value (one map); a list keeps the dim (one panel each)",
@@ -72,41 +72,41 @@ _LAYOUT_META = {
 
 _RECIPES = [
     ("Title and font size", '{"layout": {"title": {"text": "Week 1"}, "font": {"size": 20}}}'),
-    ("Contour instead of heatmap", '{"data": [{"uid": "a", "type": "contour"}]}'),
+    ("Contour instead of heatmap", '{"data": [{"uid": "0", "type": "contour"}]}'),
     (
-        "MSLP chart: --layer heatmap:ANOM --layer contour:MSLP --layer scatter:HIGHS "
-        "--layer scatter:LOWS (HIGHS / LOWS from local-extrema); black isobars every 4 hPa, "
+        "MSLP chart: --layer heatmap:anom.zarr --layer contour:msl.zarr=MSLP --layer "
+        "scatter:highs.zarr=HIGHS --layer scatter:lows.zarr=LOWS (from local-extrema); black isobars every 4 hPa, "
         "H / L with the central value",
-        '{"data": [{"uid": "b", "contours": {"coloring": "none", "showlabels": true, '
-        '"start": 900, "end": 1080, "size": 4}}, {"uid": "c", "mode": "text", '
+        '{"data": [{"uid": "MSLP", "contours": {"coloring": "none", "showlabels": true, '
+        '"start": 900, "end": 1080, "size": 4}}, {"uid": "HIGHS", "mode": "text", '
         '"texttemplate": "<b>H</b><br>%{customdata:.0f}", "textfont": {"color": "#1f4fbf"}}, '
-        '{"uid": "d", "mode": "text", "texttemplate": "<b>L</b><br>%{customdata:.0f}", '
+        '{"uid": "LOWS", "mode": "text", "texttemplate": "<b>L</b><br>%{customdata:.0f}", '
         '"textfont": {"color": "#c8102e"}}]}',
     ),
     (
         "Color limits and colorscale (continuous)",
-        '{"data": [{"uid": "a", "zmin": 0, "zmax": 50, "colorscale": "YlGnBu"}]}',
+        '{"data": [{"uid": "0", "zmin": 0, "zmax": 50, "colorscale": "YlGnBu"}]}',
     ),
-    ("Class palette", '{"data": [{"uid": "a", "meta": {"palette": "ppt_month"}}]}'),
+    ("Class palette", '{"data": [{"uid": "0", "meta": {"palette": "ppt_month"}}]}'),
     (
         "Your own class palette (6 classes on 7 edges, plus a color above 100)",
-        '{"data": [{"uid": "a", "meta": {"palette": {"colors": ["#ffffff", "#d1ffbe", '
+        '{"data": [{"uid": "0", "meta": {"palette": {"colors": ["#ffffff", "#d1ffbe", '
         '"#55ff00", "#73dfff", "#00a9e6", "#ffaa00"], "bounds": [0, 1, 10, 20, 50, 70, 100], '
         '"over": "#ff5500"}}}]}',
     ),
-    ("Latest time only", '{"data": [{"uid": "a", "meta": {"source": {"isel": {"time": -1}}}}]}'),
+    ("Latest time only", '{"data": [{"uid": "0", "meta": {"source": {"isel": {"time": -1}}}}]}'),
     (
         "First two forecast weeks as two panels",
-        '{"data": [{"uid": "a", "meta": {"source": {"isel": {"step": [0, 1]}}}}]}',
+        '{"data": [{"uid": "0", "meta": {"source": {"isel": {"step": [0, 1]}}}}]}',
     ),
     (
         "First 4 ensemble members, 2x2",
-        '{"data": [{"uid": "a", "meta": {"facet": "number", "source": {"isel": '
+        '{"data": [{"uid": "0", "meta": {"facet": "number", "source": {"isel": '
         '{"number": [0, 1, 2, 3]}}}}], "layout": {"grid": {"rows": 2, "columns": 2}}}',
     ),
     (
         "One day of a station file drawn over a map (--layer heatmap:… --layer scatter:…)",
-        '{"data": [{"uid": "b", "marker": {"size": 14}, "meta": {"source": {"sel": '
+        '{"data": [{"uid": "1", "marker": {"size": 14}, "meta": {"source": {"sel": '
         '{"time": "2026-10-01"}}}}]}',
     ),
     (
@@ -130,11 +130,11 @@ _RECIPES = [
     ("Base-map layers", '{"layout": {"meta": {"overlays": {"rivers": false, "admin1": true}}}}'),
     (
         "Separate colorbars for side-by-side maps (same quantity shares one by default)",
-        '{"data": [{"uid": "b", "coloraxis": "coloraxis2"}]}',
+        '{"data": [{"uid": "1", "coloraxis": "coloraxis2"}]}',
     ),
     (
         "Rainfall variable of a multi-variable station file",
-        '{"data": [{"uid": "b", "meta": {"source": {"variable": "precip"}}}]}',
+        '{"data": [{"uid": "1", "meta": {"source": {"variable": "precip"}}}]}',
     ),
     (
         "Boundary outline",
@@ -153,26 +153,30 @@ _RECIPES = [
     ),
     (
         "Wind quiver map (or --layer quiver:PATH), an arrow every 3rd cell",
-        '{"data": [{"uid": "a", "meta": {"bind": "speed"}}, {"uid": "arrows", "type": "scatter", '
-        '"meta": {"bind": "arrows", "source": {"input": "a"}, "arrows": {"step": 3}}}]}',
+        '{"data": [{"uid": "0", "meta": {"bind": "speed"}}, {"uid": "arrows", "type": "scatter", '
+        '"meta": {"bind": "arrows", "source": {"input": "0"}, "arrows": {"step": 3}}}]}',
     ),
-    ("Wind rose", '{"data": [{"uid": "a", "type": "barpolar"}]}'),
+    ("Wind rose", '{"data": [{"uid": "0", "type": "barpolar"}]}'),
     (
         "Area-mean time series of a grid (summarize-dim --dim latitude --dim longitude "
         "--method mean --lat-weighted first)",
-        '{"data": [{"uid": "a", "type": "scatter", "meta": {"bind": "series"}}]}',
+        '{"data": [{"uid": "0", "type": "scatter", "meta": {"bind": "series"}}]}',
+    ),
+    (
+        "One variable against another (e.g. a merge --by-year output)",
+        '{"data": [{"uid": "0", "meta": {"x": "dmi", "y": "precip"}}]}',
     ),
     (
         "Ensemble spaghetti with a 10–90% band",
-        '{"data": [{"uid": "a", "meta": {"along": "number", "band": [10, 90]}}]}',
+        '{"data": [{"uid": "0", "meta": {"along": "number", "band": [10, 90]}}]}',
     ),
     (
         "Bars instead of lines; stacked",
-        '{"data": [{"uid": "a", "type": "bar"}], "layout": {"barmode": "stack"}}',
+        '{"data": [{"uid": "0", "type": "bar"}], "layout": {"barmode": "stack"}}',
     ),
     (
         "Second series on a right-hand axis",
-        '{"data": [{"uid": "b", "yaxis": "y2"}], "layout": {"yaxis2": {"overlaying": "y", "side": "right"}}}',
+        '{"data": [{"uid": "1", "yaxis": "y2"}], "layout": {"yaxis2": {"overlaying": "y", "side": "right"}}}',
     ),
     (
         "One stacked panel per series",
