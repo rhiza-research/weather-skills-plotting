@@ -42,6 +42,7 @@ from weather_skills_plotting.labels import (
     format_step,
     is_datetime_axis,
     panel_title,
+    period_axis_title,
     timeseries_axis,
 )
 from weather_skills_plotting.palettes import (
@@ -727,6 +728,8 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
         )
     x, xname = timeseries_axis(da, sdim)
     x = np.asarray(x)
+    if x.dtype.kind == "M":
+        xname = period_axis_title(da, xname)
     aligned = meta.get("align") == "dayofyear"
     if aligned:
         x = seasonal_dates(da[sdim], loc)
@@ -854,7 +857,12 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
                     "line": {"color": _color_name(trace, color)},
                 }
             )
-    titles = {"x": "" if is_date else axis_label(xname), "y": variable_label_for_display(da)}
+    # Dates need no axis title, except to say a date starts a multi-day total.
+    period = is_date and xname.endswith(("starting", "Month"))
+    titles = {
+        "x": axis_label(xname) if period or not is_date else "",
+        "y": variable_label_for_display(da),
+    }
     finite = np.asarray(da.values, dtype=float)
     finite = finite[np.isfinite(finite)]
     if is_precip(da) and finite.size and finite.min() >= 0:
@@ -907,12 +915,40 @@ def bind_xy(trace, meta, ctx, loc):
             str(v) if isinstance(v, (int, np.integer)) else format_plot_date(v)
             for v in x_da[x_da.dims[0]].values
         ]
-        out.update(
-            mode="markers+text",
-            text=[label for label, ok in zip(labels, keep, strict=True) if ok],
-            textposition="top right",
-            cliponaxis=False,
-        )
+        text = [label for label, ok in zip(labels, keep, strict=True) if ok]
+        # Greedy placement in axis fractions (a label ~ 0.018 wide per character, 0.05 tall):
+        # each label takes the first side that does not cover one already placed.
+        x0, y0 = out["x"], out["y"]
+        fx = (x0 - x0.min()) / max(float(np.ptp(x0)), 1e-12)
+        fy = (y0 - y0.min()) / max(float(np.ptp(y0)), 1e-12)
+        sides = {
+            "top right": (0, 1),
+            "bottom right": (0, -1),
+            "top left": (-1, 1),
+            "bottom left": (-1, -1),
+            "middle right": (0, 0),
+            "middle left": (-1, 0),
+        }
+        boxes, positions = [], []
+        for px, py, label in zip(fx, fy, text, strict=True):
+            w, h = 0.018 * len(label), 0.05
+            candidates = []
+            for name, (dx, dy) in sides.items():
+                bx = px + 0.01 + dx * (w + 0.02)
+                by = py + (dy * h if dy else -h / 2)
+                candidates.append((name, (bx, by, bx + w, by + h)))
+            free = [
+                (name, box)
+                for name, box in candidates
+                if not any(
+                    box[0] < b[2] and b[0] < box[2] and box[1] < b[3] and b[1] < box[3]
+                    for b in boxes
+                )
+            ]
+            name, box = (free or candidates)[0]
+            boxes.append(box)
+            positions.append(name)
+        out.update(mode="markers+text", text=text, textposition=positions, cliponaxis=False)
     x_qty = variable_label_for_display(x_da, include_units=False)
     y_qty = variable_label_for_display(y_da, include_units=False)
     return Bound(
@@ -969,6 +1005,15 @@ def bind_windrose(trace, meta, ctx, loc):
         where = {lat: point["lat"], lon: point["lon"]}
         u_da = u_da.sel(where, method="nearest")
         v_da = v_da.sel(where, method="nearest")
+    else:
+        lat, lon = cf_dim(u_da, "latitude"), cf_dim(u_da, "longitude")
+        cells = (u_da.sizes.get(lat, 1) if lat else 1) * (u_da.sizes.get(lon, 1) if lon else 1)
+        if cells > 1:
+            print(
+                f"Note: {loc}: the rose pools {cells} grid cells; for one place set "
+                'layout.meta.geo.point {"lat": …, "lon": …}',
+                file=sys.stderr,
+            )
     extra = [d for d in u_da.dims if not is_sample_dim(u_da, d)]
     if extra:
         raise UsageError(
@@ -1022,8 +1067,15 @@ def bind_windrose(trace, meta, ctx, loc):
                 "tickvals": [i * 45 for i in range(8)],
                 "ticktext": compass,
             },
-            # Radial labels along the NE diagonal, clear of the N label.
-            "radialaxis": {"ticksuffix": "%", "angle": 45, "tickangle": 45},
+            # Radial labels in the gap between the NNE and NE sectors, small, clear of bars.
+            "radialaxis": {
+                "ticksuffix": "%",
+                "angle": 56.25,  # math degrees: bearing 33.75, between NNE and NE
+                "tickangle": 56.25,
+                "tickfont": {"size": 10},
+                "showline": False,
+            },
+            "bargap": 0.18,
         },
         "legend": {"title": {"text": "Wind speed"}},
         "barmode": "stack",

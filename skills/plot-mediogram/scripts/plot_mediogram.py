@@ -18,7 +18,12 @@ from weather_skills_core.cf import auto_variable, cf_dim
 from weather_skills_plotting import parse_spec_arg
 from weather_skills_plotting.cli import run, skeleton
 from weather_skills_plotting.display import variable_label_for_display
-from weather_skills_plotting.labels import _TRAILING, format_plot_date, format_step
+from weather_skills_plotting.labels import (
+    _TRAILING,
+    format_plot_date,
+    format_step,
+    period_axis_title,
+)
 from weather_skills_plotting.palettes import is_precip
 from weather_skills_plotting.reference import install_spec_help
 from weather_skills_plotting.spec import DUMP_SPEC_HELP, SPEC_ARGUMENT_HELP, merge_spec
@@ -131,7 +136,7 @@ def plot_mediogram(ds, output, spec, theme_file, dump_spec, **kwargs):
         shift = np.timedelta64(1, "D") if trailing else np.timedelta64(0, "D")
         days = [init + s - shift for s in da["step"].values[:n_steps]]
         xaxis = {
-            "title": {"text": "Valid date"},
+            "title": {"text": period_axis_title(da, "Valid date")},
             "tickvals": leads,
             "ticktext": [format_plot_date(d, year=False) for d in days],
         }

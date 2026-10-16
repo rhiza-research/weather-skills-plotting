@@ -15,14 +15,15 @@ WIND_ROSE_SECTORS = 16
 WIND_SPEED_EDGES_MS = [0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0]
 
 
+# One light-to-dark ramp (YlGnBu): stronger wind is darker, with no hue jump mid-scale.
 WIND_SPEED_COLORS = [
-    "#c6dbef",
-    "#6baed6",
-    "#2171b5",
-    "#08306b",
-    "#fd8d3c",
-    "#d94801",
-    "#7f2704",
+    "#c7e9b4",
+    "#7fcdbb",
+    "#41b6c4",
+    "#1d91c0",
+    "#225ea8",
+    "#253494",
+    "#081d58",
 ]
 
 

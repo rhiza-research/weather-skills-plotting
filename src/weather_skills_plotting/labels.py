@@ -327,3 +327,14 @@ def timeseries_axis(da, sdim):
     if init.dtype.kind != "M":
         return da[sdim].values, sdim
     return (init + steps).astype("datetime64[ns]"), "Valid time"
+
+
+def period_axis_title(da, default):
+    """A date axis of multi-day totals says what each date starts: "Week starting"."""
+    days = aggregation_days(da)
+    if not days or days < 2:
+        return default
+    if 27.5 <= days <= 31.5 and days != 30.0:
+        return "Month"
+    names = {7: "Week starting", 10: "Dekad starting"}
+    return names.get(round(days), f"{days:g}-day period starting")

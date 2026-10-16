@@ -842,3 +842,36 @@ def test_probability_spans_zero_to_one_and_precip_rate_change_is_brbg():
     axis = _layout(compile({"data": [_trace("a")]}, {"a": change}))["coloraxis"]
     assert "ticktext" not in axis["colorbar"]  # continuous, not the mm classes
     assert axis["cmin"] == -axis["cmax"]
+
+
+def test_xy_year_labels_do_not_share_a_spot():
+    years = np.arange(2010, 2014)
+    ds = xr.Dataset(
+        {"a": (("year",), [1.0, 1.01, 3.0, 4.0]), "b": (("year",), [5.0, 5.02, 1.0, 2.0])},
+        coords={"year": years},
+    )
+    fig = compile(
+        {
+            "data": [
+                {
+                    "uid": "s",
+                    "type": "scatter",
+                    "meta": {"x": "a", "y": "b", "source": {"input": "s"}},
+                }
+            ]
+        },
+        {"s": ds},
+    )
+    pos = list(next(t for t in fig.data if t["uid"] == "s")["textposition"])
+    # The two near-identical points get different sides.
+    assert pos[0] != pos[1]
+
+
+def test_wind_speed_classes_are_one_ramp():
+    from weather_skills_plotting.wind import WIND_SPEED_COLORS
+
+    lum = [
+        sum(int(c[i : i + 2], 16) * w for i, w in ((1, 0.299), (3, 0.587), (5, 0.114)))
+        for c in WIND_SPEED_COLORS
+    ]
+    assert lum == sorted(lum, reverse=True)

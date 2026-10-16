@@ -42,3 +42,14 @@ def test_month_bins_read_as_months():
     assert format_calendar_panel(np.datetime64("2026-10-01"), 30.4375) == "Oct 2026"
     # An exact 30-day window is a window, not a month.
     assert format_calendar_panel(np.datetime64("2026-10-14"), 30.0) == "14 Oct–12 Nov '26"
+
+
+def test_period_axis_titles():
+    from weather_skills_plotting.labels import period_axis_title
+
+    da = xr.DataArray([1.0], attrs={"aggregation_period": "7 day"})
+    assert period_axis_title(da, "time") == "Week starting"
+    da.attrs["aggregation_period"] = "1 dekad"
+    assert period_axis_title(da, "time") == "Dekad starting"
+    da.attrs["aggregation_period"] = "1 day"
+    assert period_axis_title(da, "time") == "time"
