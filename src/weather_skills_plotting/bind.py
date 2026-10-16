@@ -244,12 +244,28 @@ def _sel(da, source: dict, loc: str):
                 da = da.sel({dim: target})
             elif kind in "iuf":
                 da = da.sel({dim: value}, method="nearest")
+            elif coord.size and hasattr(coord.flat[0], "calendar"):
+                # Model calendars (360_day, noleap): nearest date, like datetime64 axes.
+                import cftime
+
+                targets = []
+                for v in value if isinstance(value, list) else [value]:
+                    # "2099-02-30" or "2099-02-30T12": parsed by hand, since it may not
+                    # exist in the standard calendar.
+                    y, m, d = (int(x) for x in str(v)[:10].split("-"))
+                    hour = int(str(v)[11:13]) if len(str(v)) >= 13 else 0
+                    targets.append(cftime.datetime(y, m, d, hour, calendar=coord.flat[0].calendar))
+                target = targets if isinstance(value, list) else targets[0]
+                da = da.sel({dim: target}, method="nearest")
             else:
                 da = da.sel({dim: value})
         except (KeyError, ValueError, TypeError) as exc:
             raise UsageError(
                 f"{loc}.sel {dim}={value!r} does not match the coordinate ({exc})"
             ) from None
+    empty = [d for d in da.dims if da.sizes[d] == 0]
+    if empty:
+        raise UsageError(f"{loc}.isel / sel left no values on {', '.join(empty)}")
     # A one-value dim (a single pressure level or member) has nothing to choose
     # or average; time and step stay so a single map keeps its date, and a
     # one-station file keeps its station axis.

@@ -738,3 +738,14 @@ def test_dateline_grid_and_points_draw_on_one_continuous_window():
     assert np.allclose(np.asarray(marker["x"], dtype=float), [210.0])
     labels = _layout(fig)["xaxis"]["ticktext"]
     assert "180°" in labels and "-160°" in labels
+
+
+def test_sel_on_a_model_calendar_picks_the_nearest_date():
+    import cftime
+
+    times = [cftime.datetime(2099, m, 16, calendar="360_day") for m in (1, 2, 3)]
+    ds = make_gridded(n_time=3).assign_coords(time=times)
+    for day in ("2099-02-20", "2099-02-30"):
+        spec = {"data": [_trace("a", source={"sel": {"time": day}})]}
+        heat = _data(compile(spec, {"a": ds}), "heatmap")
+        assert len(heat) == 1
