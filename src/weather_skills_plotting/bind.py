@@ -555,6 +555,9 @@ def bind_points(trace, meta, ctx, loc):
         da = da.transpose(fdim, pdim)
     lat = np.asarray(da[cf_dim(da, "latitude")].values, dtype=float)
     lon = np.asarray(da[cf_dim(da, "longitude")].values, dtype=float)
+    if _wrapped(ctx):
+        # Same continuous axis as the wrapped grid: 150E..80W is 150..280.
+        lon = ((lon - ctx.bbox[1]) % 360.0) + ctx.bbox[1]
     names = [str(v) for v in da[pdim].values]
     panels, values = [], []
     for key, ptitle, part in _slices(da, fdim):

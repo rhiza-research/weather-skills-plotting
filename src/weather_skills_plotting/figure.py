@@ -24,6 +24,7 @@ from weather_skills_core.units import convert_values, variable_units
 
 from weather_skills_plotting.bind import Context, bind_of, bind_trace
 from weather_skills_plotting.geodata import (
+    dateline_bbox,
     geoms_to_xy,
     overlay_geoms,
     overlay_settings,
@@ -32,6 +33,7 @@ from weather_skills_plotting.layout import (
     COLORBAR_BELOW,
     COLORBAR_RIGHT,
     DEFAULT_TEMPLATE,
+    WIDE_MAP,
     axis_suffix,
     choose_grid,
     colorbar_mode,
@@ -83,6 +85,9 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
     lmeta = user_layout.pop("meta", None) or {}
     geo = lmeta.get("geo") or {}
     bbox = geo.get("bbox")
+    if not bbox:
+        # A grid that crosses the dateline is drawn on one continuous 0..360 window.
+        bbox = dateline_bbox(datasets.values())
     ctx = Context(
         datasets=datasets,
         palettes=theme["palettes"],
@@ -536,6 +541,9 @@ def _assemble_map(items, user_layout, lmeta, ctx):
         ]
     panels_of = dict(sorted(panels_of.items(), key=lambda item: min(item[1])))
     mode = colorbar_mode(panels_of, cols)
+    if mode == "right" and rows == 1 and aspect > WIDE_MAP:
+        # A strip (a Pacific band, a polar belt) is too short for a vertical bar's title.
+        mode = "below"
     if mode in ("right", "rows") and any(
         ((user_layout.get(name) or {}).get("colorbar") or {}).get("orientation") == "h"
         for name in panels_of

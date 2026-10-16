@@ -495,8 +495,11 @@ def test_two_scales_on_one_panel_do_not_overlap():
     bar1, bar2 = layout["coloraxis"]["colorbar"], layout["coloraxis2"]["colorbar"]
     # Two bars sit side by side along the bottom, each in its own half.
     assert bar1["orientation"] == bar2["orientation"] == "h"
-    assert (bar1["len"], bar2["len"]) == (0.45, 0.45)
-    assert (bar1["x"], bar2["x"]) == (0.25, 0.75)
+    left = [b["x"] - b["len"] / 2 for b in (bar1, bar2)]
+    right = [b["x"] + b["len"] / 2 for b in (bar1, bar2)]
+    assert right[0] <= left[1]
+    # The provenance seal sits in the bottom-right corner; the bars stop short of it.
+    assert right[1] <= 0.88
 
 
 def test_align_dayofyear_lines_up_leap_and_non_leap_years():
@@ -717,3 +720,21 @@ def test_precip_rate_keeps_its_mm_units_for_a_spec_palette():
     ds["precip"].attrs["standard_name"] = "lwe_precipitation_rate"
     heat = _data(compile({"data": [_trace("a")]}, {"a": ds}), "heatmap")[0]
     assert np.allclose(np.asarray(heat["customdata"], dtype=float), 1.0)
+
+
+def test_dateline_grid_and_points_draw_on_one_continuous_window():
+    # A 150E..80W fetch comes back on -180..180 with a gap; it must not span the globe.
+    lons = tuple(float(x) for x in [*range(-180, -79, 10), *range(150, 180, 10)])
+    grid = make_gridded(n_time=1, lats=(-5.0, 0.0, 5.0), lons=lons)
+    station = make_station(n_station=1, n_time=1).isel(time=0)
+    station = station.assign_coords(
+        latitude=("station_id", [0.0]), longitude=("station_id", [-150.0])
+    )
+    spec = {"data": [_trace("a"), _trace("b", type="scatter", meta={"bind": "points"})]}
+    fig = compile(spec, {"a": grid, "b": station})
+    lo, hi = _layout(fig)["xaxis"]["range"]
+    assert 140 < lo < 155 and 275 < hi < 290
+    marker = next(t for t in _data(fig, "scatter") if t["uid"].startswith("b"))
+    assert np.allclose(np.asarray(marker["x"], dtype=float), [210.0])
+    labels = _layout(fig)["xaxis"]["ticktext"]
+    assert "180°" in labels and "-160°" in labels

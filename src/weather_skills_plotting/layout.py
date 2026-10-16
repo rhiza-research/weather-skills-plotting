@@ -12,6 +12,7 @@ from __future__ import annotations
 import copy
 import math
 
+import numpy as np
 from weather_skills_core.errors import UsageError
 
 from weather_skills_plotting.palettes import COLORBLIND, default_theme
@@ -94,6 +95,8 @@ PANEL_TITLE = 24  # panel title above each map
 FIGURE_TITLE = 50
 COLORBAR_RIGHT = 110  # a vertical colorbar with its title turned along it
 COLORBAR_BELOW = 80  # a row of horizontal colorbars
+SEAL_CLEAR = 0.88  # horizontal colorbars end left of the provenance seal (plot-width fraction)
+WIDE_MAP = 2.5  # a single map wider than this (lon / lat span) gets its colorbar below
 
 
 def map_layout(
@@ -175,6 +178,16 @@ def map_axes(p: int, extent, domain=None) -> tuple[dict, dict]:
     }
     s = axis_suffix(p)
     xaxis = {"range": [extent[0], extent[1]], **common, "anchor": f"y{s}"}
+    if extent[1] > 180:
+        # A map across the dateline runs on 0..360: label 200 as -160, like every other map.
+        span = extent[1] - extent[0]
+        step = next(d for d in (1, 2, 5, 10, 20, 30, 45, 60, 90) if span / d <= 8)
+        ticks = np.arange(np.ceil(extent[0] / step) * step, extent[1] + 1e-9, step)
+        xaxis.update(
+            tickmode="array",
+            tickvals=[float(t) for t in ticks],
+            ticktext=[f"{180 if t % 360 == 180 else (t + 180) % 360 - 180:g}°" for t in ticks],
+        )
     yaxis = {
         "range": [extent[2], extent[3]],
         **common,
@@ -235,9 +248,12 @@ def place_colorbars(mode: str, panels_of: dict, domains) -> dict:
         }
         if mode == "columns":
             x0, x1 = min(d[0] for d in ds), max(d[1] for d in ds)
-            bar.update(len=(x1 - x0) * 0.9, x=(x0 + x1) / 2, xanchor="center")
         else:
-            bar.update(len=0.9 / k, x=(i + 0.5) / k, xanchor="center")
+            x0, x1 = i / k, (i + 1) / k
+        # The provenance seal sits in the bottom-right corner: bars and their
+        # titles stop short of it.
+        x1 = min(x1, SEAL_CLEAR)
+        bar.update(len=(x1 - x0) * 0.9, x=(x0 + x1) / 2, xanchor="center")
         out[name] = bar
     return out
 
