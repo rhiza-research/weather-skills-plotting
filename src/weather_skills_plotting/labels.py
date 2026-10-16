@@ -227,6 +227,11 @@ def format_calendar_panel(value, bin_width=None):
         return format_plot_date(value)
     if days <= 1.5:
         return format_plot_date(value)
+    ymd = _ymd(value)
+    if 27.5 <= days <= 31.5 and days != 30.0 and ymd is not None:
+        # A month, however it is stamped (CMIP6 puts it mid-month): "Jan 2090".
+        # An exact "30 day" window keeps its date range.
+        return f"{_MONTHS[ymd[1] - 1]} {ymd[0]}"
 
     offset_days = int(round(days)) - 1
     if hasattr(value, "calendar"):
@@ -267,7 +272,11 @@ def panel_title(da, sdim, step_value, all_steps):
             if dt is None:
                 dt = step_arr[1] - step_arr[0] if step_arr.size > 1 else np.timedelta64(1, "D")
             spacing = _spacing_seconds(step_arr)
-            if spacing is not None and spacing < 86_400:
+            if days is not None and days < 1:
+                # A sub-daily mean (6 hour precip): its window, then the lead it starts at.
+                end = start + dt
+                return f"{format_plot_time(start)}–{str(end.astype('datetime64[m]'))[11:16]} ({_hours(step_value)})"
+            if (spacing is not None and spacing < 86_400) or dt < np.timedelta64(1, "D"):
                 return f"{format_plot_time(start)} ({_hours(step_value)})"
             if _TRAILING.search(str(da.attrs.get("long_name") or "")):
                 # "… in the last 24 hours": the step labels the end of its window.
@@ -285,6 +294,9 @@ def panel_title(da, sdim, step_value, all_steps):
     if value_arr.dtype.kind == "M" or hasattr(step_value, "calendar"):
         spacing = _spacing_seconds(step_arr)
         if spacing is not None and spacing < 86_400:
+            return format_plot_time(step_value)
+        if spacing is None and not format_plot_time(step_value).endswith(" 00:00"):
+            # One map at 12 UTC is a time of day, not a whole day.
             return format_plot_time(step_value)
         return format_calendar_panel(step_value, calendar_bin_width(da, all_steps))
     units = str(da[sdim].attrs.get("units") or "") if sdim in da.coords else ""
