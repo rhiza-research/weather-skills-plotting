@@ -39,7 +39,9 @@ def _box(uid, name, color, source):
         "name": name,
         "fillcolor": color,
         "line": {"color": "black"},
-        "marker": {"color": "black"},
+        "marker": {"color": color, "line": {"color": "black", "width": 1}},
+        # Grouped side by side per lead; the forecast mean shares the forecast slot.
+        "offsetgroup": uid,
         "meta": {"bind": "samples", "source": source},
     }
 
@@ -103,6 +105,7 @@ def plot_mediogram(ds, output, spec, theme_file, dump_spec, **kwargs):
             "name": "forecast mean",
             "line": {"color": "black"},
             "marker": {"color": "black"},
+            "offsetgroup": "forecast",
             "meta": {"bind": "samples", "source": fc},
         },
     ]
@@ -142,7 +145,7 @@ def plot_mediogram(ds, output, spec, theme_file, dump_spec, **kwargs):
         user = {**user, "layout": {k: v for k, v in user_layout.items() if k != "title"}}
     else:
         title = f"Mediogram: {qty} at {where}{suffix}"
-    layout = {"title": {"text": title}, "boxmode": "group", "xaxis": xaxis}
+    layout = {"title": {"text": title}, "boxmode": "group", "scattermode": "group", "xaxis": xaxis}
     if is_precip(da):
         layout["yaxis"] = {"rangemode": "nonnegative"}
     base = skeleton("plot-mediogram", datasets, data, layout)
