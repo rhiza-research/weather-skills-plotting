@@ -40,14 +40,6 @@ def test_builtin_palettes_pass_theme_file_checks(name):
     parse_palette(builtin_palettes()[name], loc=name)
 
 
-def test_short_palettes_pack_under_classes_over():
-    for name in ("ppt_short", "chirps_short"):
-        entry = builtin_palettes()[name]
-        assert len(entry["colors"]) == len(entry["bounds"]) + 1
-        assert entry["colors"][0] == entry["colors"][1] == "#ffffff"
-        assert entry["colors"][-1] == "#e68c8c"
-
-
 def test_parse_palette_forms():
     assert parse_palette("PPT_WEEK")["name"] == "ppt_week"
     assert parse_palette(["#fff", "#000"]) == {"colors": ["#fff", "#000"]}

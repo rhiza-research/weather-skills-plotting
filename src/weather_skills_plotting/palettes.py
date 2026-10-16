@@ -53,15 +53,6 @@ PRECIP_COLORS = _rgb(
 PRECIP_BOUNDS = [0, 2, 5, 10, 25, 50, 75, 100, 150, 200, 300, 500, 750, 1000, 1500, 2500]
 
 
-PRECIP_SHORT_BOUNDS = [0.5, 1, 2, 3, 5, 8, 10, 15, 20, 30, 50, 75, 100, 150, 200]
-# Same hues on the short-window edges: one class fewer, so the >200 mm over
-# color is the salmon that follows the last class (no pale-pink class).
-PRECIP_SHORT_COLORS = PRECIP_COLORS[:-1]
-
-
-PRECIP_LONG_MIN_DAYS = 5
-
-
 # Nested absolute-mm default: one color per millimetre class; colorbars crop
 # this master (same color = same millimetres on every window). Hues follow CHC
 # ``ppt_total`` — white, beige, light / mid / dark green, blue, purple,
@@ -562,10 +553,7 @@ def builtin_palettes() -> dict:
     return {
         **{name: precip_nested_palette(name) for name in PRECIP_WINDOW_ORDER},
         **{name: precip_nested_anomaly_palette(name) for name in PRECIP_ANOMALY_WINDOW_ORDER},
-        "chirps_total": {"colors": PRECIP_COLORS, "bounds": PRECIP_BOUNDS},
         "ppt_total": {"colors": PRECIP_COLORS, "bounds": PRECIP_BOUNDS},
-        "chirps_short": {"colors": PRECIP_SHORT_COLORS, "bounds": PRECIP_SHORT_BOUNDS},
-        "ppt_short": {"colors": PRECIP_SHORT_COLORS, "bounds": PRECIP_SHORT_BOUNDS},
         "ppt_poa": {"colors": PRECIP_POA_COLORS, "bounds": PRECIP_POA_BOUNDS},
         "ppt_spp": {"colors": PRECIP_SPP_COLORS, "bounds": PRECIP_SPP_BOUNDS},
         "spi": {"colors": SPI_COLORS, "bounds": SPI_BOUNDS},
