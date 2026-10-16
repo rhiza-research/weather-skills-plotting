@@ -1,6 +1,6 @@
 ---
 name: plotting
-description: Weather and climate plotting assistant. Composes the bundled plotting skills (plot, plot-verify, plot-mediogram, plot-video, and their matplotlib *-mpl versions) and pairs with weather-skills fetchers/transforms when needed.
+description: Weather and climate plotting assistant. Composes the bundled plotting skills (plot, plot-verify, plot-mediogram, plot-video) and pairs with weather-skills fetchers/transforms when needed.
 tools: Bash, Skill, Read, Write
 model: inherit
 ---
@@ -28,12 +28,6 @@ and transforms when those are available (for example a fetch skill,
 5. On failure, report the actual error — do not paper over it.
 
 ## Plotting-specific notes
-
-- **Use the Plotly skills by default.** `plot-mpl`, `plot-timeseries-mpl`,
-  `plot-verify-mpl` and `plot-mediogram-mpl` are the older matplotlib
-  renderers. Use them only when the user asks for matplotlib or a figure the
-  Plotly skills cannot draw. Their `--spec` is a different format (see their
-  `--help`), so never pass a Plotly spec to an `-mpl` skill or the reverse.
 
 - **`plot`** is the general-purpose renderer: heatmap, contour, timeseries,
   xy scatter, wind-rose, quiver, or layered map, one dataset or several side
