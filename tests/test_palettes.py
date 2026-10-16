@@ -53,7 +53,40 @@ def test_default_palette_follows_aggregation_period():
     da.attrs["aggregation_period"] = "1 day"
     assert default_palette(da)["name"] == "ppt_daily"
     temp = make_gridded(n_time=1, name="t2m", units="degree_Celsius")["t2m"]
-    assert default_palette(temp) is None
+    temp.attrs["standard_name"] = "air_temperature"
+    assert default_palette(temp) == {"name": "RdYlBu_r", "colorscale": "RdYlBu_r"}
+    assert default_palette(temp, diverging=True)["colorscale"] == "RdBu_r"
+    assert default_palette(None, speed=True)["colorscale"] == "YlGn"
+
+
+def test_theme_defaults_replace_kind_colors(tmp_path):
+    da = make_gridded(n_time=1)["precip"]
+    da.attrs.update(units="mm", aggregation_period="7 day")
+    path = tmp_path / "theme.json"
+    path.write_text(
+        '{"palettes": {"agency": {"colors": ["#fff", "#cfc", "#0a0", "#00f"], '
+        '"bounds": [0, 1, 10]}}, "defaults": {"precip": "agency", "temperature": "Viridis"}}'
+    )
+    theme = load_theme(path)
+    assert default_palette(da, theme=theme)["name"] == "agency"
+    assert theme["defaults"]["precip_anomaly"] == "default_precip_anom"  # untouched kinds stay
+    path.write_text('{"defaults": {"rain": "agency"}}')
+    with pytest.raises(UsageError, match="defaults.rain is not a field kind"):
+        load_theme(path)
+    path.write_text('{"defaults": {"precip": "no_such"}}')
+    with pytest.raises(UsageError, match="neither a palette nor|neither a palette"):
+        load_theme(path)
+
+
+def test_theme_overlays_merge_into_standard_lines(tmp_path):
+    path = tmp_path / "theme.json"
+    path.write_text('{"overlays": {"borders": {"line": {"color": "#ff0000"}}}}')
+    overlays = load_theme(path)["overlays"]
+    assert overlays["borders"]["line"] == {"color": "#ff0000", "width": 1.2}
+    assert overlays["lakes"]["line"]["color"] == "#4d5b6b"
+    path.write_text('{"overlays": {"roads": {"line": {"color": "red"}}}}')
+    with pytest.raises(UsageError, match="overlays.roads must be one of"):
+        load_theme(path)
 
 
 def test_theme_file(tmp_path):

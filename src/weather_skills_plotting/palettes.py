@@ -8,6 +8,7 @@ colorbar slots, which a linear Plotly colorscale cannot do on raw values.
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 from pathlib import Path
@@ -15,6 +16,8 @@ from pathlib import Path
 import numpy as np
 from weather_skills_core.errors import UsageError
 from weather_skills_core.units import parse_aggregation_period, variable_units
+
+from weather_skills_plotting.geodata import OVERLAY_NAMES, OVERLAY_STYLES
 
 
 def _rgb(*rows: tuple[int, int, int]) -> list[str]:
@@ -360,32 +363,29 @@ def is_spi(da) -> bool:
     return "spi" in tokens or "standardized precipitation" in name
 
 
-def named_precip_scale(da, *others) -> tuple[str, list[str], list[float]]:
-    """Return ``(name, colors, bounds)`` for the default precip palette.
+def default_kind(da, *, diverging: bool = False, speed: bool = False) -> str:
+    """The field kind whose ``theme["defaults"]`` entry colors ``da``.
 
-    Totals use a nested absolute-mm master cropped by ``aggregation_period``
-    (white / beige below 5 mm, then CHC ``ppt_total`` hues from green).
-    Anomalies crop the CHC diverging master the same way (daily ±50 mm, week
-    ±200 mm, month ±300 mm, season ±500 mm). The historical CHC rainbow
-    palettes remain available as ``ppt_total`` / ``ppt_short``. ``others``
-    share the colorbar: the window widens to cover every one's period.
+    Precipitation kinds come from the field itself. Other fields are wind
+    speed, ``diverging`` (the color range straddles zero), temperature, or
+    ``sequential``. A spread or variance is never a precip amount.
     """
-    # A rate (mm/day) with no period is a daily amount: the daily window, not the weekly.
-    days = [
-        aggregation_days(d) or (1.0 if "day" in str(variable_units(d) or "") else None)
-        for d in (da, *others)
-    ]
-    if is_spi(da):
-        return "spi", list(SPI_COLORS), list(SPI_BOUNDS)
-    if is_precip_poa(da):
-        return "ppt_poa", list(PRECIP_POA_COLORS), list(PRECIP_POA_BOUNDS)
-    if is_precip_anomaly(da):
-        name = widest_precip_anomaly_window(*days)
-        entry = precip_nested_anomaly_palette(name)
-        return name, list(entry["colors"]), list(entry["bounds"])
-    name = widest_precip_window(*days)
-    entry = precip_nested_palette(name)
-    return name, list(entry["colors"]), list(entry["bounds"])
+    if speed:
+        return "wind_speed"
+    if da is not None and not is_statistic(da):
+        if is_spi(da):
+            return "spi"
+        if is_precip_poa(da):
+            return "precip_poa"
+        if is_precip_anomaly(da):
+            return "precip_anomaly"
+        if is_precip(da):
+            return "precip"
+    if diverging:
+        return "diverging"
+    if da is not None and is_temperature(da):
+        return "temperature"
+    return "sequential"
 
 
 def rank_colorscale(n_seasons: int) -> dict:
@@ -540,7 +540,21 @@ COLORBLIND = ["#0173b2", "#de8f05", "#029e73", "#d55e00", "#cc78bc",
               "#ca9161", "#fbafe4", "#949494", "#ece133", "#56b4e9"]  # fmt: skip
 
 PALETTE_KEYS = frozenset({"colors", "bounds", "under", "over", "labels"})
-THEME_FILE_KEYS = frozenset({"template", "palettes"})
+THEME_FILE_KEYS = frozenset({"template", "palettes", "defaults", "overlays"})
+# The standard theme's color for each field kind (see ``default_kind``): a
+# palette name, color list or {colors, bounds}, or a Plotly colorscale name.
+# ``default_precip`` / ``default_precip_anom`` pick their window from the
+# field's ``aggregation_period``.
+DEFAULT_COLORS = {
+    "precip": "default_precip",
+    "precip_anomaly": "default_precip_anom",
+    "precip_poa": "ppt_poa",
+    "spi": "spi",
+    "wind_speed": "YlGn",
+    "diverging": "RdBu_r",
+    "temperature": "RdYlBu_r",
+    "sequential": "rocket",
+}
 _THEME_ENV = "WEATHER_SKILLS_PLOT_THEME"
 _USER_THEME_CANDIDATES = (
     Path.home() / ".config" / "weather-skills" / "plot.json",
@@ -579,18 +593,69 @@ def _read_theme_file(path: Path) -> dict:
         raise UsageError(
             f"plot theme file {path}: unknown keys {', '.join(unknown)}; "
             f"allowed: {', '.join(sorted(THEME_FILE_KEYS))} "
-            "(template is a Plotly template object, palettes maps names to {colors, bounds})"
+            "(template is a Plotly template object, palettes maps names to {colors, bounds}, "
+            "defaults maps field kinds to a palette or Plotly colorscale, overlays maps "
+            "base-map layers to Plotly line styles)"
         )
     for name, entry in (data.get("palettes") or {}).items():
         parse_palette(entry, loc=f"{path}: palettes.{name}")
+    palettes = {**builtin_palettes(), **(data.get("palettes") or {})}
+    for kind, value in (data.get("defaults") or {}).items():
+        if kind not in DEFAULT_COLORS:
+            raise UsageError(
+                f"plot theme file {path}: defaults.{kind} is not a field kind; "
+                f"known: {', '.join(DEFAULT_COLORS)}"
+            )
+        _check_default_color(value, palettes, loc=f"{path}: defaults.{kind}")
+    for name, style in (data.get("overlays") or {}).items():
+        if name not in OVERLAY_NAMES or not isinstance(style, dict):
+            raise UsageError(
+                f"plot theme file {path}: overlays.{name} must be one of "
+                f"{', '.join(OVERLAY_NAMES)}, set to a Plotly line style such as "
+                '{"line": {"color": "#333333", "width": 1}}'
+            )
     return data
 
 
+def _check_default_color(value, palettes: dict, *, loc: str) -> None:
+    """A theme default is a palette (name, list or object) or a Plotly colorscale name."""
+    if not isinstance(value, str):
+        parse_palette(value, loc=loc, registry=palettes)
+        return
+    known = {k.lower() for k in palettes} | set(DEFAULT_PRECIP_PALETTES)
+    if value.lower() in known:
+        return
+    from plotly.colors import get_colorscale
+
+    try:
+        get_colorscale(value)
+    except Exception:
+        raise UsageError(
+            f"{loc} {value!r} is neither a palette ({', '.join(sorted(known))}) "
+            "nor a Plotly colorscale name (Viridis, RdBu_r, YlGn, …)"
+        ) from None
+
+
+def default_theme() -> dict:
+    """The standard look: Plotly template overlay, palettes, default colors, base-map lines.
+
+    ``template`` is layered on the ``weather_skills`` / ``colorblind`` templates
+    (``layout.register_templates``); the standard theme adds nothing to them.
+    """
+    return {
+        "template": None,
+        "palettes": builtin_palettes(),
+        "defaults": dict(DEFAULT_COLORS),
+        "overlays": copy.deepcopy(OVERLAY_STYLES),
+    }
+
+
 def load_theme(path=None) -> dict:
-    """``{"template": dict | None, "palettes": {...}}`` from ``--theme-file``.
+    """The standard theme with ``--theme-file`` layered on top.
 
     Falls back to ``$WEATHER_SKILLS_PLOT_THEME``, then
-    ``~/.config/weather-skills/plot.{json,toml}``.
+    ``~/.config/weather-skills/plot.{json,toml}``. Palettes and defaults
+    replace by name; overlay styles merge into the standard line styles.
     """
     candidates = [Path(path)] if path is not None else []
     if not candidates and os.environ.get(_THEME_ENV):
@@ -598,9 +663,12 @@ def load_theme(path=None) -> dict:
     if not candidates:
         candidates = [c for c in _USER_THEME_CANDIDATES if c.is_file()][:1]
     data = _read_theme_file(candidates[0]) if candidates else {}
+    theme = default_theme()
     return {
         "template": data.get("template"),
-        "palettes": {**builtin_palettes(), **(data.get("palettes") or {})},
+        "palettes": {**theme["palettes"], **(data.get("palettes") or {})},
+        "defaults": {**theme["defaults"], **(data.get("defaults") or {})},
+        "overlays": deep_merge(theme["overlays"], data.get("overlays") or {}),
     }
 
 
@@ -681,20 +749,36 @@ def flag_palette(da) -> dict | None:
     return {"name": "flags", "colors": colors, "bounds": bounds, "labels": labels}
 
 
-def default_palette(da, *others) -> dict | None:
-    """The class palette a flag, precip, SPI or percent-of-normal field gets by default.
+def default_palette(
+    da, *others, theme: dict | None = None, diverging: bool = False, speed: bool = False
+) -> dict:
+    """The palette ``da`` gets when the spec names none.
 
-    ``others`` are the fields sharing its colorbar (see ``named_precip_scale``).
+    CF flags get one class per flag. Every other field gets the theme's
+    ``defaults`` entry for its kind (``default_kind``). ``default_precip`` /
+    ``default_precip_anom`` pick the window that covers the period of ``da``
+    and ``others`` (the fields sharing its colorbar). A Plotly colorscale name
+    comes back as ``{"name", "colorscale"}``.
     """
-    if da is None:
-        return None
-    flags = flag_palette(da)
+    flags = flag_palette(da) if da is not None else None
     if flags is not None:
         return flags
-    if is_statistic(da) or not (is_precip(da) or is_spi(da) or is_precip_poa(da)):
-        return None
-    name, colors, bounds = named_precip_scale(da, *others)
-    return {"name": name, "colors": colors, "bounds": bounds}
+    theme = theme or default_theme()
+    value = theme["defaults"][default_kind(da, diverging=diverging, speed=speed)]
+    if isinstance(value, str) and value.lower() in DEFAULT_PRECIP_PALETTES:
+        # A rate (mm/day) with no period is a daily amount: the daily window, not the weekly.
+        days = [
+            aggregation_days(d) or (1.0 if "day" in str(variable_units(d) or "") else None)
+            for d in (da, *others)
+            if d is not None
+        ]
+        value = default_precip_window(
+            *(days or [None]), anomaly=DEFAULT_PRECIP_PALETTES[value.lower()]
+        )
+    palettes = theme["palettes"]
+    if isinstance(value, str) and not any(k.lower() == value.lower() for k in palettes):
+        return {"name": value, "colorscale": value}
+    return parse_palette(value, registry=palettes)
 
 
 def continuous_colorscale(colors) -> list:

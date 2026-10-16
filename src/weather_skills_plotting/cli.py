@@ -105,7 +105,8 @@ def run(
 
     user = user_spec.data if isinstance(user_spec, SpecArg) else (user_spec or {})
     merged = merge_spec(skill_spec, user)
-    validate(merged)
+    theme = load_theme(theme_file)
+    validate(merged, theme["palettes"])
     dest = dump_spec_dest(dump)
     if dest is not None:
         dump_spec(merged, dest)
@@ -117,7 +118,6 @@ def run(
             f"output {Path(output).name!r} must end in .html: an animation plays only in a "
             "browser. For a still image of one time, use the plot skill"
         )
-    theme = load_theme(theme_file)
     fig = compile(merged, datasets, theme=theme)
     layout_meta = (merged.get("layout") or {}).get("meta") or {}
     if animate:

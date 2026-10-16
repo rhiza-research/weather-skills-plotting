@@ -24,7 +24,7 @@ The page opens paused on the first frame; **▶ Play** runs the frames, **❚❚
 ### Arguments
 - `--input`, `-i` — one Zarr with a latitude/longitude grid and a time or step dim.
 - `--spec` — Plotly figure JSON, inline or a file path.
-- `--theme-file` — house style: a Plotly `template` (fonts, background, colors) and named `palettes`.
+- `--theme-file` — house style: a Plotly `template` (fonts, background, colors), named `palettes`, per-field `defaults`, and base-map `overlays`, as for `plot`.
 - `--dump-spec` — print (`-`) or save (a path) the spec, without drawing.
 - `--output`, `-o` — must end in `.html`.
 

@@ -100,7 +100,7 @@ class Bound:
     color_key: str | None = None
     color_da: object = None
     color_title: str | None = None
-    default_colorscale: object = None
+    speed: bool = False
     axis_titles: dict = field(default_factory=dict)
     title: str | None = None
     layout: dict = field(default_factory=dict)
@@ -111,6 +111,7 @@ class Bound:
 class Context:
     datasets: dict
     palettes: dict
+    theme: dict | None = None
     bbox: tuple | None = None
     polygon: object = None
     point: dict | None = None
@@ -404,7 +405,7 @@ def bind_field(trace, meta, ctx, loc, *, speed=False):
         color_key="z",
         color_da=None if speed else da,
         color_title=title,
-        default_colorscale="YlGn" if speed else None,
+        speed=speed,
     )
 
 
