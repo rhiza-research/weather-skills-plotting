@@ -165,7 +165,7 @@ def format_units_for_display(units: str | None) -> str:
         if units_equal(raw, STANDARD[kind]["units"]):
             return nice
     try:
-        return format(ureg.Unit(raw), "cf").replace(" d-1", "/day")
+        return format(ureg.Unit(raw), "cf").replace(" d-1", "/day").replace(" h-1", "/h")
     except Exception:  # noqa: BLE001 — leave unparseable strings alone
         return raw
 

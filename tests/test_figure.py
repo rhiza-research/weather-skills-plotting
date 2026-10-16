@@ -696,3 +696,19 @@ def test_partial_theme_dict_gets_the_standard_keys():
     ds = make_gridded(n_time=1)
     fig = compile({"data": [_trace("a")]}, {"a": ds}, theme={"palettes": builtin_palettes()})
     assert any(str(t["uid"]).startswith("overlay-borders") for t in _data(fig, "scatter"))
+
+
+def test_precip_rate_keeps_its_mm_units_for_a_spec_palette():
+    # unit-convert to mm/h: class edges in mm/h must meet mm/h values, not mm/day.
+    ds = make_gridded(n_time=1, fill=2.0, units="mm h-1")
+    ds["precip"].attrs["standard_name"] = "lwe_precipitation_rate"
+    palette = {"colors": ["#ffffff", "#7fff7f", "#3dc83d", "#ff4d4d"], "bounds": [0, 1, 3, 5, 100]}
+    fig = compile({"data": [_trace("a", meta={"palette": palette})]}, {"a": ds})
+    heat = _data(fig, "heatmap")[0]
+    assert np.allclose(np.asarray(heat["customdata"], dtype=float), 2.0)
+    assert "mm/h" in _layout(fig)["coloraxis"]["colorbar"]["title"]["text"]
+    # A flux that is not in mm still reads in mm/day.
+    ds = make_gridded(n_time=1, fill=1 / 86400, units="kg m-2 s-1")
+    ds["precip"].attrs["standard_name"] = "lwe_precipitation_rate"
+    heat = _data(compile({"data": [_trace("a")]}, {"a": ds}), "heatmap")[0]
+    assert np.allclose(np.asarray(heat["customdata"], dtype=float), 1.0)

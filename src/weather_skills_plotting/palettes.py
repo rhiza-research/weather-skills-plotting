@@ -16,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 from weather_skills_core.errors import UsageError
-from weather_skills_core.units import parse_aggregation_period, variable_units
+from weather_skills_core.units import parse_aggregation_period, ureg, variable_units
 
 from weather_skills_plotting.geodata import OVERLAY_NAMES
 
@@ -769,12 +769,22 @@ def default_palette(da, *others, theme: dict | None = None, diverging: bool = Fa
     key = value.lower() if isinstance(value, str) else None
     if key in DEFAULT_PRECIP_PALETTES and not any(k.lower() == key for k in palettes):
         # A --theme-file entry of the same name wins over the window-following default.
-        # A rate (mm/day) with no period is a daily amount: the daily window, not the weekly.
-        days = [
-            aggregation_days(d) or (1.0 if "day" in str(variable_units(d) or "") else None)
-            for d in (da, *others)
-            if d is not None
-        ]
+        # A rate with no period is an amount per its unit's time step: mm/day is a
+        # daily amount, mm/h an hourly one (still the daily window, not the weekly).
+        days = []
+        for d in (da, *others):
+            if d is None:
+                continue
+            step = None
+            try:
+                step = (
+                    (ureg.Quantity(1, "mm") / ureg.Quantity(1, variable_units(d)))
+                    .to("day")
+                    .magnitude
+                )
+            except Exception:  # noqa: BLE001 — not a length-per-time rate
+                pass
+            days.append(aggregation_days(d) or step)
         value = default_precip_window(*(days or [None]), anomaly=DEFAULT_PRECIP_PALETTES[key])
     if isinstance(value, str) and not any(k.lower() == value.lower() for k in palettes):
         return {"name": value, "colorscale": value}

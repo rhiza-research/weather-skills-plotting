@@ -20,9 +20,12 @@ from weather_skills_core.cf import auto_variable, cf_dim
 from weather_skills_core.errors import UsageError
 from weather_skills_core.standard_utils import ensure_normalized_longitude, polygon_from_geojson
 from weather_skills_core.units import (
+    AGGREGATION_PERIOD_ATTR,
+    STANDARD,
     classify_variable,
     to_standard_units,
     units_equal,
+    ureg,
     variable_units,
 )
 
@@ -150,6 +153,20 @@ def _dataset(ctx: Context, source: dict, loc: str):
 
 
 def _display(ds, variable):
+    da = ds[variable]
+    units = variable_units(da)
+    try:
+        mm_rate = str(ureg.Unit(units)).startswith("millimeter / ")
+    except Exception:  # noqa: BLE001 — no or unparseable units
+        mm_rate = False
+    kind = classify_variable(variable, units=units, standard_name=da.attrs.get("standard_name"))
+    if mm_rate and kind == "precip" and not da.attrs.get(AGGREGATION_PERIOD_ATTR):
+        # A rate already in mm per hour, day, ... keeps the units it was written in
+        # (unit-convert's choice), so class edges in a spec palette mean those units.
+        ds = ds.copy(deep=False)
+        ds[variable] = da.copy(deep=False)
+        ds[variable].attrs["standard_name"] = STANDARD["precip"]["standard_name"]
+        return ds
     try:
         ds = to_standard_units(ds, variables=[variable])
     except UsageError:
