@@ -89,6 +89,20 @@ def test_theme_overlays_merge_into_standard_lines(tmp_path):
     path.write_text('{"overlays": {"roads": {"line": {"color": "red"}}}}')
     with pytest.raises(UsageError, match="overlays.roads must be one of"):
         load_theme(path)
+    path.write_text('{"overlays": {"borders": {"color": "red"}}}')
+    with pytest.raises(UsageError, match=r"theme\.json: overlays\.borders: Invalid property"):
+        load_theme(path)
+
+
+def test_theme_default_precip_palette_replaces_the_window_default(tmp_path):
+    da = make_gridded(n_time=1)["precip"]
+    da.attrs.update(units="mm", aggregation_period="7 day")
+    path = tmp_path / "theme.json"
+    path.write_text(
+        '{"palettes": {"default_precip": {"colors": ["#fff", "#0a0", "#00f"], "bounds": [0, 3]}}}'
+    )
+    palette = default_palette(da, theme=load_theme(path))
+    assert palette["bounds"] == [0.0, 3.0]
 
 
 def test_theme_file(tmp_path):

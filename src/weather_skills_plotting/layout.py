@@ -22,7 +22,8 @@ DEFAULT_TEMPLATE = "weather_skills"
 def register_templates(user_template: dict | None = None) -> None:
     """``weather_skills`` and ``colorblind``: Plotly's ``seaborn`` template with a colorway.
 
-    A theme file's ``template`` is layered on top of both.
+    A theme file's ``template`` is layered on top of both; ``colorblind`` keeps
+    its own colorway, since picking it is an accessibility choice.
     """
     import plotly.graph_objects as go
     import plotly.io as pio
@@ -44,6 +45,8 @@ def register_templates(user_template: dict | None = None) -> None:
                 from weather_skills_plotting.spec import plotly_error
 
                 raise plotly_error(exc, "theme file template") from None
+            if name == "colorblind":
+                base.layout.colorway = colorway
         pio.templates[name] = base
 
 

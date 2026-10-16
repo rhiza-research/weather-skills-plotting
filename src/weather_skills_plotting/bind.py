@@ -110,7 +110,7 @@ class Bound:
 class Context:
     datasets: dict
     palettes: dict
-    theme: dict | None = None
+    theme: dict
     bbox: tuple | None = None
     polygon: object = None
     point: dict | None = None

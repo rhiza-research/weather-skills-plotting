@@ -615,6 +615,15 @@ def _read_theme_file(path: Path) -> dict:
                 f"{', '.join(OVERLAY_NAMES)}, set to a Plotly line style such as "
                 '{"line": {"color": "#333333", "width": 1}}'
             )
+        import plotly.graph_objects as go
+
+        from weather_skills_plotting.spec import plotly_error
+
+        try:
+            go.Scatter(deep_merge(OVERLAY_STYLES[name], style))
+        except ValueError as exc:
+            msg = str(plotly_error(exc)).removeprefix("plot spec: ")
+            raise UsageError(f"plot theme file {path}: overlays.{name}: {msg}") from None
     return data
 
 
@@ -764,17 +773,17 @@ def default_palette(da, *others, theme: dict | None = None, diverging: bool = Fa
         return flags
     theme = theme or default_theme()
     value = theme["defaults"][default_kind(da, diverging=diverging)]
-    if isinstance(value, str) and value.lower() in DEFAULT_PRECIP_PALETTES:
+    palettes = theme["palettes"]
+    key = value.lower() if isinstance(value, str) else None
+    if key in DEFAULT_PRECIP_PALETTES and not any(k.lower() == key for k in palettes):
+        # A --theme-file entry of the same name wins over the window-following default.
         # A rate (mm/day) with no period is a daily amount: the daily window, not the weekly.
         days = [
             aggregation_days(d) or (1.0 if "day" in str(variable_units(d) or "") else None)
             for d in (da, *others)
             if d is not None
         ]
-        value = default_precip_window(
-            *(days or [None]), anomaly=DEFAULT_PRECIP_PALETTES[value.lower()]
-        )
-    palettes = theme["palettes"]
+        value = default_precip_window(*(days or [None]), anomaly=DEFAULT_PRECIP_PALETTES[key])
     if isinstance(value, str) and not any(k.lower() == value.lower() for k in palettes):
         return {"name": value, "colorscale": value}
     return parse_palette(value, registry=palettes)

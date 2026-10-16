@@ -47,6 +47,7 @@ from weather_skills_plotting.palettes import (
     continuous_colorscale,
     default_palette,
     default_precip_window,
+    default_theme,
     discretize,
     is_precip_anomaly,
     load_theme,
@@ -71,7 +72,8 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
     """Return a validated ``plotly.graph_objects.Figure``."""
     import plotly.graph_objects as go
 
-    theme = theme or load_theme()
+    # A theme dict missing keys (e.g. only template and palettes) gets the standard ones.
+    theme = {**default_theme(), **theme} if theme else load_theme()
     spec = validate(copy.deepcopy(spec), theme["palettes"])
     register_templates(theme.get("template"))
     user_layout = copy.deepcopy(spec.get("layout") or {})
