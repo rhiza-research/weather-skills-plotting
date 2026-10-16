@@ -32,7 +32,6 @@ from weather_skills_plotting.geodata import (
 )
 from weather_skills_plotting.kinds import (
     STANDARD_SEA_LEVEL_PRESSURE_HPA,
-    aggregation_days,
     is_precip_anomaly,
     is_sea_level_pressure,
     is_temperature,
@@ -50,13 +49,12 @@ from weather_skills_plotting.layout import (
     place_colorbars,
 )
 from weather_skills_plotting.palettes import (
-    DEFAULT_PRECIP_PALETTES,
     _class_slots,
     continuous_colorscale,
     default_palette,
-    default_precip_window,
     discretize,
     parse_palette,
+    resolve_default_precip,
 )
 from weather_skills_plotting.spec import (
     deep_merge,
@@ -239,11 +237,9 @@ def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
         ),
         None,
     )
-    key = palette_raw.lower() if isinstance(palette_raw, str) else None
-    if key in DEFAULT_PRECIP_PALETTES and not any(k.lower() == key for k in ctx.palettes):
-        # A --theme-file entry of the same name wins over the window-following default.
-        days = [aggregation_days(b.color_da) for _, b, _ in members if b.color_da is not None]
-        palette_raw = default_precip_window(*(days or [None]), anomaly=DEFAULT_PRECIP_PALETTES[key])
+    palette_raw = resolve_default_precip(
+        palette_raw, [b.color_da for _, b, _ in members], ctx.palettes
+    )
     palette = parse_palette(palette_raw, registry=ctx.palettes) if palette_raw else None
     values = np.concatenate([np.ravel(v) for _, b, _ in members for v in b.color_values])
     finite = values[np.isfinite(values)]

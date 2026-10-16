@@ -164,32 +164,37 @@ def precip_window_name(days: float | None) -> str:
     return "ppt_season"
 
 
-def precip_anomaly_window_name(days: float | None) -> str:
-    """Nested anomaly window matching ``precip_window_name`` (same day cuts)."""
-    return "ppt_anom_" + precip_window_name(days).removeprefix("ppt_")
-
-
-def widest_precip_window(*days: float | None) -> str:
-    """Window that covers every aggregation in ``days`` (highest vmax)."""
-    return max((precip_window_name(d) for d in days), key=PRECIP_WINDOW_ORDER.index)
-
-
-def widest_precip_anomaly_window(*days: float | None) -> str:
-    """Anomaly window that covers every aggregation in ``days``."""
-    return "ppt_anom_" + widest_precip_window(*days).removeprefix("ppt_")
-
-
-def default_precip_window(*days: float | None, anomaly: bool = False) -> str:
-    """Totals or anomaly nested window covering every aggregation in ``days``."""
-    if anomaly:
-        return widest_precip_anomaly_window(*days)
-    return widest_precip_window(*days)
-
-
 # Palette names that follow the field's ``aggregation_period`` like the
 # automatic precip default, but skip detection (so an all-positive anomaly
 # still gets the diverging scale). Value: whether it is the anomaly scale.
 DEFAULT_PRECIP_PALETTES = {"default_precip": False, "default_precip_anom": True}
+
+
+def resolve_default_precip(value, das, palettes: dict):
+    """``default_precip`` / ``default_precip_anom`` → the window covering every field in ``das``.
+
+    The window (``ppt_daily`` … ``ppt_season``, or ``ppt_anom_*``) follows each
+    field's ``aggregation_period``. A rate with no period is an amount per its
+    unit's time step: mm/day is a daily amount, mm/h an hourly one (still the
+    daily window). Any other value, or a theme palette of that name, comes back as is.
+    """
+    key = value.lower() if isinstance(value, str) else None
+    if key not in DEFAULT_PRECIP_PALETTES or any(k.lower() == key for k in palettes):
+        return value
+    days = []
+    for d in das:
+        if d is None:
+            continue
+        step = None
+        try:
+            step = (
+                (ureg.Quantity(1, "mm") / ureg.Quantity(1, variable_units(d))).to("day").magnitude
+            )
+        except Exception:  # noqa: BLE001 — not a length-per-time rate
+            pass
+        days.append(aggregation_days(d) or step)
+    window = max((precip_window_name(d) for d in days or [None]), key=PRECIP_WINDOW_ORDER.index)
+    return window.replace("ppt_", "ppt_anom_", 1) if DEFAULT_PRECIP_PALETTES[key] else window
 
 
 def precip_nested_palette(name: str) -> dict:
@@ -480,26 +485,7 @@ def default_palette(da, *others, theme: dict, diverging: bool = False) -> dict:
             return {"name": "BrBG", "colorscale": "BrBG"}
     value = theme["defaults"][kind]
     palettes = theme["palettes"]
-    key = value.lower() if isinstance(value, str) else None
-    if key in DEFAULT_PRECIP_PALETTES and not any(k.lower() == key for k in palettes):
-        # A --theme-file entry of the same name wins over the window-following default.
-        # A rate with no period is an amount per its unit's time step: mm/day is a
-        # daily amount, mm/h an hourly one (still the daily window, not the weekly).
-        days = []
-        for d in (da, *others):
-            if d is None:
-                continue
-            step = None
-            try:
-                step = (
-                    (ureg.Quantity(1, "mm") / ureg.Quantity(1, variable_units(d)))
-                    .to("day")
-                    .magnitude
-                )
-            except Exception:  # noqa: BLE001 — not a length-per-time rate
-                pass
-            days.append(aggregation_days(d) or step)
-        value = default_precip_window(*(days or [None]), anomaly=DEFAULT_PRECIP_PALETTES[key])
+    value = resolve_default_precip(value, (da, *others), palettes)
     if isinstance(value, str) and not any(k.lower() == value.lower() for k in palettes):
         return {"name": value, "colorscale": value}
     return parse_palette(value, registry=palettes)

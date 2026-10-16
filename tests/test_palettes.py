@@ -84,3 +84,22 @@ def test_a_dekad_uses_the_week_window():
 
     assert precip_window_name(10.0) == "ppt_week"
     assert precip_window_name(11.0) == "ppt_month"
+
+
+def test_named_default_precip_follows_the_rate_step_like_the_theme_default():
+    """meta.palette default_precip and the theme's precip default pick the same window."""
+    from weather_skills_plotting.palettes import resolve_default_precip
+
+    hourly = make_gridded(units="mm h-1")["precip"]
+    assert resolve_default_precip("default_precip", [hourly], PALETTES) == "ppt_daily"
+    assert resolve_default_precip("default_precip_anom", [hourly], PALETTES) == "ppt_anom_daily"
+    assert default_palette(hourly, theme=THEME)["name"] == "ppt_daily"
+    weekly = make_gridded(units="mm")["precip"]
+    weekly.attrs["aggregation_period"] = "7 day"
+    assert resolve_default_precip("default_precip", [hourly, weekly], PALETTES) == "ppt_week"
+    # Anything else, or a theme palette of that name, is left alone.
+    assert resolve_default_precip("ppt_month", [hourly], PALETTES) == "ppt_month"
+    assert (
+        resolve_default_precip("default_precip", [hourly], {"default_precip": {}})
+        == "default_precip"
+    )
