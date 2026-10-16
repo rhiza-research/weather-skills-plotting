@@ -20,6 +20,7 @@ import re
 import numpy as np
 from weather_skills_core.errors import UsageError
 from weather_skills_core.standard_utils import parse_bbox, polygon_from_geojson
+from weather_skills_core.units import convert_values, variable_units
 
 from weather_skills_plotting.bind import Context, bind_of, bind_trace
 from weather_skills_plotting.geodata import (
@@ -43,6 +44,7 @@ from weather_skills_plotting.layout import (
 from weather_skills_plotting.palettes import (
     DEEP,
     DEFAULT_PRECIP_PALETTES,
+    STANDARD_SEA_LEVEL_PRESSURE_HPA,
     aggregation_days,
     continuous_colorscale,
     default_palette,
@@ -50,6 +52,7 @@ from weather_skills_plotting.palettes import (
     default_theme,
     discretize,
     is_precip_anomaly,
+    is_sea_level_pressure,
     load_theme,
     parse_palette,
 )
@@ -267,6 +270,15 @@ def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
     if diverging and not stretch:
         m = max(abs(lo), abs(hi))
         lo, hi = -m, m
+    elif not stretch and first.color_da is not None and is_sea_level_pressure(first.color_da):
+        # White at the standard atmosphere: lows read blue, highs red.
+        mid = float(
+            convert_values(
+                STANDARD_SEA_LEVEL_PRESSURE_HPA, "hPa", variable_units(first.color_da) or "hPa"
+            )[0]
+        )
+        m = max(abs(lo - mid), abs(hi - mid))
+        lo, hi = mid - m, mid + m
     if lo == hi:
         lo, hi = lo - 1, hi + 1
     axis.setdefault("cmin", lo)

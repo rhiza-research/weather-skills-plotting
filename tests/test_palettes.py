@@ -66,6 +66,12 @@ def test_default_palette_follows_aggregation_period():
     speed = make_gridded(n_time=1, name="ws", units="m s-1")["ws"]
     speed.attrs["standard_name"] = "wind_speed"
     assert default_palette(speed)["colorscale"] == "YlGn"
+    msl = make_gridded(n_time=1, name="msl", units="hPa")["msl"]
+    msl.attrs["standard_name"] = "air_pressure_at_mean_sea_level"
+    assert default_palette(msl)["colorscale"] == "RdBu_r"
+    sp = make_gridded(n_time=1, name="sp", units="hPa")["sp"]
+    sp.attrs["standard_name"] = "surface_air_pressure"
+    assert default_palette(sp)["name"] == "rocket"
 
 
 def test_theme_defaults_replace_kind_colors(tmp_path):
