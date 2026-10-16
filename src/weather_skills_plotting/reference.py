@@ -74,13 +74,13 @@ _RECIPES = [
     ("Title and font size", '{"layout": {"title": {"text": "Week 1"}, "font": {"size": 20}}}'),
     ("Contour instead of heatmap", '{"data": [{"uid": "0", "type": "contour"}]}'),
     (
-        "MSLP chart: --layer heatmap:ANOM --layer contour:MSLP --layer scatter:HIGHS "
-        "--layer scatter:LOWS (HIGHS / LOWS from local-extrema); black isobars every 4 hPa, "
+        "MSLP chart: --layer heatmap:anom.zarr --layer contour:msl.zarr=MSLP --layer "
+        "scatter:highs.zarr=HIGHS --layer scatter:lows.zarr=LOWS (from local-extrema); black isobars every 4 hPa, "
         "H / L with the central value",
-        '{"data": [{"uid": "b", "contours": {"coloring": "none", "showlabels": true, '
-        '"start": 900, "end": 1080, "size": 4}}, {"uid": "c", "mode": "text", '
+        '{"data": [{"uid": "MSLP", "contours": {"coloring": "none", "showlabels": true, '
+        '"start": 900, "end": 1080, "size": 4}}, {"uid": "HIGHS", "mode": "text", '
         '"texttemplate": "<b>H</b><br>%{customdata:.0f}", "textfont": {"color": "#1f4fbf"}}, '
-        '{"uid": "d", "mode": "text", "texttemplate": "<b>L</b><br>%{customdata:.0f}", '
+        '{"uid": "LOWS", "mode": "text", "texttemplate": "<b>L</b><br>%{customdata:.0f}", '
         '"textfont": {"color": "#c8102e"}}]}',
     ),
     (

@@ -158,11 +158,11 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -o /tmp/layers.png \
 # For a forecast, pick the same lead on every layer ("meta": {"source": {"isel": {"step": 40}}});
 # a text trace skips centres that are NaN at that lead.
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -o /tmp/mslp.png \
-    --layer heatmap:/tmp/msl_anom.zarr --layer contour:/tmp/msl.zarr \
-    --layer scatter:/tmp/highs.zarr --layer scatter:/tmp/lows.zarr --spec '{"data": [
-  {"uid": "b", "contours": {"coloring": "none", "showlabels": true, "start": 900, "end": 1080, "size": 4}},
-  {"uid": "c", "mode": "text", "texttemplate": "<b>H</b><br>%{customdata:.0f}", "textfont": {"color": "#1f4fbf", "size": 16}},
-  {"uid": "d", "mode": "text", "texttemplate": "<b>L</b><br>%{customdata:.0f}", "textfont": {"color": "#c8102e", "size": 16}}]}'
+    --layer heatmap:/tmp/msl_anom.zarr --layer contour:/tmp/msl.zarr=MSLP \
+    --layer scatter:/tmp/highs.zarr=HIGHS --layer scatter:/tmp/lows.zarr=LOWS --spec '{"data": [
+  {"uid": "MSLP", "contours": {"coloring": "none", "showlabels": true, "start": 900, "end": 1080, "size": 4}},
+  {"uid": "HIGHS", "mode": "text", "texttemplate": "<b>H</b><br>%{customdata:.0f}", "textfont": {"color": "#1f4fbf", "size": 16}},
+  {"uid": "LOWS", "mode": "text", "texttemplate": "<b>L</b><br>%{customdata:.0f}", "textfont": {"color": "#c8102e", "size": 16}}]}'
 
 # Wind speed with arrows
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/wind.zarr -o /tmp/wind.png --spec '{"data": [
