@@ -9,12 +9,10 @@
 # [tool.uv.sources]
 # weather-skills-plotting = { path = "../../..", editable = true }
 # ///
-"""Lead-week verification grid: observation, forecasts, and verify maps, as PNG or HTML.
-
-Row 1 is the observation then the week-1 … week-N forecasts on one shared
-color scale; row 2 holds each lead's verify map (hits, bias, or MAE) on a
-second scale. The cell under the observation names the metric.
-"""
+"""Draw a forecast verification grid of observations, forecasts, and score maps, as PNG, JPG, or HTML."""
+# Row 1 is the observation then the week-1 … week-N forecasts on one shared
+# color scale; row 2 holds each lead's verify map (hits, bias, or MAE) on a
+# second scale. The cell under the observation names the metric.
 
 import sys
 
@@ -137,7 +135,7 @@ def _user_variable(user, uid):
 )
 @weather_skill.argument("--dump-spec", nargs="?", const="-", probe=True, help=DUMP_SPEC_HELP)
 def plot_verify(obs, forecast, verify, output, spec, theme_file, dump_spec, **kwargs):
-    """Lead-week verification grid from obs, forecast, and pre-computed verify Zarrs."""
+    """Draw a forecast verification grid of observations, forecasts, and score maps, as PNG, JPG, or HTML."""
     forecasts, verifies = _as_list(forecast), _as_list(verify)
     if obs is None and spec is not None:
         opened = spec.opened()

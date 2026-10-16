@@ -34,7 +34,7 @@ The plot type follows the data: a lat/lon grid is a colored map, stations are co
 - `--input`, `-i` — Zarr to draw, as `PATH` or `PATH=NAME`; repeat for side-by-side maps or more lines.
 - `--layer` — `KIND:PATH` or `KIND:PATH=NAME` to stack on one map; repeat. Kinds: `heatmap`, `contour`, `scatter` (stations), `quiver` (wind u/v), `outline` and `mask` (GeoJSON). `outline` and `mask` also work with `-i`.
 - `--spec` — Plotly figure JSON, inline or a file path.
-- `--theme-file` — house style: a Plotly `template`, named `palettes`, per-field `defaults`, and base-map `overlays` (see Colors).
+- `--theme-file` — house style: Plotly `template`, `palettes`, per-field `defaults`, base-map `overlays` (see Colors).
 - `--dump-spec` — print (`-`) or save (a path) the spec, without drawing.
 - `--output`, `-o` — `.png`, `.jpg`, or `.html`.
 
@@ -55,10 +55,10 @@ Each input file is one entry in `data`. Name it on the command line (`-i ecmwf.z
 `isel` counts from 0 (`-1` is the last); `sel` picks by label. `bbox` is `[N, W, S, E]`. `--help` lists every option; `--dump-spec -` shows the spec for your files.
 
 ### Output
-The figure at `-o`. PNG/JPG also print `data: not null` or `data: NULL`; `NULL` means every value drawn is NaN.
+The figure at `-o`. PNG/JPG also print `data: NULL` when every value drawn is NaN.
 
 ### Notes
-- A map shows one value per cell. Pick one value of any extra dim (ensemble `number`, `vertical`) with `isel` / `sel`, panel it with `"meta": {"facet": "number"}`, or average it first with summarize-dim.
+- A map shows one value per cell: pick one value of any extra dim (`number`, `vertical`) with `isel` / `sel`, panel it with `"meta": {"facet": "number"}`, or average it first with summarize-dim.
 - Precip rates with an `aggregation_period` are drawn as period totals (mm). If only some lines on an axis have one, all stay rates.
 
 ### Example

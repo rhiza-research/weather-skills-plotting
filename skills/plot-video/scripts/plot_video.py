@@ -14,7 +14,7 @@
 # [tool.uv.sources]
 # weather-skills-plotting = { path = "../../..", editable = true }
 # ///
-"""Animate a gridded Zarr through time (or forecast step) as an interactive HTML map."""
+"""Animate a gridded Zarr through its times or forecast steps as an interactive HTML map."""
 
 from weather_skills_core import Dataset, UsageError, weather_skill
 from weather_skills_core.cf import cf_dim
@@ -46,7 +46,7 @@ _SKILL_VERSION = "0.0.1"
     "--dump-spec", nargs="?", const="-", default=None, probe=True, help=DUMP_SPEC_HELP
 )
 def plot_video(ds, output, spec=None, theme_file=None, dump_spec=None, **kwargs):
-    """Animate a gridded Zarr through time (or forecast step) as an interactive HTML map."""
+    """Animate a gridded Zarr through its times or forecast steps as an interactive HTML map."""
     datasets = spec_datasets(spec, {"0": ds} if ds is not None else {})
     if not datasets:
         raise UsageError("pass -i/--input, or a --spec with layout.meta.inputs")

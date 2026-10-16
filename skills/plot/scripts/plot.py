@@ -8,7 +8,7 @@
 # [tool.uv.sources]
 # weather-skills-plotting = { path = "../../..", editable = true }
 # ///
-"""Render a map, time series, xy scatter, or wind rose from weather-skills Zarrs as PNG or HTML."""
+"""Draw weather-skills Zarrs as maps, time series, xy scatter plots, or wind roses, as PNG, JPG, or HTML."""
 
 import argparse
 from pathlib import Path
@@ -156,7 +156,7 @@ def plot(
     dump_spec,
     **kwargs,
 ):
-    """Render a map, time series, xy scatter, or wind rose from weather-skills Zarrs."""
+    """Draw weather-skills Zarrs as maps, time series, xy scatter plots, or wind roses, as PNG, JPG, or HTML."""
     inputs = list(inputs or [])
     files = [x.ds for x in inputs]
     layers = list(layer or [])
