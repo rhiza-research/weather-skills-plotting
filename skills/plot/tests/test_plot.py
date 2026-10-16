@@ -390,3 +390,19 @@ def test_one_station_over_time_defaults_to_a_series(tmp_path, plot_fn, capsys):
     assert trace["type"] == "scatter" and "bind" not in trace["meta"]
     assert trace["meta"]["source"]["isel"] == {"point_id": 0}
     assert trace["name"] == "STN"
+
+
+def test_one_mode_at_a_time(tmp_path, plot_fn, capsys):
+    grid = write_zarr(make_gridded(), tmp_path / "grid.zarr")
+    with pytest.raises(SystemExit):
+        run_skill(plot_fn, "--animate", "--mediogram", "-i", str(grid), "-o", "x.html")
+    assert "pick one of" in capsys.readouterr().err
+
+
+def test_dumped_animation_replays_as_an_animation(tmp_path, plot_fn, capsys):
+    grid = write_zarr(make_gridded(n_time=3), tmp_path / "grid.zarr")
+    dumped = tmp_path / "spec.json"
+    run_skill(plot_fn, "--animate", "-i", str(grid), "-o", "x.html", "--dump-spec", str(dumped))
+    capsys.readouterr()
+    run_skill(plot_fn, "--spec", str(dumped), "-o", str(tmp_path / "v.html"))
+    assert "animation: 3 frames" in capsys.readouterr().err

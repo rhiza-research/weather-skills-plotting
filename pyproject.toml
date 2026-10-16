@@ -37,7 +37,7 @@ dev = [
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/weather_skills_plotting"]
+packages = ["skills/plot/scripts/weather_skills_plotting"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "skills"]
@@ -55,3 +55,7 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.isort]
+# The library lives in skills/plot/scripts, not src/: still first-party.
+known-first-party = ["weather_skills_plotting"]

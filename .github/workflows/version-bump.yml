@@ -229,11 +229,8 @@ jobs:
           cp .claude-plugin/plugin.json "$stage/.claude-plugin/plugin.json"
           cp agents/plotting.md "$stage/agents/plotting.md"
           cp LICENSE "$stage/LICENSE"
+          # Each skill is self-contained: plot's library sits in skills/plot/scripts.
           cp -R skills "$stage/skills"
-          # Skill scripts install the plotting package from the plugin root
-          # (../../..), so ship the project with them.
-          cp pyproject.toml README.md "$stage/"
-          cp -R src "$stage/src"
           find "$stage" -name __pycache__ -type d -prune -exec rm -rf {} +
 
           worktree="${RUNNER_TEMP}/plugin-dist-wt"

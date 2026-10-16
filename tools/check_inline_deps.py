@@ -105,6 +105,9 @@ def check(path: Path) -> list[str]:
             continue
         if imp == path.stem:
             continue
+        if (path.parent / imp / "__init__.py").is_file():
+            # A package shipped next to the script (the skill's own library).
+            continue
         normalized = _normalize(IMPORT_TO_PACKAGE.get(imp, imp))
         if not _is_declared(normalized, declared):
             missing.append(imp)

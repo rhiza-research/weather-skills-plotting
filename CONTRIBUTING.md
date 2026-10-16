@@ -19,13 +19,18 @@ Authors **must not** edit `metadata.version` or `_SKILL_VERSION` by hand.
 
 ## The `weather_skills_plotting` library
 
-`src/weather_skills_plotting/` is the actual rendering engine (Plotly spec
-merge and validation, dataset binding, figure assembly, palettes, QA) that
-every skill in `skills/` depends on. It's local library code, not a separately
-published package: each skill script depends on it via `[tool.uv.sources]`
-with a relative `path`, not a git URL, so a script and the library it calls
-always move together in one commit. See any `skills/*/scripts/*.py` header
-for the exact form.
+`skills/plot/scripts/weather_skills_plotting/` is the rendering engine (Plotly
+spec merge and validation, dataset binding, figure assembly, palettes, QA).
+It lives next to the one entry script, `skills/plot/scripts/plot.py`, so the
+skill folder is self-contained: Python finds the package on the script's own
+path, and the script's PEP 723 header lists the package's third-party
+dependencies (keep it in step with `pyproject.toml`). Library modules carry no
+`_SKILL_VERSION`; the version tools only look at top-level `scripts/*.py`. The
+repo-root `pyproject.toml` installs the package for `uv run pytest`.
+
+The verification grid, mediogram and animation are modes of `plot`
+(`--obs/--forecast/--verify`, `--mediogram`, `--animate`), built in
+`verify.py`, `mediogram.py` and `animate.py`.
 
 Design rule: [plotting computes as little as possible](docs/plotting.md#plotting-computes-as-little-as-possible).
 

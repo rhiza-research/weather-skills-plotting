@@ -44,7 +44,7 @@ _META = {
 }
 
 _SOURCE = {
-    "input": "input id: NAME from -i PATH=NAME, else the position 0, 1, … (obs, forecast1 … for plot-verify)",
+    "input": "input id: NAME from -i PATH=NAME, else the position 0, 1, … (obs, forecast1 … for --verify grids; forecast, mclimate for --mediogram)",
     "variable": "data variable (default: auto-detected)",
     "isel": '0-based positions, e.g. {"number": 0, "step": [0, 1]}; -1 is the last. One '
     "integer picks one value (one map); a list keeps the dim (one panel each); a range is "
@@ -61,12 +61,12 @@ _LAYOUT_META = {
     "inputs": "{id: path} — opened when no file flag is passed (written by --dump-spec)",
     "geo.bbox": "[N, W, S, E] or the N/W/S/E string resolve-region prints; map window, subsets every input. Named places: run resolve-region",
     "geo.mask_geojson": "blank every map cell outside this polygon (does not draw it)",
-    "geo.point": '{"lat": …, "lon": …} for samples (plot-mediogram) and wind-rose traces; nearest cell',
+    "geo.point": '{"lat": …, "lon": …} for samples (--mediogram) and wind-rose traces; nearest cell',
     "overlays": "true, false, or {coastline|borders|lakes|rivers|admin1: false or a scatter "
     'style such as {"line": {"width": 2}}}',
     "export.scale": 'PNG/JPG pixel multiplier (default 1), e.g. {"export": {"scale": 2}}',
     "(dotted names)": 'are nested keys: geo.bbox is {"geo": {"bbox": […]}}',
-    "animation": "plot-animation only: {duration: ms per frame (500), transition: ms between "
+    "animation": "--animate only: {duration: ms per frame (500), transition: ms between "
     "frames (0)}",
     "version / skill": "leave as dumped",
 }
@@ -231,6 +231,28 @@ _RECIPES = [
         '{"layout": {"shapes": [{"type": "rect", "xref": "x", "yref": "y domain", '
         '"x0": "2026-10-01", "x1": "2026-10-10", "y0": 0, "y1": 1, "fillcolor": "grey", '
         '"opacity": 0.2, "line": {"width": 0}}]}}',
+    ),
+    (
+        "Verification grid (--obs OBS --forecast W1 --forecast W2 --verify V1 --verify V2): title "
+        "(the verifying week is appended when the inputs carry it)",
+        '{"layout": {"title": {"text": "IMERG vs ENS, 3–9 Aug"}}}',
+    ),
+    (
+        "Verification grid: rename the obs panel; fix the verify row range (coloraxis2)",
+        '{"layout": {"annotations": [{"name": "panel-title-1", "text": "CHIRPS"}], '
+        '"coloraxis2": {"cmin": -20, "cmax": 20}}}',
+    ),
+    (
+        "Mediogram (--mediogram -i FORECAST -i MCLIMATE) at a point, leads 0, 2, 4",
+        '{"layout": {"meta": {"geo": {"point": {"lat": -1.29, "lon": 36.82}}}}, "data": ['
+        '{"uid": "forecast", "meta": {"source": {"isel": {"step": [0, 2, 4]}}}}, '
+        '{"uid": "mclimate", "meta": {"source": {"isel": {"step": [0, 2, 4]}}}}, '
+        '{"uid": "forecast-mean", "meta": {"source": {"isel": {"step": [0, 2, 4]}}}}]}',
+    ),
+    (
+        "Animation (--animate -i GRID -o out.html): slower frames, first 12 steps",
+        '{"layout": {"meta": {"animation": {"duration": 900}}}, "data": [{"uid": "0", '
+        '"meta": {"source": {"isel": {"step": {"start": 0, "stop": 12}}}}}]}',
     ),
 ]
 

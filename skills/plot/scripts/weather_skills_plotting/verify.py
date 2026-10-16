@@ -1,28 +1,19 @@
-# /// script
-# requires-python = ">=3.12,<3.13"
-# dependencies = [
-#   "weather-skills-plotting",
-#   "weather-skills-core>=0.1.1",
-#   "numpy",
-# ]
-#
-# [tool.uv.sources]
-# weather-skills-plotting = { path = "../../..", editable = true }
-# ///
-"""Draw a forecast verification grid of observations, forecasts, and score maps, as PNG, JPG, or HTML."""
-# Row 1 is the observation then the week-1 … week-N forecasts on one shared
-# color scale; row 2 holds each lead's verify map (hits, bias, or MAE) on a
-# second scale. The cell under the observation names the metric.
+"""Forecast verification grid: the observation, each lead's forecast, and its verify map.
+
+Row 1 is the observation then the week-1 … week-N forecasts on one shared color
+scale; row 2 holds each lead's verify map (hits, bias, or MAE) on a second scale.
+The cell under the observation names the metric. Used by ``plot --obs --forecast
+--verify``.
+"""
 
 import sys
 
 import numpy as np
-from weather_skills_core import Dataset, UsageError, weather_skill
+from weather_skills_core import UsageError
 from weather_skills_core.cf import auto_variable, cf_dim
 from weather_skills_core.units import units_equal, variable_units
 
-from weather_skills_plotting import parse_spec_arg
-from weather_skills_plotting.cli import run, skeleton, warn
+from weather_skills_plotting.cli import skeleton, warn
 from weather_skills_plotting.display import (
     combine_display_labels,
     dataset_display_label,
@@ -32,11 +23,7 @@ from weather_skills_plotting.geodata import plain
 from weather_skills_plotting.labels import format_plot_date_range
 from weather_skills_plotting.layout import axis_suffix, panel_title
 from weather_skills_plotting.palettes import aggregation_days, is_precip
-from weather_skills_plotting.reference import install_spec_help
-from weather_skills_plotting.spec import DUMP_SPEC_HELP, SPEC_ARGUMENT_HELP, merge_spec
-
-# Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.4"
+from weather_skills_plotting.spec import merge_spec
 
 VERIFY_VARS = {"hits": "event_hit", "bias": "bias", "mae": "mae"}
 METRIC_LABELS = {"hits": "Hits", "bias": "Bias", "mae": "MAE"}
@@ -72,7 +59,7 @@ def _single_map(ds, variable, role):
         if da.sizes[dim] != 1:
             raise UsageError(
                 f"{role} has {dim} size {da.sizes[dim]}; select the verifying week (one time) "
-                "with the select skill before plot-verify"
+                "with the select skill first"
             )
     return da
 
@@ -115,34 +102,8 @@ def _user_variable(user, uid):
     return ((trace.get("meta") or {}).get("source") or {}).get("variable")
 
 
-@weather_skill(name="plot-verify", version=_SKILL_VERSION)
-@weather_skill.argument(
-    "--obs",
-    type=Dataset("spatial"),
-    help="Observation Zarr for the verifying week (input id obs).",
-)
-@weather_skill.argument(
-    "--forecast",
-    type=Dataset("spatial"),
-    action="append",
-    help="Forecast Zarr for that week at one lead; repeat, week-1 first "
-    "(input ids forecast1, forecast2, …).",
-)
-@weather_skill.argument(
-    "--verify",
-    type=Dataset("any"),
-    action="append",
-    help="Verify Zarr from the verify skill, once per --forecast, same order.",
-)
-@weather_skill.argument("--spec", type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
-@weather_skill.argument(
-    "--theme-file",
-    help="Theme JSON/TOML, or a shipped theme name (tropical_tidbits), layered on the "
-    "standard look: {template, palettes, defaults, overlays}.",
-)
-@weather_skill.argument("--dump-spec", nargs="?", const="-", probe=True, help=DUMP_SPEC_HELP)
-def plot_verify(obs, forecast, verify, output, spec, theme_file, dump_spec, **kwargs):
-    """Draw a forecast verification grid of observations, forecasts, and score maps, as PNG, JPG, or HTML."""
+def build_verify_spec(obs, forecast, verify, spec):
+    """The merged verification-grid spec and its datasets, for ``cli.run``."""
     forecasts, verifies = _as_list(forecast), _as_list(verify)
     if obs is None and spec is not None:
         opened = spec.opened()
@@ -332,32 +293,10 @@ def plot_verify(obs, forecast, verify, output, spec, theme_file, dump_spec, **kw
     layout = {"grid": grid, "annotations": annotations, "coloraxis2": axis2}
     if title:
         layout["title"] = {"text": title}
-    base = skeleton("plot-verify", datasets, data, layout)
+    base = skeleton("plot --verify", datasets, data, layout)
     if user_title:
         user = {
             **user,
             "layout": {k: v for k, v in (user.get("layout") or {}).items() if k != "title"},
         }
-    return run(merge_spec(base, user), None, datasets, output, dump_spec, theme_file=theme_file)
-
-
-install_spec_help(
-    plot_verify,
-    [
-        (
-            "Title (the verifying week is appended when the inputs carry it)",
-            '{"layout": {"title": {"text": "IMERG vs ENS, 3–9 Aug"}}}',
-        ),
-        (
-            "Rename the obs panel",
-            '{"layout": {"annotations": [{"name": "panel-title-1", "text": "CHIRPS"}]}}',
-        ),
-        (
-            "Fixed range for the verify row (coloraxis2)",
-            '{"layout": {"coloraxis2": {"cmin": -20, "cmax": 20}}}',
-        ),
-    ],
-)
-
-if __name__ == "__main__":
-    plot_verify()
+    return merge_spec(base, user), datasets
