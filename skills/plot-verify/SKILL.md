@@ -25,7 +25,7 @@ Row 1 is the observation, then one column per `--forecast`. Row 2 has each forec
 
 ### Arguments
 - `--obs` — observation Zarr for the verifying week.
-- `--forecast` — forecast Zarr for that week at one lead; repeat, week-1 first. Columns follow this order.
+- `--forecast` — forecast Zarr for that week at one lead; repeat, week-1 first. Columns follow this order. An ensemble is drawn as its mean: run summarize-dim `--dim number --method mean` first (verify averages members itself).
 - `--verify` — the verify skill's output for each `--forecast`, in the same order. All must use one metric: `hits`, `bias`, or `mae`.
 - `--spec` — Plotly figure JSON, inline or a file path.
 - `--theme-file` — house style: a Plotly `template` (fonts, background, colors) and named `palettes`.
