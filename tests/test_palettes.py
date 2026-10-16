@@ -92,7 +92,7 @@ def test_theme_overlays_merge_into_standard_lines(tmp_path):
     path.write_text('{"overlays": {"borders": {"line": {"color": "#ff0000"}}}}')
     overlays = load_theme(path)["overlays"]
     assert overlays["borders"]["line"] == {"color": "#ff0000", "width": 1.2}
-    assert overlays["lakes"]["line"]["color"] == "#4d5b6b"
+    assert overlays["lakes"]["fillcolor"] == "#708090"
     path.write_text('{"overlays": {"roads": {"line": {"color": "red"}}}}')
     with pytest.raises(UsageError, match="overlays.roads must be one of"):
         load_theme(path)
@@ -135,5 +135,5 @@ def test_default_theme_file_is_a_theme_file_and_is_the_standard_look():
     assert load_theme(Path(str(DEFAULT_THEME_FILE))) == default_theme()
     theme = default_theme()
     assert theme["defaults"]["precip"] == "default_precip"
-    assert theme["overlays"]["lakes"]["line"]["color"] == "#4d5b6b"
+    assert theme["overlays"]["lakes"]["fill"] == "toself"
     assert "rocket" in theme["palettes"]

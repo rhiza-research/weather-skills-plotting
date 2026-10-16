@@ -81,5 +81,6 @@ style merges into the standard one, so `{"borders": {"line": {"color":
 layers on or off.
 
 Water is slate (`#708090`), so lakes and rivers never read as rainfall blues.
-Lakes are a shoreline only: a filled lake hid the data under it, and Lake
-Victoria is among the wettest cells.
+Lakes are filled opaque over the data, so a lake never reads as a rainfall
+cell; the fill also hides river centerlines through it. To see the data under
+a lake, set `{"lakes": {"fill": "none"}}`.
