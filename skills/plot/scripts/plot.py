@@ -73,7 +73,12 @@ def _default_trace(uid: str, ds, *, xaxis=None) -> dict:
     """Heatmap for a lat/lon grid, station markers for points, else a line."""
     source = {"input": uid}
     lat, lon = cf_dim(ds, "latitude"), cf_dim(ds, "longitude")
-    if point_dim(ds) is not None:
+    pdim = point_dim(ds)
+    tdim = next((d for d in ("time", "step") if d in ds.dims and ds.sizes[d] > 1), None)
+    if pdim is not None and ds.sizes[pdim] == 1 and tdim:
+        # One station over time is a time series, not one dot on a map.
+        trace = {"type": "scatter", "meta": {"source": {**source, "isel": {pdim: 0}}}}
+    elif pdim is not None:
         trace = {"type": "scatter", "meta": {"bind": "points", "source": source}}
     elif lat in ds.dims and lon in ds.dims:
         trace = {"type": "heatmap", "meta": {"source": source}}
