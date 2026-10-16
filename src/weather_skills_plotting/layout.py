@@ -22,7 +22,7 @@ DEFAULT_TEMPLATE = "weather_skills"
 def register_templates(template: dict | None = None) -> None:
     """``weather_skills`` and ``colorblind``: Plotly's ``seaborn`` with the theme's template.
 
-    ``template`` is the theme's (``themes/default.toml`` when None).
+    ``template`` is the theme's (``themes/default.json`` when None).
     ``colorblind`` keeps its own colorway, since picking it is an accessibility choice.
     """
     import plotly.graph_objects as go

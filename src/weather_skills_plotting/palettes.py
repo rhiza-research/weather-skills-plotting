@@ -11,7 +11,6 @@ from __future__ import annotations
 import copy
 import json
 import os
-import tomllib
 from importlib.resources import files
 from pathlib import Path
 
@@ -537,8 +536,9 @@ ROCKET = [
 # Light-to-dark is the readable direction on a white map.
 DEFAULT_SEQUENTIAL = ROCKET[::-1]
 # The standard look: template, extra palettes, default colors, base-map lines.
-DEFAULT_THEME_FILE = files("weather_skills_plotting") / "themes" / "default.toml"
-_DEFAULT_THEME = tomllib.loads(DEFAULT_THEME_FILE.read_text(encoding="utf-8"))
+# themes/README.md explains each section.
+DEFAULT_THEME_FILE = files("weather_skills_plotting") / "themes" / "default.json"
+_DEFAULT_THEME = json.loads(DEFAULT_THEME_FILE.read_text(encoding="utf-8"))
 # The standard theme's colorway (seaborn "deep"), also used for flag classes.
 DEEP = list(_DEFAULT_THEME["template"]["layout"]["colorway"])
 # seaborn "colorblind": the colorway of the colorblind template, whatever the theme.
@@ -643,7 +643,7 @@ def _check_default_color(value, palettes: dict, *, loc: str) -> None:
 
 
 def default_theme() -> dict:
-    """The standard look, read from ``themes/default.toml`` (a fresh copy).
+    """The standard look, read from ``themes/default.json`` (a fresh copy).
 
     Its palettes are added to the built-in ones (``builtin_palettes``).
     """
