@@ -58,7 +58,8 @@ def test_grid_spec(files, ver_fn, capsys):
         ("verify2", "x6", "coloraxis2"),
     ]
     assert spec["layout"]["grid"] == {"rows": 2, "columns": 3}
-    assert spec["data"][0]["meta"]["palette"] == "ppt_week"
+    # No forced palette: the shared colorbar's default (or a --theme-file) picks the classes.
+    assert "palette" not in spec["data"][0]["meta"]
     assert spec["layout"]["title"]["text"] == "1–7 Jan '26"
     assert spec["layout"]["coloraxis2"]["colorbar"]["ticktext"] == ["disagree", "below", "hit"]
 

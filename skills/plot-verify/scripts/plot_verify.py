@@ -30,7 +30,7 @@ from weather_skills_plotting.display import (
 )
 from weather_skills_plotting.labels import format_plot_date_range
 from weather_skills_plotting.layout import axis_suffix, panel_title
-from weather_skills_plotting.palettes import aggregation_days, is_precip, widest_precip_window
+from weather_skills_plotting.palettes import aggregation_days, is_precip
 from weather_skills_plotting.reference import install_spec_help
 from weather_skills_plotting.spec import DUMP_SPEC_HELP, SPEC_ARGUMENT_HELP, merge_spec
 
@@ -59,6 +59,11 @@ def _single_map(ds, variable, role):
     if "step" in da.dims:
         raise UsageError(
             f"{role} still has a step axis; run step-to-time and select the verifying week first"
+        )
+    if "number" in da.dims and da.sizes["number"] > 1:
+        raise UsageError(
+            f"{role} has {da.sizes['number']} ensemble members; average them first with "
+            "summarize-dim --dim number --method mean (verify averages them itself)"
         )
     for dim in da.dims:
         if dim in (cf_dim(da, "latitude"), cf_dim(da, "longitude"), "number"):
@@ -176,7 +181,7 @@ def plot_verify(obs, forecast, verify, output, spec, theme_file, dump_spec, **kw
 
     obs_var = _user_variable(user, "obs") or auto_variable(obs)
     obs_da = _single_map(obs, obs_var, "--obs")
-    fc_vars, fc_das = [], []
+    fc_vars = []
     for i, fc in enumerate(forecasts, 1):
         var = _user_variable(user, f"forecast{i}") or (
             obs_var if obs_var in fc else auto_variable(fc)
@@ -186,7 +191,7 @@ def plot_verify(obs, forecast, verify, output, spec, theme_file, dump_spec, **kw
                 f"--forecast {i} has no variable {var!r}; available: {', '.join(fc.data_vars)}"
             )
         fc_vars.append(var)
-        fc_das.append(_single_map(fc, var, f"--forecast {i}"))
+        _single_map(fc, var, f"--forecast {i}")
         u_fc, u_obs = variable_units(fc[var]), variable_units(obs_da)
         if u_fc and u_obs and not units_equal(u_fc, u_obs):
             warn(
@@ -200,18 +205,12 @@ def plot_verify(obs, forecast, verify, output, spec, theme_file, dump_spec, **kw
             # stderr: stdout may be the --dump-spec JSON.
             print(f"{i}-week lead  {summary.strip()}", file=sys.stderr)
 
-    field_meta = {}
-    if is_precip(obs_da):
-        window = widest_precip_window(
-            aggregation_days(obs_da), *(aggregation_days(d) for d in fc_das)
-        )
-        field_meta = {"palette": window}
     data = [
         {
             "uid": "obs",
             "type": "heatmap",
             "coloraxis": "coloraxis",
-            "meta": {"source": {"input": "obs", "variable": obs_var}, **field_meta},
+            "meta": {"source": {"input": "obs", "variable": obs_var}},
         }
     ]
     for i, var in enumerate(fc_vars, 1):
@@ -222,7 +221,7 @@ def plot_verify(obs, forecast, verify, output, spec, theme_file, dump_spec, **kw
                 "coloraxis": "coloraxis",
                 "xaxis": f"x{i + 1}",
                 "yaxis": f"y{i + 1}",
-                "meta": {"source": {"input": f"forecast{i}", "variable": var}, **field_meta},
+                "meta": {"source": {"input": f"forecast{i}", "variable": var}},
             }
         )
     single = n == 1
@@ -271,7 +270,11 @@ def plot_verify(obs, forecast, verify, output, spec, theme_file, dump_spec, **kw
         )
     event_title = "Event"
     try:
-        threshold = float(verifies[0].attrs.get("event_threshold"))
+        # verify stamps the threshold on the variable; older files carry it on the dataset.
+        hits = verifies[0][VERIFY_VARS[metric]]
+        threshold = float(
+            hits.attrs.get("event_threshold", verifies[0].attrs.get("event_threshold"))
+        )
     except (TypeError, ValueError):
         threshold = None
     if threshold is not None:
