@@ -579,10 +579,18 @@ def bind_points(trace, meta, ctx, loc):
     for key, ptitle, part in _slices(da, fdim):
         vals = np.asarray(part.values, dtype=float)
         values.append(vals)
+        finite = np.isfinite(vals)
         keep = np.ones(vals.shape, bool)
         if "markers" not in (trace.get("mode") or "markers"):
             # A text-only trace prints values: "NaN" says nothing, so skip those points.
-            keep = np.isfinite(vals)
+            keep = finite
+        elif not finite.all():
+            print(
+                f"Note: {loc}: {int((~finite).sum())} of {finite.size} stations have no value"
+                + (f" for {ptitle}" if ptitle else "")
+                + "; drawn as ×",
+                file=sys.stderr,
+            )
         panels.append(
             Panel(
                 [
@@ -598,6 +606,9 @@ def bind_points(trace, meta, ctx, loc):
                             "color": vals[keep],
                             "size": 13 if vals.size <= 50 else 8,
                             "line": {"width": 1},
+                            # No value: a grey ×, so it never reads as a color class (a white
+                            # ring is the < 1 mm class).
+                            "symbol": np.where(finite[keep], "circle", "x").tolist(),
                         },
                         "hovertemplate": "%{text}: %{customdata:.4g}<extra></extra>",
                         "showlegend": False,

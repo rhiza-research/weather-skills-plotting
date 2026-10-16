@@ -229,6 +229,8 @@ def test_text_only_points_skip_nan_but_markers_keep_them():
         spec = {"data": [_trace("c", type="scatter", mode=mode, meta={"bind": "points"})]}
         trace = next(t for t in compile(spec, {"c": stations}).data if t["uid"] == "c")
         assert len(trace["x"]) == n and len(trace["customdata"]) == n
+    # The station with no value is a ×, not a filled dot that reads as a class.
+    assert list(trace["marker"]["symbol"]) == ["circle", "x", "circle"]
 
 
 def test_non_precip_gets_continuous_scale_symmetric_when_diverging():
