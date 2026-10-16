@@ -28,7 +28,11 @@ from weather_skills_core.units import (
     variable_units,
 )
 
-from weather_skills_plotting.display import precip_for_display, variable_label_for_display
+from weather_skills_plotting.display import (
+    format_units_for_display,
+    precip_for_display,
+    variable_label_for_display,
+)
 from weather_skills_plotting.geodata import (
     extent_from_da,
     plain,
@@ -424,7 +428,11 @@ def bind_field(trace, meta, ctx, loc, *, speed=False):
         x = np.array([x[0] - half, x[0] + half]) if len(x) == 1 else x
         y = np.array([y[0] - half, y[0] + half]) if len(y) == 1 else y
     panels, values = [], []
-    hover = "%{x:.2f}°, %{y:.2f}°: %{customdata:.4g}<extra></extra>"
+    units = format_units_for_display(variable_units(da))
+    hover = (
+        f"lat %{{y:.2f}}, lon %{{x:.2f}}: %{{customdata:.4g}}{' ' + units if units else ''}"
+        "<extra></extra>"
+    )
     for key, ptitle, part in _slices(da, fdim):
         z = np.asarray(part.values, dtype=float)
         values.append(z)
@@ -578,6 +586,7 @@ def bind_points(trace, meta, ctx, loc):
         # Same continuous axis as the wrapped grid: 150E..80W is 150..280.
         lon = ((lon - ctx.bbox[1]) % 360.0) + ctx.bbox[1]
     names = [str(v) for v in da[pdim].values]
+    units = format_units_for_display(variable_units(da))
     panels, values = [], []
     for key, ptitle, part in _slices(da, fdim):
         vals = np.asarray(part.values, dtype=float)
@@ -613,7 +622,9 @@ def bind_points(trace, meta, ctx, loc):
                             # ring is the < 1 mm class).
                             "symbol": np.where(finite[keep], "circle", "x").tolist(),
                         },
-                        "hovertemplate": "%{text}: %{customdata:.4g}<extra></extra>",
+                        "hovertemplate": "%{text}: %{customdata:.4g}"
+                        + (f" {units}" if units else "")
+                        + "<extra></extra>",
                         "showlegend": False,
                     }
                 ],

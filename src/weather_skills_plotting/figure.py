@@ -48,6 +48,7 @@ from weather_skills_plotting.palettes import (
     DEEP,
     DEFAULT_PRECIP_PALETTES,
     STANDARD_SEA_LEVEL_PRESSURE_HPA,
+    _class_slots,
     aggregation_days,
     continuous_colorscale,
     default_palette,
@@ -275,6 +276,12 @@ def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
             file=sys.stderr,
         )
     if palette and palette.get("bounds") and not stretch and "colorscale" not in user:
+        under, classes, over = _class_slots(palette)
+        if under and finite.size and finite.min() >= palette["bounds"][0]:
+            # Nothing falls below the first edge (rain is never negative): no empty
+            # box under "0" on the colorbar.
+            palette = {k: v for k, v in palette.items() if k not in ("colors", "under", "over")}
+            palette.update(colors=list(classes), **({"over": over} if over else {}))
         for _, bound, traces in members:
             for tr in traces:
                 raw = _get_path(tr, bound.color_key)
