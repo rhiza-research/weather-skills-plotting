@@ -112,7 +112,8 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -o nairobi.png \
   --layer heatmap:imerg.zarr --layer scatter:tahmo.zarr=STATIONS --layer outline:nairobi.geojson \
   --spec '{"data": [{"uid": "STATIONS", "marker": {"size": 14}}]}'
 # MSLP chart: anomaly shading, labeled black isobars every 4 hPa, and H / L with the
-# central pressure (highs / lows from local-extrema). For a forecast, pick the same step
+# central pressure (highs / lows from local-extrema; --radius 7 marks a Tropical Tidbits-style
+# set of centres, 15 or more misses most of them). For a forecast, pick the same step
 # on every layer with "meta": {"source": {"isel": {"step": N}}}.
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -o mslp.png \
   --layer heatmap:msl_anom.zarr --layer contour:msl.zarr=MSLP \
