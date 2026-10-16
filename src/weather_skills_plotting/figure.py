@@ -770,4 +770,9 @@ def _assemble_chart(items, user_layout):
         entries_px = sum(7 * len(str(tr["name"])) + 45 for tr in named)
         top += 24 * max(1, math.ceil(entries_px / max(plot_px, 200)))
     layout["margin"] = {"t": top}
+    for name, axis in user_layout.items():
+        if name.startswith("yaxis") and isinstance(axis, dict) and axis.get("overlaying"):
+            # Plotly syncs an overlaid axis to the left grid (ticks at 1.01, 2.02, …);
+            # give it round ticks of its own and no second grid.
+            layout[name] = {"tickmode": "auto", "showgrid": False, **(layout.get(name) or {})}
     return data, layout

@@ -804,3 +804,18 @@ def test_mistyped_uid_names_the_real_one():
 
     with pytest.raises(UsageError, match="did you mean 'OBS'"):
         merge_traces([{"uid": "OBS", "type": "heatmap"}], [{"uid": "obs", "zmin": 0}])
+
+
+def test_second_y_axis_gets_its_own_round_ticks():
+    t = np.arange(np.datetime64("2026-09-01"), np.datetime64("2026-09-05")).astype("datetime64[ns]")
+    a = xr.Dataset({"x": (("time",), [1.0, 2.0, 3.0, 4.0])}, coords={"time": t})
+    b = xr.Dataset({"y": (("time",), [10.0, 30.0, 20.0, 40.0])}, coords={"time": t})
+    spec = {
+        "data": [
+            {"uid": "a", "type": "scatter", "meta": {"source": {"input": "a"}}},
+            {"uid": "b", "type": "scatter", "yaxis": "y2", "meta": {"source": {"input": "b"}}},
+        ],
+        "layout": {"yaxis2": {"overlaying": "y", "side": "right"}},
+    }
+    axis = _layout(compile(spec, {"a": a, "b": b}))["yaxis2"]
+    assert axis["tickmode"] == "auto" and axis["showgrid"] is False
