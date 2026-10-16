@@ -68,7 +68,7 @@ dumped spec replays without file flags.
 
 | `meta.bind` | Plotly type | Fills |
 | --- | --- | --- |
-| `field` | heatmap, contour | `z` on lon/lat; one panel per `facet` value (default `step`/`time`); `number` averaged |
+| `field` | heatmap, contour | `z` on lon/lat; one panel per `facet` value (default `step`/`time`); pick or facet `number`, never averaged |
 | `speed` | heatmap, contour | wind speed from u/v |
 | `arrows` | scatter | arrow polylines from u/v (`meta.arrows.step` / `.scale`) plus a 10 m/s key |
 | `points` | scatter | station markers colored by value |
@@ -79,8 +79,9 @@ dumped spec replays without file flags.
 | `windrose` | barpolar | one barpolar trace per speed class, frequency in percent |
 
 The default bind follows the trace type (`heatmap` → `field`, `barpolar` →
-`windrose`, …). Units go through `to_standard_units` and `precip_for_display`
-as before. The plotter selects but never averages: a size-1 dim is squeezed,
+`windrose`, …). Units go through `to_standard_units` and `precip_for_display`,
+except a precip rate already in mm per some time step (mm/h from
+`unit-convert`), which keeps its units. The plotter selects but never averages: a size-1 dim is squeezed,
 and any other dim left over after `isel` / `sel` / `facet` / `along` is an
 error that names the fix. Averages (area means, ensemble means, a week of
 daily steps) are made first with `summarize-dim` or `aggregate-temporal`, so
