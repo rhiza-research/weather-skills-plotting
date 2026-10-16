@@ -1,5 +1,5 @@
 """Figure-facing helpers: dataset labels, variable labels, unit spellings,
-which variable each input uses, and precip totals for display.
+and precip totals for display.
 
 Moved from weather-skills-core, which keeps the on-disk contract; these only
 shape what a figure shows.
@@ -11,7 +11,6 @@ import json
 import re
 from pathlib import Path
 
-from weather_skills_core.cf import auto_variable
 from weather_skills_core.errors import UsageError
 from weather_skills_core.provenance import HISTORY_ATTR, SOURCE_ATTR, origin_skill
 from weather_skills_core.units import (
@@ -30,43 +29,11 @@ from weather_skills_core.units import (
 
 _DATE_TAIL = re.compile(r"[_-]\d{4}-\d{2}-\d{2}(?:[_-]\d{2}-\d{2}-\d{2})?$")
 _VAR_TAIL = re.compile(r"[_-](?:precip|tp)$", re.I)
-_ACRONYMS = frozenset(
-    {
-        "ecmwf",
-        "s2s",
-        "ghcn",
-        "cmip6",
-        "gefs",
-        "oisst",
-        "imerg",
-        "smap",
-        "chirps",
-        "nasa",
-        "noaa",
-        "ifs",
-        "ens",
-        "aifs",
-        "gfs",
-        "era5",
-        "arco",
-        "ucsb",
-        "chc",
-        "icon",
-        "eu",
-        "mrms",
-        "kmsa",
-        "tahmo",
-        "gsmap",
-        "jaxa",
-        "hres",
-        "er",
-    }
-)
 
 
 def _prettify_token(text: str) -> str:
-    parts = [p for p in re.split(r"[_-]+", text.strip()) if p]
-    return " ".join(p.upper() if p.lower() in _ACRONYMS else p.capitalize() for p in parts) or text
+    # Product ids are mostly acronyms (ECMWF, IMERG, CHIRPS), so every word is upper-cased.
+    return " ".join(p.upper() for p in re.split(r"[_-]+", text.strip()) if p) or text
 
 
 def label_from_history(ds) -> str | None:
@@ -95,7 +62,7 @@ def label_from_source_token(token: str) -> str:
     elif "/" in text or "\\" in text or text.endswith(".zarr"):
         text = Path(text).stem
     text = _VAR_TAIL.sub("", _DATE_TAIL.sub("", text))
-    # nasa-imerg-analysis-late → NASA IMERG Late; ecmwf-ifs-ens-forecast-15-day-0-25-degree → ECMWF IFS ENS
+    # nasa-imerg-analysis-late → NASA IMERG LATE; ecmwf-ifs-ens-forecast-15-day-0-25-degree → ECMWF IFS ENS
     text = _ID_NOISE.sub("", text) or text
     return _prettify_token(text)
 
@@ -108,46 +75,9 @@ def dataset_display_label(ds, fallback) -> str:
     return label_from_history(ds) or (fallback() if callable(fallback) else str(fallback))
 
 
-def resolve_input_labels(
-    labels: list[str] | None,
-    n: int,
-    *,
-    input_flag: str = "--input",
-) -> list[str | None]:
-    """Map optional ``--label`` values to *n* inputs; ``None`` slots use auto labels."""
-    if not labels or all(label is None for label in labels):
-        return [None] * n
-    if len(labels) != n:
-        raise UsageError(f"expected {n} --label values (one per {input_flag}), got {len(labels)}")
-    return list(labels)
-
-
 def combine_display_labels(labels: list[str]) -> str:
     """Join unique labels for a shared row title (e.g. one forecast row)."""
     return " / ".join(dict.fromkeys(label for label in labels if label))
-
-
-def resolve_input_variable(inputs, ds, *, id=None, index=None):
-    """This input's own ``variable``, else ``inputs[0].variable``, else auto-detect on ``ds``.
-
-    Match the input by ``id`` (preferred) or list ``index``. This is the one
-    place "which variable does this dataset use" is resolved, so every
-    plot-* skill treats a per-input override, and the ``inputs[0]`` fallback,
-    the same way — a spec key set on one dataset never leaks onto another
-    dataset that has its own name for the same field.
-    """
-    items = [item for item in (inputs or []) if isinstance(item, dict)]
-    own = None
-    if id is not None:
-        own = next((item.get("variable") for item in items if str(item.get("id")) == str(id)), None)
-    elif index is not None and index < len(items):
-        own = items[index].get("variable")
-    if own:
-        return own
-    fallback = items[0].get("variable") if items else None
-    if fallback:
-        return fallback
-    return auto_variable(ds)
 
 
 def format_units_for_display(units: str | None) -> str:
@@ -159,7 +89,7 @@ def format_units_for_display(units: str | None) -> str:
     if not isinstance(units, str) or not units.strip() or units.strip() == "1":
         return ""
     raw = units.strip()
-    if raw.lower() in ("delta_degc", "delta_degree_celsius", "delta_degree_c"):
+    if units_equal(raw, "delta_degC"):
         return "°C"
     for kind, nice in (("precip", "mm/day"), ("precip_amount", "mm"), ("temp", "°C")):
         if units_equal(raw, STANDARD[kind]["units"]):

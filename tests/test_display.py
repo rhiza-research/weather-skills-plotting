@@ -3,7 +3,6 @@
 import json
 
 import numpy as np
-from weather_skills_core.errors import UsageError
 from weather_skills_core.units import PRECIP_AMOUNT_LONG_NAME, STANDARD
 
 from conftest import make_forecast, make_gridded
@@ -52,16 +51,16 @@ def test_dataset_display_label_source_wins_over_history():
     ds = make_gridded()
     ds.attrs["weather_skills_source"] = "dynamical:nasa-imerg-analysis-late"
     ds.attrs["weather_skills_history"] = json.dumps([{"skill": "dynamical-fetch"}])
-    assert dl.dataset_display_label(ds, "fallback") == "NASA IMERG Late"
+    assert dl.dataset_display_label(ds, "fallback") == "NASA IMERG LATE"
 
 
 def test_label_from_source_token_colon_catalog():
-    assert dl.label_from_source_token("dynamical:nasa-imerg-analysis-late") == "NASA IMERG Late"
+    assert dl.label_from_source_token("dynamical:nasa-imerg-analysis-late") == "NASA IMERG LATE"
 
 
 def test_label_from_source_token_colon_path():
     assert dl.label_from_source_token("kenya-forecasting-data:gefs/gefs_kenya.zarr") == "GEFS"
-    assert dl.label_from_source_token("cmip6:ACCESS-CM2/ssp585/r1i1p1f1/Amon/pr/gn") == "Access Cm2"
+    assert dl.label_from_source_token("cmip6:ACCESS-CM2/ssp585/r1i1p1f1/Amon/pr/gn") == "ACCESS CM2"
 
 
 def test_label_from_source_token_path_stem():
@@ -70,21 +69,6 @@ def test_label_from_source_token_path_stem():
 
 def test_dataset_display_label_fallback():
     assert dl.dataset_display_label(make_gridded(), "input 1") == "input 1"
-
-
-def test_resolve_input_labels_empty():
-    assert dl.resolve_input_labels(None, 2) == [None, None]
-    assert dl.resolve_input_labels([], 2) == [None, None]
-    assert dl.resolve_input_labels([None, None], 1) == [None]
-
-
-def test_resolve_input_labels_count_mismatch():
-    try:
-        dl.resolve_input_labels(["A"], 2)
-    except UsageError as exc:
-        assert "expected 2 --label" in str(exc)
-    else:
-        raise AssertionError("expected UsageError")
 
 
 def test_combine_display_labels():
@@ -98,6 +82,8 @@ def test_format_units_for_display():
     assert dl.format_units_for_display("millimeter / day") == "mm/day"
     assert dl.format_units_for_display("mm") == "mm"
     assert dl.format_units_for_display("degree_Celsius") == "°C"
+    assert dl.format_units_for_display("delta_degC") == "°C"
+    assert dl.format_units_for_display("delta_degree_Celsius") == "°C"
     assert dl.format_units_for_display("") == ""
     assert dl.format_units_for_display(None) == ""
 
