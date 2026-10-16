@@ -11,18 +11,12 @@ import json
 import re
 from pathlib import Path
 
-from weather_skills_core.errors import UsageError
 from weather_skills_core.provenance import HISTORY_ATTR, SOURCE_ATTR, origin_skill
 from weather_skills_core.units import (
-    AGGREGATION_PERIOD_ATTR,
     PRECIP_AMOUNT_LONG_NAME,
     STANDARD,
-    assert_nonoverlapping_intervals,
     classify_variable,
-    format_cell_methods,
     looks_like_rate_display_name,
-    parse_aggregation_period,
-    rate_to_total,
     units_equal,
     ureg,
     variable_units,
@@ -174,52 +168,3 @@ def variable_label_for_display(
     if units:
         return f"{label} [{units}]"
     return label
-
-
-def precip_for_display(ds, name: str):
-    """In-memory precip rate → period total for plotting.
-
-    Uses stamped ``aggregation_period`` (from ``aggregate-temporal``). No-op
-    when the variable is not a precip rate, has no period or a sub-daily one, or the time axis
-    would overlap (same gates as convert-to-totals). Plotters call this so
-    precip defaults to ``mm`` totals without a separate Zarr. The period attr
-    is kept so colormap selection can stay period-aware.
-    """
-    if name not in ds.data_vars:
-        return ds
-    da = ds[name]
-    units = variable_units(da) or da.attrs.get("units")
-    kind = classify_variable(name, units=units, standard_name=da.attrs.get("standard_name"))
-    if kind != "precip":
-        return ds
-    period = da.attrs.get(AGGREGATION_PERIOD_ATTR)
-    if not (isinstance(period, str) and period.strip()):
-        return ds
-    try:
-        days = float(parse_aggregation_period(period).to("day").magnitude)
-    except Exception:  # noqa: BLE001 — calendar periods (1 month, 1 dekad) are a day or more
-        days = None
-    if days is not None and days < 1:
-        # Sub-daily means (a 6 hour rate) read as rates, the way forecast charts show them.
-        return ds
-    dim = "step" if "step" in da.dims else "time" if "time" in da.dims else None
-    if dim is None:
-        return ds
-    try:
-        assert_nonoverlapping_intervals(ds, dim, period)
-        total = rate_to_total(da, period, dim=dim)
-    except UsageError:
-        return ds
-    plain = total.pint.dequantify() if total.pint.units is not None else total
-    attrs = {**da.attrs, **plain.attrs}
-    attrs["units"] = STANDARD["precip_amount"]["units"]
-    attrs["standard_name"] = STANDARD["precip_amount"]["standard_name"]
-    attrs["long_name"] = PRECIP_AMOUNT_LONG_NAME
-    if looks_like_rate_display_name(attrs.get("GRIB_name")):
-        attrs["GRIB_name"] = PRECIP_AMOUNT_LONG_NAME
-    attrs["cell_methods"] = format_cell_methods(dim, "sum")
-    # Keep aggregation_period so plotters can crop the nested precip palette.
-    out = ds.copy(deep=False)
-    out[name] = plain
-    out[name].attrs = attrs
-    return out

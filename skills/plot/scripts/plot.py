@@ -30,7 +30,6 @@ from weather_skills_plotting.reference import install_spec_help
 from weather_skills_plotting.series import (
     MAX_INPUTS,
     inherit_from_first,
-    keep_mixed_precip_as_rates,
     trace_label,
     warn_disjoint_dates,
     warn_mixed_units,
@@ -228,7 +227,6 @@ def plot(
     merged = merge_spec(base, spec.data if spec is not None else {})
     if series:
         merged = inherit_from_first(merged, datasets)
-        datasets = keep_mixed_precip_as_rates(merged, datasets)
         warn_mixed_units(merged, datasets)
         warn_disjoint_dates(merged, datasets)
     return run(merged, None, datasets, output, dump_spec, theme_file=theme_file)
