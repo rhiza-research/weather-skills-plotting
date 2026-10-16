@@ -6,6 +6,7 @@ from weather_skills_core.errors import UsageError
 
 from conftest import make_gridded
 from weather_skills_plotting.palettes import (
+    builtin_palettes,
     default_palette,
     discretize,
     load_theme,
@@ -31,6 +32,12 @@ def test_discretize_without_under_over_clamps():
     slots, scale = discretize(np.array([-5, -1, 0, 1, 5]), pal)
     assert slots.tolist() == [0, 0, 1, 2, 2]
     assert scale["tickvals"] == [-0.5, 0.5, 1.5, 2.5]
+
+
+@pytest.mark.parametrize("name", sorted(builtin_palettes()))
+def test_builtin_palettes_pass_theme_file_checks(name):
+    # A built-in copied into a --theme-file must load: right color count for its bounds.
+    parse_palette(builtin_palettes()[name], loc=name)
 
 
 def test_parse_palette_forms():

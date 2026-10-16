@@ -41,7 +41,7 @@ tables):
 |---|---|
 | `ppt_daily`, `ppt_week`, `ppt_month`, `ppt_season` | Precipitation totals |
 | `ppt_anom_daily`, `ppt_anom_week`, `ppt_anom_month`, `ppt_anom_season` | Precipitation anomalies |
-| `ppt_total`, `ppt_short`, `chirps_total`, `chirps_short` | Historical CHC rainbow scales |
+| `ppt_total` | Historical CHC rainbow scale (0 … 2500 mm) |
 | `ppt_poa` | Precipitation as percent of normal |
 | `ppt_spp` | Seasonal rainfall performance probability classes |
 | `spi` | Standardized Precipitation Index |
