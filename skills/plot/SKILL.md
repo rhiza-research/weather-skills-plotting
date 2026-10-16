@@ -11,37 +11,51 @@ metadata:
 
 # plot
 
-Builds a Plotly figure from the files you name, merges your `--spec` onto it, and writes the image.
+Draws one or more Zarrs as a figure. Name the files on the command line; set titles, colors, and layout in `--spec`.
 
 ## Usage
 
 ```bash
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i A.zarr [-i B.zarr ...] -o OUT.png|.jpg|.html [--spec JSON] [--theme-file FILE]
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --layer KIND:PATH [--layer KIND:PATH ...] -o OUT.png [--spec JSON]
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --x X.zarr --y Y.zarr -o OUT.png [--spec JSON]
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i A.zarr --dump-spec -
+# One map (or one panel per time / step)
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i rain.zarr -o rain.png
+# Maps side by side, each on its own grid
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i chirps.zarr -i ecmwf.zarr -o compare.png
+# Layers on one map, bottom first
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --layer heatmap:rain.zarr --layer scatter:stations.zarr --layer outline:kenya.geojson -o map.png
+# One series against another
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --x iod.zarr --y rain.zarr -o iod_vs_rain.png
 ```
 
-### Arguments
-- `--input`, `-i` — input Zarr; repeat for side-by-side panels, each on its own grid. Trace ids are `a`, `b`, … in order.
-- `--layer` — `KIND:PATH` drawn on one shared map; repeat to stack. Kinds: `heatmap`, `contour`, `scatter` (stations), `quiver` (u/v), `outline` (GeoJSON), `mask` (GeoJSON). `outline` / `mask` also combine with `-i`; data layers do not.
-- `--x`, `--y` — two series Zarrs for an xy scatter (ids `x`, `y`).
-- `--spec` — Plotly figure JSON, inline or a file path.
-- `--theme-file` — JSON/TOML `{template, palettes: {name: {colors, bounds}}}`.
-- `--dump-spec` — print (`-`) or write (a path) the merged spec and skip drawing.
-- `--output`, `-o` — `.png`, `.jpg`, or `.html` (interactive, offline).
+The plot type follows the data: a lat/lon grid is a colored map, stations are colored markers, a 1-D series is a line.
 
-### The spec
-- `data[]` merges onto the built traces by `uid`; `layout.annotations` / `shapes` by `name`; everything else deep-merges. Plotly keys work as in [Plotly](https://plotly.com/python/reference/).
-- `data[].meta` binds data: `source.isel` / `source.sel` pick times, steps, or members (`{"time": -1}` is the latest); `facet` panels a dim; `palette` sets class colors.
-- `layout.meta.geo.bbox` (`[N, W, S, E]`) sets the map window.
-- `--help` lists every `meta` key and copy-paste recipes. Start from `--dump-spec -`, not guesses.
+### Arguments
+- `--input`, `-i` — Zarr to draw; repeat for side-by-side panels.
+- `--layer` — `KIND:PATH` to stack on one map; repeat. Kinds: `heatmap`, `contour`, `scatter` (stations), `quiver` (wind u/v), `outline` and `mask` (GeoJSON). `outline` and `mask` also work with `-i`.
+- `--x`, `--y` — two series for an xy scatter.
+- `--spec` — Plotly figure JSON, inline or a file path.
+- `--theme-file` — JSON/TOML with a Plotly `template` and named `palettes`.
+- `--dump-spec` — print (`-`) or save (a path) the spec the tool would draw, without drawing.
+- `--output`, `-o` — `.png`, `.jpg`, or `.html` (interactive).
+
+### Customizing with `--spec`
+`--spec` is a [Plotly figure](https://plotly.com/python/reference/) laid over the one the tool builds; anything you leave out keeps its default. Each file is a trace with an id: `a`, `b`, … in `-i` / `--layer` order, `xy` for `--x` / `--y`. Use that id as `uid` to change a trace.
+
+| To | `--spec` |
+| --- | --- |
+| Set the title | `{"layout": {"title": {"text": "Week 1"}}}` |
+| Name a panel | `{"data": [{"uid": "a", "name": "CHIRPS"}]}` |
+| Pick one step | `{"data": [{"uid": "a", "meta": {"source": {"isel": {"step": 0}}}}]}` |
+| Set the color range | `{"data": [{"uid": "a", "zmin": 0, "zmax": 100}]}` |
+| Set the map window | `{"layout": {"meta": {"geo": {"bbox": [5.5, 33.5, -5, 42.5]}}}}` |
+| Draw contours | `{"data": [{"uid": "a", "type": "contour"}]}` |
+
+`isel` counts from 0 (`-1` is the last); `sel` picks by label (`{"time": "2026-10-01"}`). `bbox` is `[N, W, S, E]`. `--help` lists every option with recipes; `--dump-spec -` shows the spec for your files, ready to edit.
 
 ### Output
-The figure at `-o`. PNG/JPG print a `plot hash` and `data: not null` or `data: NULL` (everything NaN: check the input with inspect-zarr). Choices the plotter made go to stderr. Look at the image before choosing between layouts.
+The figure at `-o`. PNG/JPG also print `data: not null` or `data: NULL`; `NULL` means every value drawn is NaN.
 
 ### Notes
-- Every dim other than lat/lon and the panel dim must be selected (`isel` / `sel`) or reduced first with summarize-dim.
+- A map shows one value per cell. Pick one value of any extra dim (ensemble `number`, `vertical`) with `isel` / `sel`, panel it with `"meta": {"facet": "number"}`, or average it first with summarize-dim.
 - Precip rates with an `aggregation_period` are drawn as period totals (mm).
 
 ### Example
@@ -50,45 +64,35 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i chirps_week.zarr -i ecmwf_week.zar
   "data": [{"uid": "a", "name": "CHIRPS"}, {"uid": "b", "name": "ECMWF", "meta": {"source": {"isel": {"step": 0}}}}],
   "layout": {"title": {"text": "Week 1 rainfall"}, "meta": {"geo": {"bbox": [5.5, 33.5, -5, 42.5]}}}}'
 ```
-CHIRPS and ECMWF week-1 totals side by side over Kenya, each on its own grid, sharing one colorbar.
+CHIRPS and ECMWF week-1 rainfall side by side over Kenya, each on its own grid, with one shared colorbar.
 
 ## Details
 
-### What each file becomes
-
-| File | Trace |
-| --- | --- |
-| lat/lon grid | `heatmap`, one panel per `time` / `step` value, titled with its date. `meta.facet: "number"` or `"vertical"` panels that dim instead. |
-| `station_id` / `point_id` | `scatter` markers colored by value |
-| 1-D along time | line (`meta.bind: "series"`) |
-| `--x` + `--y` | one series against the other, joined on `meta.pair_on` |
-
 ### Panels and layers
-- Side-by-side `-i` traces sit on axes `x`/`y`, `x2`/`y2`, …. Panels of one quantity share a colorbar; give one `"coloraxis": "coloraxis2"` to split it.
-- Traces on the same axes stack as layers; layers of one quantity share a colorbar.
-- `layout.grid.rows` / `columns` shape a multi-panel trace (default: the most landscape grid with no empty row). `xgap` / `ygap` are fractions of a panel.
-- Panel titles are annotations `panel-title-1`, `panel-title-2`, …; a trace's `name` titles its panel.
-- Maps are plain x/y axes in degrees. Add markers and lines as `scatter` traces with `x` / `y`, boxes as `layout.shapes` with `xref: "x"`. `scattergeo` / `scattermap` are rejected.
-- An `outline` layer frames the map unless `geo.bbox` is set, and turns off Natural Earth admin-1 lines. For official boundaries, add a region GeoJSON as `--layer outline:PATH`.
-- Canvas size follows the maps (up to 760×560 px alone, 340×340 px per grid panel). `layout.width` / `height` fix it.
+- A file with several times or steps gets one panel each, titled with its date. `layout.grid.rows` / `columns` set the grid; `xgap` / `ygap` the spacing, as a fraction of a panel.
+- Panels showing the same quantity share one colorbar. To split one off: `{"data": [{"uid": "b", "coloraxis": "coloraxis2"}]}`.
+- Panel titles are annotations named `panel-title-1`, `panel-title-2`, …; rename one with `{"layout": {"annotations": [{"name": "panel-title-2", "text": "ECMWF"}]}}`.
+- Maps use plain x/y axes in degrees (x = longitude). Add points or lines as `scatter` traces with `x` / `y`, and boxes as `layout.shapes` with `xref: "x"`, `yref: "y"`.
+- An `outline` layer frames the map unless `geo.bbox` is set, and hides the built-in admin-1 lines. Use it to draw official boundaries.
+- The canvas fits the maps (up to 760×560 px for one map, 340×340 px per panel in a grid). `layout.width` / `height` fix it.
 
 ### Colors
-- Precip totals get the absolute-mm class palette `default_precip`, anomalies `default_precip_anom`; the window follows `aggregation_period` (<2 d 0–50 mm, <10 d 0–200, <40 d 0–400, longer 0–1000; anomalies ±50/±200/±300/±500). Name one in `meta.palette` when detection would miss, e.g. an anomaly from `difference`. Fixed windows: `ppt_daily` … `ppt_season`, `ppt_anom_*`.
-- CF `flag_values` fields (verify hits) get one class per flag. Temperatures get `RdYlBu_r`; fields spanning zero get `RdBu_r`; others a sequential scale.
-- `zmin` / `zmax` / `colorscale` on a trace give a continuous scale. `{"coloraxis": {"colorbar": {"orientation": "h"}}}` puts the colorbar under the maps.
-- Colorbar labels default to `long_name [units]`; forecast panels are titled with valid dates. Keep titles short.
+- Precip totals use the mm class palette `default_precip`; anomalies use `default_precip_anom`. The range follows `aggregation_period`: under 2 days 0–50 mm, under 10 days 0–200, under 40 days 0–400, longer 0–1000 (anomalies ±50 / ±200 / ±300 / ±500).
+- Set a palette with `"meta": {"palette": NAME}`: `default_precip`, `default_precip_anom`, `ppt_daily` … `ppt_season`, `ppt_anom_*`, `spi`, or your own `{colors, bounds}`.
+- Temperatures use `RdYlBu_r`; fields spanning zero use `RdBu_r`; flag fields (verify hits) get one color per flag.
+- `{"layout": {"coloraxis": {"colorbar": {"orientation": "h"}}}}` puts the colorbar under the maps.
 
 ### Provenance
-`weather_skills_history` is embedded in PNG metadata or the HTML `<meta>` tag (read it with the `provenance` skill). A PNG/JPG with a complete chain carries a small red seal bottom-right; leave it in.
+The file's history (`weather_skills_history`) is embedded in the PNG metadata or HTML `<meta>` tag; read it with the `provenance` skill. A PNG/JPG with a complete history carries a small red seal in the bottom-right corner.
 
 ### More examples
 ```bash
-# Stations and a county outline over IMERG
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -o layers.png \
+# Stations over IMERG, inside a county outline
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -o nairobi.png \
   --layer heatmap:imerg.zarr --layer scatter:tahmo.zarr --layer outline:nairobi.geojson \
   --spec '{"data": [{"uid": "b", "marker": {"size": 14}}]}'
-# Ensemble spaghetti with a 10–90% band (area mean from summarize-dim)
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i ens_area.zarr -o ens.png \
+# Ensemble members as lines with a 10–90% band
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i ens_area_mean.zarr -o ens.png \
   --spec '{"data": [{"uid": "a", "meta": {"bind": "series", "along": "number", "band": [10, 90]}}]}'
 # September IOD against October rainfall, one point per year
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --x iod_sep.zarr --y rain_oct.zarr -o iod.png \
