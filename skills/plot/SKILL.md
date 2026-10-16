@@ -22,8 +22,8 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i rain.zarr -o rain.png
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i chirps.zarr=OBS -i ecmwf.zarr=FC -o compare.png
 # Layers on one map, bottom first
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --layer heatmap:rain.zarr --layer scatter:stations.zarr --layer outline:kenya.geojson -o map.png
-# One series against another
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --x iod.zarr --y rain.zarr -o iod_vs_rain.png
+# One variable against another, both in one file (merge two files first)
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i iod_rain.zarr -o iod_vs_rain.png --spec '{"data": [{"uid": "0", "meta": {"x": "dmi", "y": "precip"}}]}'
 ```
 
 The plot type follows the data: a lat/lon grid is a colored map, stations are colored markers, a 1-D series is a line.
@@ -31,7 +31,6 @@ The plot type follows the data: a lat/lon grid is a colored map, stations are co
 ### Arguments
 - `--input`, `-i` — Zarr to draw, as `PATH` or `PATH=NAME`; repeat for side-by-side panels.
 - `--layer` — `KIND:PATH` or `KIND:PATH=NAME` to stack on one map; repeat. Kinds: `heatmap`, `contour`, `scatter` (stations), `quiver` (wind u/v), `outline` and `mask` (GeoJSON). `outline` and `mask` also work with `-i`.
-- `--x`, `--y` — two series for an xy scatter.
 - `--spec` — Plotly figure JSON, inline or a file path.
 - `--theme-file` — house style: a Plotly `template` (fonts, background, colors) and named `palettes` for `meta.palette`.
 - `--dump-spec` — print (`-`) or save (a path) the spec the tool would draw, without drawing.
@@ -40,7 +39,7 @@ The plot type follows the data: a lat/lon grid is a colored map, stations are co
 ### Customizing with `--spec`
 The tool picks sensible defaults; `--spec` changes them. It takes [Plotly figure](https://plotly.com/python/reference/) JSON, `{"data": [...], "layout": {...}}`, and you write only the parts you want to change.
 
-Each input file is one entry in `data`. Name it on the command line (`-i ecmwf.zarr=FC`), then put that name in `"uid"` to say which file a change applies to. Unnamed files are `"0"`, `"1"`, … in the order you passed them; `--x` / `--y` make one entry, `"xy"`.
+Each input file is one entry in `data`. Name it on the command line (`-i ecmwf.zarr=FC`), then put that name in `"uid"` to say which file a change applies to. Unnamed files are `"0"`, `"1"`, … in the order you passed them.
 
 | To | `--spec` |
 | --- | --- |
@@ -97,7 +96,4 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -o nairobi.png \
 # Ensemble members as lines with a 10–90% band
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i ens_area_mean.zarr -o ens.png \
   --spec '{"data": [{"uid": "0", "meta": {"bind": "series", "along": "number", "band": [10, 90]}}]}'
-# September IOD against October rainfall, one point per year
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --x iod_sep.zarr --y rain_oct.zarr -o iod.png \
-  --spec '{"data": [{"uid": "xy", "meta": {"pair_on": "year"}}]}'
 ```
