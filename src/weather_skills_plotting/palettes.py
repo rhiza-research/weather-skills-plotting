@@ -580,6 +580,7 @@ def builtin_palettes() -> dict:
 
 
 def _read_theme_file(path: Path) -> dict:
+    """The standard theme with the file at ``path`` layered on top, validated."""
     text = path.read_text(encoding="utf-8")
     if path.suffix.lower() == ".toml":
         import tomllib
@@ -598,16 +599,17 @@ def _read_theme_file(path: Path) -> dict:
             "defaults maps field kinds to a palette or Plotly colorscale, overlays maps "
             "base-map layers to Plotly line styles)"
         )
+    theme = default_theme()
     for name, entry in (data.get("palettes") or {}).items():
         parse_palette(entry, loc=f"{path}: palettes.{name}")
-    palettes = {**builtin_palettes(), **(data.get("palettes") or {})}
+    theme["palettes"].update(data.get("palettes") or {})
     for kind, value in (data.get("defaults") or {}).items():
         if kind not in DEFAULT_COLORS:
             raise UsageError(
                 f"plot theme file {path}: defaults.{kind} is not a field kind; "
                 f"known: {', '.join(DEFAULT_COLORS)}"
             )
-        _check_default_color(value, palettes, loc=f"{path}: defaults.{kind}")
+        _check_default_color(value, theme["palettes"], loc=f"{path}: defaults.{kind}")
     for name, style in (data.get("overlays") or {}).items():
         if name not in OVERLAY_NAMES or not isinstance(style, dict):
             raise UsageError(
@@ -624,7 +626,10 @@ def _read_theme_file(path: Path) -> dict:
         except ValueError as exc:
             msg = str(plotly_error(exc)).removeprefix("plot spec: ")
             raise UsageError(f"plot theme file {path}: overlays.{name}: {msg}") from None
-    return data
+    theme["template"] = data.get("template")
+    theme["defaults"].update(data.get("defaults") or {})
+    theme["overlays"] = deep_merge(theme["overlays"], data.get("overlays") or {})
+    return theme
 
 
 def _check_default_color(value, palettes: dict, *, loc: str) -> None:
@@ -672,14 +677,7 @@ def load_theme(path=None) -> dict:
         candidates = [Path(os.environ[_THEME_ENV])]
     if not candidates:
         candidates = [c for c in _USER_THEME_CANDIDATES if c.is_file()][:1]
-    data = _read_theme_file(candidates[0]) if candidates else {}
-    theme = default_theme()
-    return {
-        "template": data.get("template"),
-        "palettes": {**theme["palettes"], **(data.get("palettes") or {})},
-        "defaults": {**theme["defaults"], **(data.get("defaults") or {})},
-        "overlays": deep_merge(theme["overlays"], data.get("overlays") or {}),
-    }
+    return _read_theme_file(candidates[0]) if candidates else default_theme()
 
 
 def parse_palette(value, *, loc="meta.palette", registry: dict | None = None) -> dict:

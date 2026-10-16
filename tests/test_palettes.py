@@ -76,7 +76,7 @@ def test_theme_defaults_replace_kind_colors(tmp_path):
     with pytest.raises(UsageError, match="defaults.rain is not a field kind"):
         load_theme(path)
     path.write_text('{"defaults": {"precip": "no_such"}}')
-    with pytest.raises(UsageError, match="neither a palette nor|neither a palette"):
+    with pytest.raises(UsageError, match="neither a palette"):
         load_theme(path)
 
 
