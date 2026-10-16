@@ -5,24 +5,18 @@ How the figure stack works. Agent how-tos live in each skill's
 
 ## The spec is a Plotly figure
 
-Every skill's `--spec` is a standard Plotly figure, `{"data": [...], "layout": {...}}`.
-Plotly validates every key except `meta`, which Plotly allows on any trace and
-on `layout` without looking inside. The weather-skills bindings live there:
+Every skill's `--spec` is a standard Plotly figure, `{"data": [...], "layout": {...}}`
+(<https://plotly.com/python/reference/>). Plotly validates every key except
+`meta`, where the weather-skills bindings live:
 
-- `data[].meta` says what a trace draws: which input and variable
-  (`source`), how its arrays are filled (`bind`), which dim panels (`facet`),
-  how a series fans out (`along`, `band`), and which class palette colors
-  it (`palette`).
-- `layout.meta` holds figure-wide map settings: `geo.bbox`,
-  `geo.mask_geojson`, `geo.point`, `overlays`, and the `inputs` paths.
+- `data[].meta` says what a trace draws: its input and variable (`source`),
+  how its arrays are filled (`bind`), which dim makes panels (`facet`), how a
+  series fans out (`along`, `band`), and its class palette (`palette`).
+- `layout.meta` holds figure-wide settings: `inputs`, `geo` (bbox, mask,
+  point), `overlays` and `export`.
 
-Everything else is plain Plotly and documented at
-<https://plotly.com/python/reference/>. Agents already know that schema, so
-there is no custom key table to learn, and Plotly's validator rejects a
-misspelt key with a suggestion (`Did you mean "colorscale"?`). The `meta`
-blocks are checked by `spec.check_meta`, which lists the allowed keys on any
-error. The spec has no version-2 compatibility: a spec with the old top-level
-keys (`inputs`, `traces`, `geo`, `theme`, …) is rejected with a pointer here.
+`spec.check_meta` checks the `meta` blocks and lists the allowed keys on any
+error.
 
 ```mermaid
 flowchart LR
@@ -33,8 +27,7 @@ flowchart LR
   Validate --> Dump["--dump-spec"]
   Validate --> Bind[bind.py: fill arrays from Zarrs]
   Bind --> Assemble[figure.py: panels, color axes, overlays]
-  Assemble --> Fig[go.Figure]
-  Fig --> Out["PNG / JPG (kaleido) or HTML"]
+  Assemble --> Out["PNG / JPG (kaleido) or HTML"]
 ```
 
 ## Plotting computes as little as possible
@@ -51,109 +44,68 @@ The plotter selects and draws. Derived fields come from data skills upstream.
 ## Merging
 
 `merge_spec(base, overlay)` deep-merges `--spec` onto the figure the skill
-built:
+built, and the user wins:
 
-- `data[]` merges by `uid` (Plotly's trace identity), else by position. A new
-  `uid` appends a trace, which is how a user adds plain Plotly traces such as
-  city markers or a box outline.
-- `layout.annotations`, `shapes` and `images` merge by `name`, so
-  `{"name": "panel-title-2", "text": "…"}` renames one panel title.
-- Everything else is a recursive dict merge, and the user wins.
+- `data[]` merges by `uid`, else by position. A new `uid` adds a plain Plotly
+  trace (city markers, a box outline).
+- `layout.annotations`, `shapes` and `images` merge by `name`.
+- Everything else is a recursive dict merge.
 
-`--dump-spec` prints the merged spec before any data is loaded. It is small
-because it has no arrays. Its `layout.meta.inputs` keeps the file paths, so a
-dumped spec replays without file flags.
+`--dump-spec` prints the merged spec before any data is loaded. It has no
+arrays, and `layout.meta.inputs` keeps the file paths, so it replays without
+file flags.
 
 ## Binding (`bind.py`)
 
 | `meta.bind` | Plotly type | Fills |
 | --- | --- | --- |
-| `field` | heatmap, contour | `z` on lon/lat; one panel per `facet` value (default `step`/`time`); `number` averaged |
+| `field` | heatmap, contour | `z` on lon/lat; one panel per `facet` value (default `step`/`time`) |
 | `speed` | heatmap, contour | wind speed from u/v |
-| `arrows` | scatter | arrow polylines from u/v (`meta.arrows.step` / `.scale`) plus a 10 m/s key |
+| `arrows` | scatter | arrow polylines from u/v plus a 10 m/s key |
 | `points` | scatter | station markers colored by value |
-| `geojson` | scatter | boundary lines from a GeoJSON file; repeats on every panel |
-| `series` | scatter, bar | one line (or `along` fan, `band`) along time or valid time |
-| `xy` | scatter | one variable against another from the same input (`meta.x` / `meta.y`) |
-| `samples` | box, scatter | all samples per step (box) or their mean (scatter) at a point |
-| `windrose` | barpolar | one barpolar trace per speed class, frequency in percent |
+| `geojson` | scatter | boundary lines from a GeoJSON file, on every panel |
+| `series` | scatter, bar | one line along time, or an `along` fan / `band` |
+| `xy` | scatter | one variable against another (`meta.x` / `meta.y`) |
+| `samples` | box, scatter | all samples per step (box) or their mean (scatter) |
+| `windrose` | barpolar | one trace per speed class, frequency in percent |
 
-The default bind follows the trace type (`heatmap` → `field`, `barpolar` →
-`windrose`, …). Units go through `to_standard_units` and `precip_for_display`
-as before. The plotter selects but never averages: a size-1 dim is squeezed,
-and any other dim left over after `isel` / `sel` / `facet` / `along` is an
-error that names the fix. Averages (area means, ensemble means, a week of
-daily steps) are made first with `summarize-dim` or `aggregate-temporal`, so
-each step is its own Zarr in the provenance chain.
+The trace type picks the default bind (`heatmap` → `field`, `barpolar` →
+`windrose`, …). A size-1 dim is squeezed; any other dim left after `isel` /
+`sel` / `facet` / `along` is an error that names the fix. The only means the
+plotter draws are a band's mean line and the `samples` scatter. Every other
+average is made upstream with `summarize-dim` or `aggregate-temporal`.
 
-## Assembly (`figure.py`)
+## Assembly (`figure.py`, `layout.py`)
 
-- **Panels.** Map traces group by their `xaxis` anchor. Traces on the same
-  axes are layers, and traces on `x2`, `x3`, … are side-by-side panels, each
-  on its own lat/lon grid. One faceted group expands into one panel per
-  value; static layers (outlines, plain traces, single-time fields) repeat on
-  every panel. Unfaceted side-by-side traces keep their axis number as their
-  grid cell, so empty cells are allowed (`plot-verify` leaves one).
-- **Map axes.** Map axes are equal-degree lon/lat axes (`scaleanchor`), which
-  is the PlateCarree projection the cartopy version used. Plotly's geo
-  subplots cannot hold a heatmap, so they are not used.
-- **Layout.** Charts keep Plotly's layout (legend in a row above the plot
-  when there are two or more entries). Maps do not: Plotly's default canvas
-  and grid cells ignore a map's shape, so equal-degree maps floated small in
-  mostly empty cells. `layout.map_layout` sizes each panel from the lon/lat
-  aspect (up to 760×560 px alone, 340×340 in a grid), adds fixed pixel room
-  for titles, ticks and colorbars, and places each panel with an explicit
-  axis domain anchored to its own axes. `choose_grid` picks the grid closest
-  to a 1.6:1 page without an empty row. One colorbar stands on the right;
-  several stand beside the rows or under the columns they colour when the
-  panels split that way, else side by side along the bottom.
-- **Color axes.** Each color-scaled source trace gets a `coloraxis`. Traces
-  that name the same `coloraxis` share it, and traces of the same quantity
-  (colour title, palette, anomaly or not) share automatically, side by side
-  included; a shared precip palette widens to the longest period. Trace-level `colorscale`, `zmin`/`zmax`
-  (`marker.cmin`/`cmax`) and `colorbar` are lifted onto the axis.
+- **Panels.** Map traces on the same axes are layers; traces on `x2`, `x3`, …
+  are side-by-side panels, each on its own lat/lon grid. A faceted trace
+  expands into one panel per value, and static layers repeat on every panel.
+- **Map axes.** Equal-degree lon/lat axes (`scaleanchor`), not Plotly geo
+  subplots, which cannot hold a heatmap. Each panel is sized from its lon/lat
+  aspect, with fixed room for titles, ticks and colorbars.
+- **Color axes.** Each color-scaled trace gets a `coloraxis`. Traces of the
+  same quantity share one, and trace-level `colorscale`, `zmin`/`zmax` and
+  `colorbar` are lifted onto it.
 - **Class palettes.** Precipitation, SPI and percent-of-normal fields get the
-  CHC class palettes; CF flag fields get one class per flag, labelled with
-  `flag_meanings`. Plotly color scales are linear, so values become class
-  indices with a stepped colorscale and ticks at the class edges, while the
-  raw values stay in `customdata` for hover. User limits turn a class palette
-  into a continuous scale.
-- **Overlays.** Natural Earth coastline, borders, lakes, rivers and admin-1
-  become line traces, at a scale chosen from the map span. Cartopy is used
-  only to download and cache the shapefiles.
-- **Defaults.** Titles, colorbar labels, sizes and the `weather_skills`
-  template fill only what the user leaves unset; the user's `layout` is
-  merged last.
+  CHC class palettes; CF flag fields get one class per flag. Values are drawn
+  as class indices on a stepped colorscale, and the raw values stay in
+  `customdata` for hover. User limits turn a class palette into a
+  continuous scale.
+- **Overlays.** Natural Earth coastline, borders, lakes, rivers and admin-1,
+  as line traces at a scale chosen from the map span.
+- **Defaults.** Titles, colorbar labels, sizes and the theme fill only what
+  the user leaves unset.
 
 ## Output
 
-The `-o` suffix chooses the format: `.png`, `.jpg` (kaleido and headless
-Chrome, at Plotly's default scale; `layout.meta.export.scale` changes it), or `.html`
-(self-contained, interactive, works offline). Images print a pixel
-`plot hash` and a `data: not null | NULL` line. Provenance is embedded by the
-core decorator, in PNG `tEXt` chunks or an HTML `<meta>` tag.
-
-PNG export needs Chrome. kaleido uses an installed Chrome; otherwise run
-`plotly_get_chrome -y` once. CI does this before pytest.
-
-## Python surface
+The `-o` suffix picks the format: `.png` or `.jpg` (kaleido, needs Chrome) or
+`.html` (self-contained, interactive). Images print a pixel `plot hash` and a
+`data: not null | NULL` line. Provenance is embedded in PNG `tEXt` chunks or
+an HTML `<meta>` tag.
 
 ```python
-from weather_skills_plotting import compile, export, load_spec, merge_spec
+from weather_skills_plotting import compile, export
 
 fig = compile(spec, {"0": dataset})  # plotly.graph_objects.Figure
 export(fig, "out.png", datasets={"0": dataset})
 ```
-
-## Skill catalog
-
-| Skill | Job | Inputs | Built traces |
-| --- | --- | --- | --- |
-| [`plot`](../skills/plot/SKILL.md) | maps, series, xy, wind rose | `-i`, `--layer KIND:PATH` | one per file: heatmap / points / series; 1-D series share one axis and inherit `data[0]` settings |
-| [`plot-verify`](../skills/plot-verify/SKILL.md) | obs / lead forecasts / verify grid | `--obs`, `--forecast`, `--verify` | 2-row grid, two color axes |
-| [`plot-mediogram`](../skills/plot-mediogram/SKILL.md) | ensemble vs m-climate at a point | forecast + m-climate `-i` | two `box` traces and a mean line |
-| [`plot-video`](../skills/plot-video/SKILL.md) | animated map through time / step | one gridded `-i`, `.html` out | one heatmap; panels become frames on one color axis |
-
-A shared lat/lon grid is needed only by `difference` and `verify`. Do not
-coarsen or downscale just to draw. Precipitation figures expect totals
-(`mm`): run `aggregate-temporal`, then `convert-to-totals`.
