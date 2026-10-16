@@ -236,7 +236,7 @@ def precip_for_display(ds, name: str):
         return ds
     try:
         assert_nonoverlapping_intervals(ds, dim, period)
-        total = rate_to_total(da, period)
+        total = rate_to_total(da, period, dim=dim)
     except UsageError:
         return ds
     plain = total.pint.dequantify() if total.pint.units is not None else total

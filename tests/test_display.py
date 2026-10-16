@@ -147,6 +147,18 @@ def test_precip_for_display_converts_aggregated_rate():
     np.testing.assert_allclose(out["precip"].values, 2.0)
 
 
+def test_precip_for_display_monthly_uses_real_month_lengths():
+    """Monthly rates become totals over each calendar month (31, 28, 31 days)."""
+    import pandas as pd
+
+    ds = make_gridded(name="precip", fill=2.0, units="mm day-1", n_time=3)
+    ds = ds.assign_coords(time=pd.date_range("2026-01-01", periods=3, freq="MS"))
+    ds["precip"].attrs["aggregation_period"] = "1 month"
+    out = dl.precip_for_display(ds, "precip")
+    assert out["precip"].attrs["units"] == STANDARD["precip_amount"]["units"]
+    np.testing.assert_allclose(out["precip"].isel(latitude=0, longitude=0).values, [62, 56, 62])
+
+
 def test_precip_for_display_noop_without_period():
     """Without aggregation_period the rate is left as a rate."""
     ds = make_gridded(name="precip", units="mm day-1")
