@@ -38,7 +38,7 @@ from weather_skills_plotting.series import (
 from weather_skills_plotting.spec import DUMP_SPEC_HELP, SPEC_ARGUMENT_HELP, merge_spec
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.2"
+_SKILL_VERSION = "0.0.3"
 
 LAYER_KINDS = ("heatmap", "contour", "scatter", "quiver", "outline", "mask")
 _ZARR_LAYERS = frozenset({"heatmap", "contour", "scatter", "quiver"})

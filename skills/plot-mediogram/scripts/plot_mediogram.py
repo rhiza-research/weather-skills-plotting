@@ -29,7 +29,7 @@ from weather_skills_plotting.reference import install_spec_help
 from weather_skills_plotting.spec import DUMP_SPEC_HELP, SPEC_ARGUMENT_HELP, merge_spec
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.2"
+_SKILL_VERSION = "0.0.3"
 
 MAX_STEPS = 15
 # ECMWF's mediogram colours, a little softer than pure cyan and red.
