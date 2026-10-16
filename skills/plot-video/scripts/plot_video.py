@@ -57,7 +57,7 @@ def plot_video(ds, output, spec=None, theme_file=None, dump_spec=None, **kwargs)
     if lat not in grid.dims or lon not in grid.dims:
         raise UsageError(
             f"plot-video needs a latitude/longitude grid; got dims {list(grid.dims)}. "
-            "For station or 1-D data use plot or plot-timeseries"
+            "For station or 1-D data use plot"
         )
     data = [{"uid": key, "type": "heatmap", "meta": {"source": {"input": key}}}]
     base = skeleton("plot-video", datasets, data)

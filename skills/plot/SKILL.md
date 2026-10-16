@@ -20,26 +20,28 @@ Draws one or more Zarrs as a figure. Name the files on the command line; set tit
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i rain.zarr -o rain.png
 # Maps side by side, each on its own grid
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i chirps.zarr=OBS -i ecmwf.zarr=FC -o compare.png
+# Area means or stations as lines on one time axis
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i chirps_area.zarr -i imerg_area.zarr -o rain.png
 # Layers on one map, bottom first
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --layer heatmap:rain.zarr --layer scatter:stations.zarr --layer outline:kenya.geojson -o map.png
-# One variable against another (merge puts both in one file)
+# One variable against another
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i iod_rain.zarr -o iod_vs_rain.png --spec '{"data": [{"uid": "0", "meta": {"x": "dmi", "y": "precip"}}]}'
 ```
 
-The plot type follows the data: a lat/lon grid is a colored map, stations are colored markers, a 1-D series is a line. `meta.x` / `meta.y` scatter two variables.
+The plot type follows the data: a lat/lon grid is a colored map, stations are colored markers, 1-D series are lines on one time axis. `meta.x` / `meta.y` scatter two variables.
 
 ### Arguments
-- `--input`, `-i` — Zarr to draw, as `PATH` or `PATH=NAME`; repeat for side-by-side panels.
+- `--input`, `-i` — Zarr to draw, as `PATH` or `PATH=NAME`; repeat for side-by-side maps or more lines.
 - `--layer` — `KIND:PATH` or `KIND:PATH=NAME` to stack on one map; repeat. Kinds: `heatmap`, `contour`, `scatter` (stations), `quiver` (wind u/v), `outline` and `mask` (GeoJSON). `outline` and `mask` also work with `-i`.
 - `--spec` — Plotly figure JSON, inline or a file path.
-- `--theme-file` — house style: a Plotly `template` (fonts, background, colors) and named `palettes` for `meta.palette`.
+- `--theme-file` — house style: a Plotly `template` and named `palettes`.
 - `--dump-spec` — print (`-`) or save (a path) the spec, without drawing.
 - `--output`, `-o` — `.png`, `.jpg`, or `.html`.
 
 ### Customizing with `--spec`
-The tool picks sensible defaults; `--spec` changes them. It takes [Plotly figure](https://plotly.com/python/reference/) JSON, `{"data": [...], "layout": {...}}`, and you write only the parts you want to change.
+`--spec` changes the defaults. It takes [Plotly figure](https://plotly.com/python/reference/) JSON, `{"data": [...], "layout": {...}}`; write only the parts you change.
 
-Each input file is one entry in `data`. Name it on the command line (`-i ecmwf.zarr=FC`), then put that name in `"uid"` to say which file a change applies to. Unnamed files are `"0"`, `"1"`, … in the order you passed them.
+Each input file is one entry in `data`. Name it on the command line (`-i ecmwf.zarr=FC`) and put that name in `"uid"`. Unnamed files are `"0"`, `"1"`, … in order.
 
 | To | `--spec` |
 | --- | --- |
@@ -50,14 +52,14 @@ Each input file is one entry in `data`. Name it on the command line (`-i ecmwf.z
 | Set the map window | `{"layout": {"meta": {"geo": {"bbox": [5.5, 33.5, -5, 42.5]}}}}` |
 | Draw contours | `{"data": [{"uid": "0", "type": "contour"}]}` |
 
-`isel` counts from 0 (`-1` is the last); `sel` picks by label (`{"time": "2026-10-01"}`). `bbox` is `[N, W, S, E]`. `--help` lists every option with recipes; `--dump-spec -` shows the spec for your files, ready to edit.
+`isel` counts from 0 (`-1` is the last); `sel` picks by label. `bbox` is `[N, W, S, E]`. `--help` lists every option; `--dump-spec -` shows the spec for your files.
 
 ### Output
 The figure at `-o`. PNG/JPG also print `data: not null` or `data: NULL`; `NULL` means every value drawn is NaN.
 
 ### Notes
 - A map shows one value per cell. Pick one value of any extra dim (ensemble `number`, `vertical`) with `isel` / `sel`, panel it with `"meta": {"facet": "number"}`, or average it first with summarize-dim.
-- Precip rates with an `aggregation_period` are drawn as period totals (mm).
+- Precip rates with an `aggregation_period` are drawn as period totals (mm). If only some lines on an axis have one, all stay rates.
 
 ### Example
 ```bash
@@ -76,6 +78,17 @@ CHIRPS and ECMWF week-1 rainfall side by side over Kenya, each on its own grid, 
 - Maps use plain x/y axes in degrees (x = longitude). Add points or lines as `scatter` traces with `x` / `y`, and boxes as `layout.shapes` with `xref: "x"`, `yref: "y"`.
 - An `outline` layer frames the map unless `geo.bbox` is set, and hides the built-in admin-1 lines. Use it to draw official boundaries.
 - The canvas fits the maps (up to 760×560 px for one map, 340×340 px per panel in a grid). `layout.width` / `height` fix it.
+
+### Lines over time
+- A series runs along `time`, or for a forecast along its valid date (init time + `step`). Every other dim must go: pick one value with `isel` / `sel`, draw one line per value with `"along": "number"`, or average it first with summarize-dim (for an area mean, `--dim latitude --dim longitude --method mean --lat-weighted`).
+- Each 1-D file is one line on one shared axis (up to 26 files). The legend names it after its file, or its station id; `"name"` renames it. With two or more lines the legend sits in rows above the plot; one line has none.
+- Settings under `meta` on the first line (`along`, `band`, `members`, `align`, `source.variable`) apply to every line that does not set its own. `along` passes only to files that have that dim, so a climatology next to an ensemble stays one line. Set a key to `null` on a later line to drop it.
+- `"along": "number"` draws one line per member under one legend entry; `"along_color": "cycle"` gives each its own color and entry. `"band": [10, 90]` shades that percentile range and draws the mean bold; `"members": false` hides the members. With `"type": "bar"`, `along` gives one bar series per value.
+- Two variables of one file are two `-i` of the same path, each with its own `"meta": {"source": {"variable": …}}`.
+- One panel per line: `{"layout": {"grid": {"rows": 2, "columns": 1, "pattern": "coupled"}}}`. A right-hand axis: `{"data": [{"uid": "1", "yaxis": "y2"}], "layout": {"yaxis2": {"overlaying": "y", "side": "right"}}}`.
+- Lines on one axis with different units, or with no dates in common, print a warning and still draw.
+- `"align": "dayofyear"` on the first line puts every year on one calendar, labelled `1 Oct`, `15 Nov`, … (29 Feb joins 28 Feb). Pass one file per year, each a single season; a season across New Year (DJF) puts Jan–Feb at the left.
+- The y-axis label is the variable's `long_name` and units. A rainfall axis does not go below zero.
 
 ### Colors
 - Precip totals use the mm class palette `default_precip`; anomalies use `default_precip_anom`. The range follows `aggregation_period`: under 2 days 0–50 mm, under 10 days 0–200, under 40 days 0–400, longer 0–1000 (anomalies ±50 / ±200 / ±300 / ±500).
@@ -96,4 +109,10 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -o nairobi.png \
 # Ensemble members as lines with a 10–90% band
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i ens_area_mean.zarr -o ens.png \
   --spec '{"data": [{"uid": "0", "meta": {"along": "number", "band": [10, 90]}}]}'
+# Daily CHIRPS as bars, climatology as a dashed line
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i obs_area.zarr=OBS -i clim_area.zarr=CLIM -o obs_vs_clim.png \
+  --spec '{"data": [{"uid": "OBS", "name": "CHIRPS", "type": "bar"}, {"uid": "CLIM", "name": "Climatology", "line": {"dash": "dash"}}]}'
+# Three OND seasons on one calendar
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i chirps_ond_2023.zarr -i chirps_ond_2024.zarr -i chirps_ond_2025.zarr -o ond.png \
+  --spec '{"data": [{"uid": "0", "meta": {"align": "dayofyear"}}]}'
 ```

@@ -248,3 +248,135 @@ def test_provenance_records_spec_and_layers(tmp_path, plot_fn):
     args = load_figure_history(out)[-1]["args"]
     assert args["spec"] == spec
     assert args["layer"] == [f"heatmap:{grid}"]
+
+
+# ------------------------------------------------------------ several series
+
+
+def _area(ds):
+    """An area mean, as summarize-dim --dim latitude --dim longitude writes it."""
+    return ds.mean(["latitude", "longitude"], keep_attrs=True)
+
+
+def test_series_share_one_axis_named_by_file(tmp_path, plot_fn, capsys):
+    a = write_zarr(_area(make_gridded(n_time=3)), tmp_path / "chirps.zarr")
+    b = write_zarr(_area(make_gridded(n_time=3, fill=2.0)), tmp_path / "imerg.zarr")
+    spec = _dump(plot_fn, capsys, "-i", str(a), "-i", str(b))
+    assert [(t["uid"], t["name"]) for t in spec["data"]] == [("0", "chirps"), ("1", "imerg")]
+    assert not any("xaxis" in t or "yaxis" in t for t in spec["data"])
+
+    from weather_skills_plotting import compile
+
+    fig = compile(spec, {"0": xr.open_zarr(a), "1": xr.open_zarr(b)})
+    assert {(t.xaxis, t.yaxis) for t in fig.data} == {("x", "y")}
+
+
+def test_first_series_settings_apply_to_the_rest(tmp_path, plot_fn, capsys):
+    a = write_zarr(_area(make_gridded(n_time=3)), tmp_path / "a.zarr")
+    b = write_zarr(_area(make_gridded(n_time=3)), tmp_path / "b.zarr")
+    user = {
+        "data": [
+            {"uid": "0", "meta": {"source": {"variable": "precip"}}},
+            {"uid": "1", "type": "bar"},
+        ]
+    }
+    spec = _dump(plot_fn, capsys, "-i", str(a), "-i", str(b), "--spec", json.dumps(user))
+    assert spec["data"][1]["meta"]["source"]["variable"] == "precip"
+    assert spec["data"][1]["type"] == "bar"
+    out = tmp_path / "ts.png"
+    run_skill(plot_fn, "-i", str(a), "-i", str(b), "-o", str(out), "--spec", json.dumps(user))
+    assert out.is_file()
+
+
+def test_along_passes_only_to_series_with_that_dim(tmp_path, plot_fn, capsys):
+    fc = write_zarr(_area(make_forecast(members=4)), tmp_path / "fc.zarr")
+    clim = write_zarr(_area(make_forecast(members=4)).isel(number=0), tmp_path / "clim.zarr")
+    user = {"data": [{"uid": "0", "meta": {"along": "number", "band": [10, 90]}}]}
+    spec = _dump(plot_fn, capsys, "-i", str(fc), "-i", str(clim), "--spec", json.dumps(user))
+    assert "along" not in spec["data"][1]["meta"] and "band" not in spec["data"][1]["meta"]
+    out = tmp_path / "ens.html"
+    run_skill(plot_fn, "-i", str(fc), "-i", str(clim), "-o", str(out), "--spec", json.dumps(user))
+    assert "Plotly.newPlot" in out.read_text()
+
+
+def test_station_series_named_by_station_id(tmp_path, plot_fn, capsys):
+    one = make_point_obs(n_points=2).isel(point_id=1)
+    path = write_zarr(one, tmp_path / "tahmo.zarr")
+    spec = _dump(plot_fn, capsys, "-i", str(path))
+    assert spec["data"][0]["name"] == "S1"
+
+
+def test_mixed_units_warns_on_one_axis_only(tmp_path, plot_fn, capsys):
+    a = _area(make_gridded(n_time=2))
+    b = _area(make_gridded(n_time=2))
+    b["precip"].attrs["units"] = "mm"
+    pa, pb = write_zarr(a, tmp_path / "a.zarr"), write_zarr(b, tmp_path / "b.zarr")
+    run_skill(plot_fn, "-i", str(pa), "-i", str(pb), "--dump-spec", "-")
+    assert "different units" in capsys.readouterr().err
+
+    # Separate panels from layout.grid are separate y-axes: no warning.
+    grid = {"layout": {"grid": {"rows": 2, "columns": 1, "pattern": "coupled"}}}
+    out = tmp_path / "panels.png"
+    run_skill(plot_fn, "-i", str(pa), "-i", str(pb), "-o", str(out), "--spec", json.dumps(grid))
+    assert "different units" not in capsys.readouterr().err
+    assert out.is_file()
+
+
+def test_series_with_no_common_dates_warn(tmp_path, plot_fn, capsys):
+    import numpy as np
+
+    a = _area(make_gridded(n_time=2))
+    b = a.assign_coords(time=np.array(["2027-01-01", "2027-01-02"], dtype="datetime64[ns]"))
+    pa, pb = write_zarr(a, tmp_path / "a.zarr"), write_zarr(b, tmp_path / "b.zarr")
+    run_skill(plot_fn, "-i", str(pa), "-i", str(pb), "--dump-spec", "-")
+    assert "share no dates" in capsys.readouterr().err
+
+
+def test_gridded_input_as_a_series_names_the_fix(tmp_path, plot_fn, capsys):
+    a = write_zarr(make_gridded(n_time=2), tmp_path / "a.zarr")
+    user = {"data": [{"uid": "0", "type": "scatter", "meta": {"bind": "series"}}]}
+    with pytest.raises(SystemExit):
+        run_skill(plot_fn, "-i", str(a), "-o", str(tmp_path / "x.png"), "--spec", json.dumps(user))
+    assert "summarize-dim" in capsys.readouterr().err
+
+
+def test_too_many_series(tmp_path, plot_fn, capsys):
+    path = write_zarr(_area(make_gridded(n_time=2)), tmp_path / "a.zarr")
+    argv = [arg for i in range(27) for arg in ("-i", f"{path}=s{i}")]
+    with pytest.raises(SystemExit):
+        run_skill(plot_fn, *argv, "--dump-spec", "-")
+    assert "at most 26" in capsys.readouterr().err
+
+
+def test_mixed_rate_and_aggregated_precip_stay_rates_on_shared_axis(tmp_path, plot_fn, capsys):
+    """A daily rate next to a weekly aggregate must not mix mm/day with mm totals."""
+    import numpy as np
+
+    from weather_skills_plotting.series import keep_mixed_precip_as_rates
+
+    daily = _area(make_gridded(n_time=14))
+    weekly = _area(make_gridded(n_time=2, fill=3.0)).assign_coords(
+        time=np.array(["2026-01-01", "2026-01-08"], dtype="datetime64[ns]")
+    )
+    weekly["precip"].attrs["aggregation_period"] = "7 day"
+    a = write_zarr(daily, tmp_path / "daily.zarr")
+    b = write_zarr(weekly, tmp_path / "weekly.zarr")
+    run_skill(plot_fn, *("-i", str(a), "-i", str(b), "-o", str(tmp_path / "ts.html")))
+    err = capsys.readouterr().err
+    assert "drawn as a rate" in err
+    assert "different units" not in err
+
+    spec = {"data": [{"meta": {"source": {"input": "a"}}}, {"meta": {"source": {"input": "b"}}}]}
+    kept = keep_mixed_precip_as_rates(spec, {"a": daily, "b": weekly})
+    assert "aggregation_period" not in kept["b"]["precip"].attrs
+    assert weekly["precip"].attrs["aggregation_period"] == "7 day"  # input untouched
+
+    # Each on its own axis: the weekly series keeps its period and becomes a total.
+    spec["data"][1]["yaxis"] = "y2"
+    kept = keep_mixed_precip_as_rates(spec, {"a": daily, "b": weekly})
+    assert kept["b"]["precip"].attrs["aggregation_period"] == "7 day"
+    # Separate grid panels count as separate axes too.
+    del spec["data"][1]["yaxis"]
+    spec["layout"] = {"grid": {"rows": 2, "columns": 1, "pattern": "coupled"}}
+    kept = keep_mixed_precip_as_rates(spec, {"a": daily, "b": weekly})
+    assert kept["b"]["precip"].attrs["aggregation_period"] == "7 day"
