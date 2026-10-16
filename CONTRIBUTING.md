@@ -27,11 +27,7 @@ with a relative `path`, not a git URL, so a script and the library it calls
 always move together in one commit. See any `skills/*/scripts/*.py` header
 for the exact form.
 
-Design rule: the plotting library computes as little as possible. Derived
-fields (means, anomalies, smoothing, feature detection such as highs and lows)
-come from data skills upstream, and new `meta` keys are a last resort after
-standard Plotly keys. See
-[docs/plotting.md](docs/plotting.md#plotting-computes-as-little-as-possible).
+Design rule: [plotting computes as little as possible](docs/plotting.md#plotting-computes-as-little-as-possible).
 
 ## Skill correctness tests
 
