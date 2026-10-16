@@ -1,0 +1,33 @@
+{
+  "template": {
+    "layout": {
+      "colorway": [
+        "#4c72b0", "#dd8452", "#55a868", "#c44e52", "#8172b3",
+        "#937860", "#da8bc3", "#8c8c8c", "#ccb974", "#64b5cd"
+      ],
+      "shapedefaults": {
+        "fillcolor": "rgba(0,0,0,0)",
+        "opacity": 1,
+        "line": {"width": 2, "color": "#333333"}
+      }
+    }
+  },
+  "palettes": {},
+  "defaults": {
+    "precip": "default_precip",
+    "precip_anomaly": "default_precip_anom",
+    "precip_poa": "ppt_poa",
+    "spi": "spi",
+    "wind_speed": "YlGn",
+    "diverging": "RdBu_r",
+    "temperature": "RdYlBu_r",
+    "sequential": "rocket"
+  },
+  "overlays": {
+    "admin1": {"line": {"color": "#737373", "width": 0.6}},
+    "rivers": {"line": {"color": "#708090", "width": 0.6}},
+    "lakes": {"line": {"color": "#4d5b6b", "width": 0.9}},
+    "borders": {"line": {"color": "#262626", "width": 1.2}},
+    "coastline": {"line": {"color": "black", "width": 1.2}}
+  }
+}

@@ -628,3 +628,60 @@ def test_same_standard_name_shares_a_bar_and_small_bbox_keeps_overlapped_cells()
     assert np.asarray(field["z"]).size > 0
     points = next(t for t in _data(fig) if t["uid"].startswith("b"))
     assert points["marker"]["coloraxis"] == field["coloraxis"]
+
+
+def test_theme_file_sets_palette_colorway_and_overlays(tmp_path):
+    from weather_skills_plotting.palettes import load_theme
+
+    path = tmp_path / "theme.json"
+    path.write_text(
+        json.dumps(
+            {
+                "template": {"layout": {"colorway": ["#123456", "#654321"]}},
+                "palettes": {
+                    "agency": {"colors": ["#fff", "#fff", "#0a0", "#00f"], "bounds": [0, 1, 10]}
+                },
+                "defaults": {"precip": "agency"},
+                "overlays": {"borders": {"line": {"color": "#ff0000"}}},
+            }
+        )
+    )
+    theme = load_theme(path)
+    ds = make_gridded(n_time=1)
+    ds["precip"].attrs.update(units="mm", aggregation_period="7 day")
+    fig = compile({"data": [_trace("a")]}, {"a": ds}, theme=theme)
+    bar = _layout(fig)["coloraxis"]["colorbar"]
+    assert list(bar["ticktext"]) == ["0", "1", "10"]
+    borders = [t for t in _data(fig, "scatter") if str(t["uid"]).startswith("overlay-borders")]
+    assert borders and all(t["line"]["color"] == "#ff0000" for t in borders)
+    # A palette that exists only in the theme file is a known meta.palette name.
+    fig = compile({"data": [_trace("a", meta={"palette": "agency"})]}, {"a": ds}, theme=theme)
+    assert list(_layout(fig)["coloraxis"]["colorbar"]["ticktext"]) == ["0", "1", "10"]
+    # Explicit series colors (ensemble members, band) follow the template's colorway.
+    meta = {"bind": "series", "along": "number", "band": [10, 90]}
+    area_mean = make_forecast(n_number=5, n_step=4).mean(["latitude", "longitude"], keep_attrs=True)
+    fig = compile({"data": [_trace("a", type="scatter", meta=meta)]}, {"a": area_mean}, theme=theme)
+    assert _data(fig)[0]["line"]["color"] == "#123456"
+
+
+def test_colorblind_template_keeps_its_colorway_under_a_theme(tmp_path):
+    from weather_skills_plotting.palettes import COLORBLIND, load_theme
+
+    path = tmp_path / "theme.json"
+    path.write_text(json.dumps({"template": {"layout": {"colorway": ["#123456", "#654321"]}}}))
+    meta = {"bind": "series", "along": "number"}
+    area_mean = make_forecast(n_number=2, n_step=4).mean(["latitude", "longitude"], keep_attrs=True)
+    spec = {
+        "data": [_trace("a", type="scatter", meta=meta)],
+        "layout": {"template": "colorblind"},
+    }
+    fig = compile(spec, {"a": area_mean}, theme=load_theme(path))
+    assert _data(fig)[0]["line"]["color"] == COLORBLIND[0]
+
+
+def test_partial_theme_dict_gets_the_standard_keys():
+    from weather_skills_plotting.palettes import builtin_palettes
+
+    ds = make_gridded(n_time=1)
+    fig = compile({"data": [_trace("a")]}, {"a": ds}, theme={"palettes": builtin_palettes()})
+    assert any(str(t["uid"]).startswith("overlay-borders") for t in _data(fig, "scatter"))

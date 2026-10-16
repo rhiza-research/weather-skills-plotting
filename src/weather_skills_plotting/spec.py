@@ -267,10 +267,9 @@ def _check_source(source, loc: str) -> None:
             raise UsageError(f'plot spec {loc}.point must be {{"lat": …, "lon": …}}')
 
 
-def check_trace_meta(meta, loc: str) -> None:
+def check_trace_meta(meta, loc: str, palettes: dict | None = None) -> None:
     from weather_skills_plotting.palettes import (
         DEFAULT_PRECIP_PALETTES,
-        load_theme,
         parse_palette,
     )
 
@@ -304,7 +303,8 @@ def check_trace_meta(meta, loc: str) -> None:
         raise UsageError(f"plot spec {loc}.align must be 'dayofyear'")
     palette = meta.get("palette")
     if palette is not None and str(palette).lower() not in DEFAULT_PRECIP_PALETTES:
-        parse_palette(palette, loc=f"{loc}.palette", registry=load_theme()["palettes"])
+        # Names resolve against the theme in use (built-ins when none is given).
+        parse_palette(palette, loc=f"{loc}.palette", registry=palettes)
 
 
 def check_layout_meta(meta) -> None:
@@ -370,7 +370,7 @@ def check_layout_meta(meta) -> None:
                 )
 
 
-def check_meta(spec: dict) -> None:
+def check_meta(spec: dict, palettes: dict | None = None) -> None:
     """Check every ``meta`` block (Plotly does not look inside them)."""
     seen = set()
     for i, trace in enumerate(spec.get("data") or []):
@@ -389,7 +389,7 @@ def check_meta(spec: dict) -> None:
             )
         meta = trace.get("meta")
         if meta is not None:
-            check_trace_meta(meta, f"data[{i}].meta")
+            check_trace_meta(meta, f"data[{i}].meta", palettes)
     meta = (spec.get("layout") or {}).get("meta")
     if meta is not None:
         check_layout_meta(meta)
@@ -420,15 +420,18 @@ def plotly_error(exc: Exception, loc: str = "") -> UsageError:
     )
 
 
-def validate(spec: dict) -> dict:
-    """Check the meta blocks, then let Plotly validate everything else."""
+def validate(spec: dict, palettes: dict | None = None) -> dict:
+    """Check the meta blocks, then let Plotly validate everything else.
+
+    ``palettes`` is the theme's registry (``load_theme``) that palette names resolve in.
+    """
     import plotly.graph_objects as go
     import plotly.io as pio
 
     from weather_skills_plotting.layout import register_templates
 
     check_shape(spec)
-    check_meta(spec)
+    check_meta(spec, palettes)
     # Our template names must exist before Plotly checks layout.template.
     if "weather_skills" not in pio.templates:
         register_templates()

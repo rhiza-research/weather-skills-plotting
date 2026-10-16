@@ -34,7 +34,7 @@ The plot type follows the data: a lat/lon grid is a colored map, stations are co
 - `--input`, `-i` — Zarr to draw, as `PATH` or `PATH=NAME`; repeat for side-by-side maps or more lines.
 - `--layer` — `KIND:PATH` or `KIND:PATH=NAME` to stack on one map; repeat. Kinds: `heatmap`, `contour`, `scatter` (stations), `quiver` (wind u/v), `outline` and `mask` (GeoJSON). `outline` and `mask` also work with `-i`.
 - `--spec` — Plotly figure JSON, inline or a file path.
-- `--theme-file` — house style: a Plotly `template` and named `palettes`.
+- `--theme-file` — house style: a Plotly `template`, named `palettes`, per-field `defaults`, and base-map `overlays` (see Colors).
 - `--dump-spec` — print (`-`) or save (a path) the spec, without drawing.
 - `--output`, `-o` — `.png`, `.jpg`, or `.html`.
 
@@ -95,7 +95,12 @@ CHIRPS and ECMWF week-1 rainfall side by side over Kenya, each on its own grid, 
 - Set a palette with `"meta": {"palette": NAME}`: `default_precip`, `default_precip_anom`, `ppt_daily` … `ppt_season`, `ppt_anom_*`, `spi`, or your own `{colors, bounds}`.
 - Temperatures use `RdYlBu_r`; fields spanning zero use `RdBu_r`; flag fields (verify hits) get one color per flag.
 - `{"layout": {"coloraxis": {"colorbar": {"orientation": "h"}}}}` puts the colorbar under the maps.
-- A `--theme-file` palette named like a built-in one replaces it. Without `--theme-file`, `$WEATHER_SKILLS_PLOT_THEME` or `~/.config/weather-skills/plot.json|toml` is used if present.
+- The standard look is one theme file, `weather_skills_plotting/themes/default.json` in this package; `themes/README.md` beside it explains each key. A `--theme-file` is JSON/TOML with any of its four keys, layered on top of it — copy `default.json` to start one:
+  - `template`: a Plotly template (fonts, colorway, backgrounds).
+  - `palettes`: `{name: {colors, bounds}}` for `meta.palette`; a name like a built-in one replaces it.
+  - `defaults`: what a field gets when the spec names no palette, per kind: `precip`, `precip_anomaly`, `precip_poa`, `spi`, `wind_speed`, `diverging`, `temperature`, `sequential`. A value is a palette (name, color list or `{colors, bounds}`) or a Plotly colorscale name.
+  - `overlays`: line styles per base-map layer, e.g. `{"borders": {"line": {"color": "#333333"}}}`.
+- Without `--theme-file`, `$WEATHER_SKILLS_PLOT_THEME` or `~/.config/weather-skills/plot.json|toml` is used if present.
 
 ### Provenance
 The file's history (`weather_skills_history`) is embedded in the PNG metadata or HTML `<meta>` tag; read it with the `provenance` skill. A PNG/JPG with a complete history carries a small red seal in the bottom-right corner.

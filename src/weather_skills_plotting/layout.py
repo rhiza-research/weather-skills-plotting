@@ -14,36 +14,32 @@ import math
 
 from weather_skills_core.errors import UsageError
 
-from weather_skills_plotting.palettes import COLORBLIND, DEEP
+from weather_skills_plotting.palettes import COLORBLIND, default_theme
 
 DEFAULT_TEMPLATE = "weather_skills"
 
 
-def register_templates(user_template: dict | None = None) -> None:
-    """``weather_skills`` and ``colorblind``: Plotly's ``seaborn`` template with a colorway.
+def register_templates(template: dict | None = None) -> None:
+    """``weather_skills`` and ``colorblind``: Plotly's ``seaborn`` with the theme's template.
 
-    A theme file's ``template`` is layered on top of both.
+    ``template`` is the theme's (``themes/default.json`` when None).
+    ``colorblind`` keeps its own colorway, since picking it is an accessibility choice.
     """
     import plotly.graph_objects as go
     import plotly.io as pio
 
-    for name, colorway in (("weather_skills", DEEP), ("colorblind", COLORBLIND)):
+    if template is None:
+        template = default_theme()["template"]
+    for name in ("weather_skills", "colorblind"):
         base = copy.deepcopy(pio.templates["seaborn"])
-        base.layout.colorway = colorway
-        # seaborn's shapes have no line and a blue fill, so a box given only a line
-        # color draws as a tinted patch. A shape is an outline unless it sets a fill.
-        base.layout.shapedefaults = {
-            "fillcolor": "rgba(0,0,0,0)",
-            "line": {"width": 2, "color": "#333333"},
-            "opacity": 1,
-        }
-        if user_template:
-            try:
-                base.update(go.layout.Template(user_template))
-            except ValueError as exc:
-                from weather_skills_plotting.spec import plotly_error
+        try:
+            base.update(go.layout.Template(template))
+        except ValueError as exc:
+            from weather_skills_plotting.spec import plotly_error
 
-                raise plotly_error(exc, "theme file template") from None
+            raise plotly_error(exc, "theme file template") from None
+        if name == "colorblind":
+            base.layout.colorway = COLORBLIND
         pio.templates[name] = base
 
 

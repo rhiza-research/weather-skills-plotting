@@ -60,7 +60,7 @@ def _variable(ds, user, uid):
 @weather_skill.argument("--spec", type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
 @weather_skill.argument(
     "--theme-file",
-    help="Theme JSON/TOML: {template: <Plotly template>, palettes: {…}}.",
+    help="Theme JSON/TOML layered on the standard look: {template, palettes, defaults, overlays}.",
 )
 @weather_skill.argument("--dump-spec", nargs="?", const="-", probe=True, help=DUMP_SPEC_HELP)
 def plot_mediogram(ds, output, spec, theme_file, dump_spec, **kwargs):
