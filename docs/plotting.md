@@ -37,8 +37,9 @@ The plotter selects and draws. Derived fields come from data skills upstream.
 - In the plotter: selection (`isel` / `sel`, bbox, mask), display units and
   labels, color classes, panel layout, and drawing geometry (arrow segments,
   overlay simplification).
-- In a data skill: averages, smoothing, thresholds, anomalies, feature
-  detection (highs and lows, fronts, tracks), and other statistics.
+- In a data skill: averages, rate-to-total conversion (`convert-to-totals`),
+  smoothing, thresholds, anomalies, feature detection (highs and lows, fronts,
+  tracks), and other statistics.
 - Use standard Plotly keys before adding a `meta` key or bind.
 
 ## Merging
