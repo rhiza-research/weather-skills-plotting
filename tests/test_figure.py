@@ -239,6 +239,17 @@ def test_non_precip_gets_continuous_scale_symmetric_when_diverging():
     assert "ticktext" not in axis["colorbar"]
 
 
+def test_sea_level_pressure_is_red_blue_with_white_at_standard_atmosphere():
+    # Pa is drawn in hPa, so white sits at 1013.25 hPa either way.
+    for units, scale in (("hPa", 1.0), ("Pa", 100.0)):
+        ds = make_gridded(n_time=1, name="msl", units=units)
+        ds["msl"].values[:] = np.linspace(1008, 1036, 12).reshape(1, 3, 4) * scale
+        ds["msl"].attrs["standard_name"] = "air_pressure_at_mean_sea_level"
+        axis = _layout(compile({"data": [_trace("a")]}, {"a": ds}))["coloraxis"]
+        assert axis["colorscale"][0][1] == "rgb(5,48,97)"  # RdBu_r: blue lows
+        assert (axis["cmin"], axis["cmax"]) == pytest.approx((990.5, 1036))
+
+
 def test_points_layer_over_field_and_static_outline(tmp_path):
     grid = make_gridded(n_time=2, lats=(-1.0, 0.0, 1.0), lons=(36.0, 37.0, 38.0))
     stations = make_station(n_station=3, n_time=2)

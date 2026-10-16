@@ -20,6 +20,7 @@
     "spi": "spi",
     "wind_speed": "YlGn",
     "diverging": "RdBu_r",
+    "sea_level_pressure": "RdBu_r",
     "temperature": "RdYlBu_r",
     "sequential": "rocket"
   },

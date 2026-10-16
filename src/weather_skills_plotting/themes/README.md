@@ -66,6 +66,7 @@ object, or a Plotly colorscale name (`Viridis`, `RdBu_r`, …).
 | `spi` | Standardized Precipitation Index |
 | `wind_speed` | CF `standard_name: wind_speed`, including speed drawn from u/v |
 | `diverging` | Any other field whose color range straddles zero |
+| `sea_level_pressure` | Mean sea-level pressure (not surface pressure); the range is centred on 1013.25 hPa |
 | `temperature` | Temperatures that do not straddle zero |
 | `sequential` | Everything else |
 

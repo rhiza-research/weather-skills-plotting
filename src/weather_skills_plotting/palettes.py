@@ -346,6 +346,20 @@ def is_temperature(da) -> bool:
     return "temperature" in text and "anomal" not in text and "anomal" not in str(da.name).lower()
 
 
+# Standard-atmosphere sea-level pressure: the white middle of the pressure scale.
+STANDARD_SEA_LEVEL_PRESSURE_HPA = 1013.25
+
+
+def is_sea_level_pressure(da) -> bool:
+    """Sea-level pressure in pressure units (not surface pressure, not an anomaly)."""
+    from weather_skills_core.units import classify_variable
+
+    standard_name = da.attrs.get("standard_name")
+    kind = classify_variable(da.name or "", units=variable_units(da), standard_name=standard_name)
+    surface = standard_name == "surface_air_pressure" or "surface" in str(da.name).lower()
+    return kind == "pressure" and not surface and "anomal" not in str(da.name).lower()
+
+
 def is_statistic(da) -> bool:
     """A spread or variance (``cell_methods`` from summarize-dim): not a precip amount."""
     methods = str(da.attrs.get("cell_methods") or "")
@@ -363,8 +377,8 @@ def default_kind(da, *, diverging: bool = False) -> str:
 
     Precipitation kinds and wind speed (CF ``standard_name: wind_speed``) come
     from the field itself. Other fields are ``diverging`` (the color range
-    straddles zero), temperature, or ``sequential``. A spread or variance is
-    never a precip amount.
+    straddles zero), sea-level pressure, temperature, or ``sequential``. A
+    spread or variance is never a precip amount.
     """
     if da is not None and da.attrs.get("standard_name") == "wind_speed":
         return "wind_speed"
@@ -379,6 +393,8 @@ def default_kind(da, *, diverging: bool = False) -> str:
             return "precip"
     if diverging:
         return "diverging"
+    if da is not None and not is_statistic(da) and is_sea_level_pressure(da):
+        return "sea_level_pressure"
     if da is not None and is_temperature(da):
         return "temperature"
     return "sequential"
