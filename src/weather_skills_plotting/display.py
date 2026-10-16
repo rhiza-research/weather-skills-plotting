@@ -146,7 +146,7 @@ def variable_label_for_display(
     label = short_label(label)
     if kind in ("precip", "precip_amount") and label.lower() == "total precipitation":
         label = "Precipitation"
-    from weather_skills_plotting.palettes import is_precip_anomaly, is_statistic
+    from weather_skills_plotting.kinds import is_precip_anomaly, is_statistic
 
     if is_statistic(da):
         # summarize-dim writes "Standard deviation of Total precipitation across number".

@@ -18,13 +18,13 @@ from weather_skills_core.cf import auto_variable, cf_dim
 from weather_skills_plotting import parse_spec_arg
 from weather_skills_plotting.cli import run, skeleton
 from weather_skills_plotting.display import variable_label_for_display
+from weather_skills_plotting.kinds import is_precip
 from weather_skills_plotting.labels import (
     _TRAILING,
     format_plot_date,
     format_step,
     period_axis_title,
 )
-from weather_skills_plotting.palettes import is_precip
 from weather_skills_plotting.reference import install_spec_help
 from weather_skills_plotting.spec import DUMP_SPEC_HELP, SPEC_ARGUMENT_HELP, merge_spec
 

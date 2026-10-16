@@ -39,6 +39,7 @@ from weather_skills_plotting.geodata import (
     subset_points,
     subset_spatial,
 )
+from weather_skills_plotting.kinds import aggregation_days, is_precip
 from weather_skills_plotting.labels import (
     axis_label,
     format_plot_date,
@@ -49,11 +50,9 @@ from weather_skills_plotting.labels import (
     timeseries_axis,
 )
 from weather_skills_plotting.palettes import (
-    aggregation_days,
     along_dim,
     along_member_label,
     continuous_colorscale,
-    is_precip,
     parse_palette,
 )
 from weather_skills_plotting.spec import DEFAULT_BIND

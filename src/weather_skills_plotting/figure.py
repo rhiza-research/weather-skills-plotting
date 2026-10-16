@@ -30,6 +30,13 @@ from weather_skills_plotting.geodata import (
     overlay_geoms,
     overlay_settings,
 )
+from weather_skills_plotting.kinds import (
+    STANDARD_SEA_LEVEL_PRESSURE_HPA,
+    aggregation_days,
+    is_precip_anomaly,
+    is_sea_level_pressure,
+    is_temperature,
+)
 from weather_skills_plotting.layout import (
     DEFAULT_TEMPLATE,
     WIDE_MAP,
@@ -44,16 +51,11 @@ from weather_skills_plotting.layout import (
 )
 from weather_skills_plotting.palettes import (
     DEFAULT_PRECIP_PALETTES,
-    STANDARD_SEA_LEVEL_PRESSURE_HPA,
     _class_slots,
-    aggregation_days,
     continuous_colorscale,
     default_palette,
     default_precip_window,
     discretize,
-    is_precip_anomaly,
-    is_sea_level_pressure,
-    is_temperature,
     parse_palette,
 )
 from weather_skills_plotting.spec import (

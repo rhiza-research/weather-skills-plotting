@@ -9,7 +9,7 @@ from weather_skills_core.errors import UsageError
 from weather_skills_core.units import DATA_INTERVAL_ATTR, parse_aggregation_period
 
 from weather_skills_plotting.geodata import is_cftime_axis
-from weather_skills_plotting.palettes import aggregation_days
+from weather_skills_plotting.kinds import aggregation_days
 
 # A variable described as covering the hours before its time stamp.
 _TRAILING = re.compile(r"\b(last|previous|past) \d+ ?(h|hours?)\b", re.I)

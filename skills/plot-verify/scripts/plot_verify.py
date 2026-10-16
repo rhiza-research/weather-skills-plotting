@@ -29,9 +29,9 @@ from weather_skills_plotting.display import (
     format_units_for_display,
 )
 from weather_skills_plotting.geodata import plain
+from weather_skills_plotting.kinds import aggregation_days, is_precip
 from weather_skills_plotting.labels import format_plot_date_range
 from weather_skills_plotting.layout import axis_suffix, panel_title
-from weather_skills_plotting.palettes import aggregation_days, is_precip
 from weather_skills_plotting.reference import install_spec_help
 from weather_skills_plotting.spec import DUMP_SPEC_HELP, SPEC_ARGUMENT_HELP, merge_spec
 
