@@ -97,6 +97,8 @@ The colorbar label defaults to a short form of the variable's `long_name` and un
 
 Keep titles and colorbar labels short: a title names the subject in a few words (`CHIRPS weekly totals`), a colorbar label is the quantity and units (`Rain [mm]`). Methods, sources and caveats go in your reply, not the figure. Long text wraps and crowds side-by-side panels and colorbars.
 
+Show pressure (MSLP, surface pressure) in hPa. Fetchers write it in Pa, which draws as `101.6k` on isobar and colorbar labels, and the plotter does not convert units. Run `unit-convert --variable msl --to-units hPa` first. `--to-standard` leaves pressure unchanged.
+
 ## Command line
 
 ```
@@ -151,6 +153,19 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/forecast_mm.zarr -o /tmp/fc.h
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -o /tmp/layers.png \
     --layer heatmap:/tmp/imerg.zarr --layer scatter:/tmp/tahmo.zarr --layer outline:/tmp/nairobi.geojson \
     --spec '{"data": [{"uid": "b", "marker": {"size": 14}}, {"uid": "c", "line": {"width": 3}}]}'
+
+# MSLP chart like a model-centre map: anomaly shading, labeled black isobars every 4 hPa,
+# and H / L centres with their central pressure. MSLP must be in hPa (unit-convert
+# --to-units hPa); the centres come from local-extrema --kind high / --kind low.
+# A contour with "coloring": "none" and a scatter with "mode": "text" add no colorbar.
+# For a forecast, pick the same lead on every layer ("meta": {"source": {"isel": {"step": 40}}});
+# a text trace skips centres that are NaN at that lead.
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -o /tmp/mslp.png \
+    --layer heatmap:/tmp/msl_anom.zarr --layer contour:/tmp/msl_hpa.zarr \
+    --layer scatter:/tmp/highs.zarr --layer scatter:/tmp/lows.zarr --spec '{"data": [
+  {"uid": "b", "contours": {"coloring": "none", "showlabels": true, "start": 900, "end": 1080, "size": 4}},
+  {"uid": "c", "mode": "text", "texttemplate": "<b>H</b><br>%{customdata:.0f}", "textfont": {"color": "#1f4fbf", "size": 16}},
+  {"uid": "d", "mode": "text", "texttemplate": "<b>L</b><br>%{customdata:.0f}", "textfont": {"color": "#c8102e", "size": 16}}]}'
 
 # Wind speed with arrows
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/wind.zarr -o /tmp/wind.png --spec '{"data": [

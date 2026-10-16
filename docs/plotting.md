@@ -37,6 +37,25 @@ flowchart LR
   Fig --> Out["PNG / JPG (kaleido) or HTML"]
 ```
 
+## Plotting computes as little as possible
+
+The plotting skills draw what a dataset already holds. Bespoke calculation
+belongs in a data skill upstream, whose output is a Zarr that can be
+inspected, reused, and piped into other skills; the plotter only selects and
+draws it.
+
+- Allowed here: selecting (`isel` / `sel`, bbox, mask), unit and label display,
+  color classes, panel layout, and geometry needed to draw (arrow segments
+  from u/v, overlay simplification).
+- Not here: averaging, smoothing, thresholds, anomalies, feature detection
+  (highs and lows, fronts, tracks), or any statistic. If a figure needs a
+  derived field, add or extend a data skill (`summarize-dim`, `difference`,
+  `local-extrema`, …) and plot its output with an existing bind.
+- Prefer standard Plotly keys over new `meta` keys. A new `meta` key or bind
+  needs a reason Plotly itself cannot cover — e.g. H / L labels are a
+  `local-extrema` point file drawn as a `points` trace with `mode: "text"`
+  and a `texttemplate`, not a plotter option.
+
 ## Merging
 
 `merge_spec(base, overlay)` deep-merges `--spec` onto the figure the skill

@@ -112,10 +112,12 @@ def export(fig, output, *, datasets=None, scale=None):
     import plotly.io as pio
 
     # An image never shows hover, so the heatmaps' customdata (a full copy of
-    # each field) stays out of what Chrome has to parse.
+    # each field) stays out of what Chrome has to parse. Other traces keep it:
+    # a texttemplate may print it.
     image = _float32(fig.to_plotly_json())
     for trace in image["data"]:
-        trace.pop("customdata", None)
+        if trace.get("type") in ("heatmap", "contour"):
+            trace.pop("customdata", None)
     pio.write_image(image, output, scale=scale, validate=False)
     from weather_skills_plotting.qa import report_figure
 
