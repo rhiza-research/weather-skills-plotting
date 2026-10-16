@@ -13,7 +13,7 @@
 import argparse
 from pathlib import Path
 
-from weather_skills_core import Dataset, UsageError, weather_skill
+from weather_skills_core import UsageError, weather_skill
 from weather_skills_core.cf import cf_dim
 
 from weather_skills_plotting import parse_spec_arg
@@ -70,7 +70,7 @@ def _default_trace(uid: str, ds, *, xaxis=None) -> dict:
     elif lat in ds.dims and lon in ds.dims:
         trace = {"type": "heatmap", "meta": {"source": source}}
     else:
-        trace = {"type": "scatter", "meta": {"bind": "series", "source": source}}
+        trace = {"type": "scatter", "meta": {"source": source}}
     trace["uid"] = uid
     if xaxis:
         trace.update(xaxis=xaxis, yaxis="y" + xaxis[1:])
@@ -123,19 +123,7 @@ def _layer_traces(layers):
     action="append",
     help="Input Zarr as PATH or PATH=NAME. Repeat for side-by-side maps, one panel per file on "
     "its own grid. In --spec the input is uid NAME, else its position: 0, 1, …. Exclusive with "
-    "--layer and --x/--y.",
-)
-@weather_skill.argument(
-    "--x",
-    dest="x_ds",
-    type=Dataset("any"),
-    help="X series Zarr for an xy scatter (input id x).",
-)
-@weather_skill.argument(
-    "--y",
-    dest="y_ds",
-    type=Dataset("any"),
-    help="Y series Zarr for an xy scatter (input id y).",
+    "data layers.",
 )
 @weather_skill.argument(
     "--layer",
@@ -155,8 +143,6 @@ def plot(
     inputs,
     output,
     layer,
-    x_ds,
-    y_ds,
     spec,
     theme_file,
     dump_spec,
@@ -170,26 +156,15 @@ def plot(
     shapes = [x for x in layers if x.kind in ("outline", "mask")] if files else []
     if shapes and len(shapes) == len(layers):
         layers = []
-    if sum(bool(x) for x in (files, layers, x_ds is not None or y_ds is not None)) > 1:
+    if files and layers:
         raise UsageError(
-            "pass one of -i/--input, --layer, or --x/--y (-i takes only outline: and mask: layers)"
+            "pass -i/--input or --layer, not both (-i takes only outline: and mask: layers)"
         )
-    if (x_ds is None) != (y_ds is None):
-        raise UsageError("an xy scatter needs both --x and --y")
     layout = {}
     if layers:
         data, datasets, mask = _layer_traces(layers)
         if mask:
             layout["meta"] = {"geo": {"mask_geojson": mask}}
-    elif x_ds is not None:
-        datasets = {"x": x_ds, "y": y_ds}
-        data = [
-            {
-                "uid": "xy",
-                "type": "scatter",
-                "meta": {"bind": "pair", "x": {"input": "x"}, "y": {"input": "y"}},
-            }
-        ]
     else:
         datasets = dict(zip(input_ids([x.name for x in inputs]), files, strict=True))
         data = [
@@ -213,7 +188,7 @@ def plot(
     if not datasets and not any((t.get("meta") or {}).get("bind") == "geojson" for t in data):
         if spec is None or not (spec.data.get("data")):
             raise UsageError(
-                "pass -i/--input, --layer, --x/--y, or a --spec with data and layout.meta.inputs"
+                "pass -i/--input, --layer, or a --spec with data and layout.meta.inputs"
             )
     base = skeleton("plot", datasets, data)
     if layout.get("meta"):

@@ -19,7 +19,7 @@ The output format follows the `-o` suffix: `.png`, `.jpg`, or `.html` (interacti
 
 The command builds a figure from the files you name, then merges `--spec` onto it:
 
-- `data[]` merges by `uid`. A file's uid is its NAME from `-i PATH=NAME` (or `--layer KIND:PATH=NAME`), else its position: `0`, `1`, `2`, …; `x` / `y` for `--x` / `--y`. A `data[]` entry with no `uid` merges by position, and a new `uid` adds a trace.
+- `data[]` merges by `uid`. A file's uid is its NAME from `-i PATH=NAME` (or `--layer KIND:PATH=NAME`), else its position: `0`, `1`, `2`, …. A `data[]` entry with no `uid` merges by position, and a new `uid` adds a trace.
 - `layout.annotations` and `layout.shapes` merge by `name`. Everything else in `layout` is deep-merged.
 - Your values win.
 - Dotted names in the tables below are nested keys: `geo.bbox` is `{"layout": {"meta": {"geo": {"bbox": […]}}}}`.
@@ -33,7 +33,7 @@ What the command builds from each file:
 | lat/lon grid | `heatmap`, one panel per `time` or `step` value, titled with its date; a single map keeps the date of the time or step you picked. `meta.facet` panels another dim (`"vertical"` gives `850 hPa` panels; all-NaN panels are noted on stderr). Ensemble `number` is averaged and stderr says so; `meta.facet: "number"` maps each member. |
 | `station_id` / `point_id` data | `scatter` markers at the stations, colored by value (`meta.bind: "points"`) |
 | 1-D along time | `scatter` line (`meta.bind: "series"`) |
-| `--x` + `--y` | `scatter` of one series against the other (`meta.bind: "pair"`) |
+| two variables, with `meta.x` / `meta.y` | `scatter` of one against the other, a point per shared position (`merge` puts variables from two files in one) |
 
 ## Panels and layers
 
@@ -61,12 +61,12 @@ Do not `coarsen` or `downscale` just to draw a figure. Only `difference` and `ve
 
 | Key | Meaning |
 | --- | --- |
-| `bind` | How the arrays are filled: `field` (grid → heatmap/contour), `speed` (wind speed from u/v), `arrows` (u/v arrows), `points` (stations), `geojson` (boundary lines), `series` (1-D line or bar), `pair` (xy), `samples` (box per step), `windrose` (barpolar). The default comes from the trace type. |
+| `bind` | How the arrays are filled: `field` (grid → heatmap/contour), `speed` (wind speed from u/v), `arrows` (u/v arrows), `points` (stations), `geojson` (boundary lines), `series` (1-D line or bar), `xy` (one variable against another, set by `meta.x` / `meta.y`), `samples` (box per step), `windrose` (barpolar). The default comes from the trace type. |
 | `source` | `{input, variable, isel, sel, u, v, geojson, mask_geojson, point}`. `isel` is 0-based positions (`-1` is the last), `sel` is coordinate labels. `variable` picks one field of a multi-variable file (unset: rainfall if present, and stderr names it). A dim of size 1 is dropped; any other leftover dim is an error naming the fix. The plotter never averages: for an ensemble mean or area mean, run `summarize-dim` first. `u` and `v` are found from CF `standard_name` (`eastward_wind` / `northward_wind`) or names such as `u10`/`v10`; they must be in the same input: merge separate u and v files into one Zarr first. |
 | `facet` | The dim to panel (default `step` or `time`); `false` turns paneling off. |
 | `along`, `along_color`, `band`, `members` | Series: one line per value of a dim (`"number"` gives ensemble spaghetti). `along_color` is `same` (default) or `cycle`. `band: [10, 90]` shades a percentile band and draws the mean as a bold line (legend: `… ensemble mean`); the members stay as faint lines unless `members: false`. |
 | `align` | Series: `"dayofyear"` overlays years on one seasonal axis. |
-| `pair_on`, `x`, `y` | Pair: `x` and `y` are full sources (`{input, variable, isel, sel}`), joined on `pair_on` (`time`, `year`, `index`). Leftover dims are an error, as for series. |
+| `x`, `y` | Variable names of the input to draw against each other; `source.isel` / `sel` apply to both. |
 | `palette` | Class palette: a name (`default_precip`, `default_precip_anom`, `ppt_daily`, `ppt_week`, `ppt_month`, `ppt_season`, `ppt_anom_*`, `spi`, `ppt_poa`, …), a color list, or `{colors, bounds, under, over}`. `bounds` are class edges with one color per class, so 7 bounds take 6 colors; `under` / `over` color values outside the edges. It replaces the automatic precipitation palette. |
 | `arrows` | `{step, scale}`: `step: 3` draws an arrow on every 3rd cell; `scale` is arrow length in map degrees per unit of speed (default: the strongest winds span about one arrow spacing). |
 
@@ -102,11 +102,10 @@ Keep titles and colorbar labels short: a title names the subject in a few words 
 ```
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i <in.zarr> [-i <in2.zarr> …] -o <out.png|.html> [--spec JSON]
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --layer KIND:PATH [--layer …] -o <out.png> [--spec JSON]
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --x <x.zarr> --y <y.zarr> -o <out.png> [--spec JSON]
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i <in.zarr> --dump-spec -
 ```
 
-- `-i` — repeatable Zarr, as `PATH` or `PATH=NAME`; exclusive with `--x`/`--y` and with data layers (`--layer outline:` / `mask:` go with `-i`).
+- `-i` — repeatable Zarr, as `PATH` or `PATH=NAME`; exclusive with data layers (`--layer outline:` / `mask:` go with `-i`).
 - `--layer KIND:PATH[=NAME]` — `heatmap`, `contour`, `scatter` (stations), `quiver` (u/v: speed plus arrows), `outline` (GeoJSON edge), `mask` (GeoJSON mask).
 - `--spec` — inline JSON or a file path.
 - `--dump-spec [PATH]` — print or write the merged spec and skip drawing.
@@ -183,9 +182,9 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/wind.zarr -o /tmp/rose.png --
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/ens_area.zarr -o /tmp/ens.png --spec '{"data": [{"uid": "0", "type": "scatter",
   "meta": {"bind": "series", "along": "number", "band": [10, 90]}}]}'
 
-# September IOD against October rainfall, one point per year
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --x /tmp/iod_sep.zarr --y /tmp/rain_oct.zarr -o /tmp/iod.png \
-    --spec '{"data": [{"uid": "xy", "meta": {"pair_on": "year"}}], "layout": {"xaxis": {"title": {"text": "September IOD"}}}}'
+# September IOD against October rainfall, one point per year (iod_rain.zarr from merge --by-year)
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i /tmp/iod_rain.zarr -o /tmp/iod.png \
+    --spec '{"data": [{"uid": "0", "meta": {"x": "dmi", "y": "precip"}}], "layout": {"xaxis": {"title": {"text": "September IOD"}}}}'
 ```
 
 ## Output

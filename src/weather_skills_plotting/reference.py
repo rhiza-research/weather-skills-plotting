@@ -18,7 +18,7 @@ _BINDS = {
     "points": "station_id / point_id values → colored scatter markers on a map",
     "geojson": "GeoJSON boundary → scatter lines (meta.source.geojson); repeats on every panel",
     "series": "1-D along time or step → scatter / bar (default for those types)",
-    "pair": "one series against another → scatter (meta.x, meta.y, meta.pair_on)",
+    "xy": "one variable against another from the same input → scatter markers (set by meta.x / meta.y)",
     "samples": "values at a point per step → box (all samples) or scatter (the mean)",
     "windrose": "u/v pooled into a polar wind rose → barpolar (default for that type)",
 }
@@ -26,8 +26,8 @@ _BINDS = {
 _META = {
     "bind": "how the trace's arrays are filled; see BINDS",
     "source": "the data: {input, variable, isel, sel, u, v, geojson, mask_geojson, point}",
-    "x / y": "pair only: a source each for the x and the y series",
-    "pair_on": "pair only: time (default), year, or index",
+    "x / y": "variable names for a scatter of one against the other, a point per shared "
+    "position (merge puts variables from two files in one)",
     "facet": "dim to panel (default: step or time when present); false for none",
     "along": "series: dim drawn as one line per value (e.g. number for spaghetti)",
     "along_color": "same (default; one color, one legend entry) or cycle",
@@ -44,7 +44,7 @@ _META = {
 }
 
 _SOURCE = {
-    "input": "input id: NAME from -i PATH=NAME, else the position 0, 1, … (x / y for --x / --y; obs, forecast1 … for plot-verify)",
+    "input": "input id: NAME from -i PATH=NAME, else the position 0, 1, … (obs, forecast1 … for plot-verify)",
     "variable": "data variable (default: auto-detected)",
     "isel": '0-based positions, e.g. {"number": 0, "step": [0, 1]}; -1 is the last. One '
     "integer picks one value (one map); a list keeps the dim (one panel each)",
@@ -161,6 +161,10 @@ _RECIPES = [
         "Area-mean time series of a grid (summarize-dim --dim latitude --dim longitude "
         "--method mean --lat-weighted first)",
         '{"data": [{"uid": "0", "type": "scatter", "meta": {"bind": "series"}}]}',
+    ),
+    (
+        "One variable against another (e.g. a merge --by-year output)",
+        '{"data": [{"uid": "0", "meta": {"x": "dmi", "y": "precip"}}]}',
     ),
     (
         "Ensemble spaghetti with a 10–90% band",

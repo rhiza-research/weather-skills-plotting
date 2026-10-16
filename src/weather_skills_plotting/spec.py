@@ -24,7 +24,7 @@ TOP_KEYS = frozenset({"data", "layout"})
 
 # How a trace's arrays are filled from a dataset. See ``bind.py``.
 BINDS = frozenset(
-    {"field", "speed", "arrows", "points", "series", "pair", "samples", "windrose", "geojson"}
+    {"field", "speed", "arrows", "points", "series", "xy", "samples", "windrose", "geojson"}
 )
 # Bind used when ``meta.bind`` is unset, by Plotly trace type.
 DEFAULT_BIND = {
@@ -44,7 +44,6 @@ TRACE_META_KEYS = frozenset(
         "source",
         "x",
         "y",
-        "pair_on",
         "facet",
         "along",
         "along_color",
@@ -66,7 +65,6 @@ GEO_KEYS = frozenset({"bbox", "mask_geojson", "point"})
 EXPORT_KEYS = frozenset({"scale"})
 ANIMATION_KEYS = frozenset({"duration", "transition"})
 OVERLAY_NAMES = ("coastline", "borders", "lakes", "rivers", "admin1")
-PAIR_ON = frozenset({"time", "year", "index"})
 # Layout lists that merge by ``name`` (Plotly's own item identity).
 NAMED_LAYOUT_LISTS = ("annotations", "shapes", "images")
 
@@ -280,11 +278,13 @@ def check_trace_meta(meta, loc: str) -> None:
     bind = meta.get("bind")
     if bind is not None and bind not in BINDS:
         raise UsageError(f"plot spec {loc}.bind {bind!r} must be one of {', '.join(sorted(BINDS))}")
-    for key in ("source", "x", "y"):
-        if meta.get(key) is not None:
-            _check_source(meta[key], f"{loc}.{key}")
-    if meta.get("pair_on") is not None and meta["pair_on"] not in PAIR_ON:
-        raise UsageError(f"plot spec {loc}.pair_on must be one of {', '.join(sorted(PAIR_ON))}")
+    if meta.get("source") is not None:
+        _check_source(meta["source"], f"{loc}.source")
+    for key in ("x", "y"):
+        if meta.get(key) is not None and not isinstance(meta[key], str):
+            raise UsageError(f"plot spec {loc}.{key} must be a variable name")
+    if (meta.get("x") is None) != (meta.get("y") is None):
+        raise UsageError(f"plot spec {loc}: a scatter of two variables needs both x and y")
     if meta.get("arrows") is not None:
         _check_keys(meta["arrows"], ARROW_KEYS, f"{loc}.arrows")
     if meta.get("along_color") not in (None, "same", "cycle"):

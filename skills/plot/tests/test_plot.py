@@ -3,6 +3,7 @@
 import json
 
 import pytest
+import xarray as xr
 from skill_conftest import (
     load_skill,
     make_forecast,
@@ -148,24 +149,19 @@ def test_series_of_a_forecast(tmp_path, plot_fn):
     assert out.is_file()
 
 
-def test_xy_flags(tmp_path, plot_fn, capsys):
-    x = write_zarr(make_gridded(n_time=3), tmp_path / "x.zarr")
-    y = write_zarr(make_gridded(n_time=3, fill=2.0), tmp_path / "y.zarr")
-    spec = _dump(plot_fn, capsys, "--x", str(x), "--y", str(y))
-    assert spec["data"][0]["meta"]["bind"] == "pair"
-    # Grids pair only once their lat/lon are averaged, with summarize-dim first.
-    with pytest.raises(SystemExit):
-        run_skill(plot_fn, "--x", str(x), "--y", str(y), "-o", str(tmp_path / "xy.png"))
-    assert "summarize-dim" in capsys.readouterr().err
-    xa = write_zarr(
-        make_gridded(n_time=3).mean(["latitude", "longitude"], keep_attrs=True),
-        tmp_path / "xa.zarr",
+def test_scatter_of_two_variables(tmp_path, plot_fn, capsys):
+    ds = xr.Dataset(
+        {"dmi": (("year",), [1.9, -0.2, -0.3]), "precip": (("year",), [210.0, 60.0, 45.0])},
+        coords={"year": [2019, 2020, 2021]},
     )
-    ya = write_zarr(
-        make_gridded(n_time=3, fill=2.0).mean(["latitude", "longitude"], keep_attrs=True),
-        tmp_path / "ya.zarr",
-    )
-    run_skill(plot_fn, "--x", str(xa), "--y", str(ya), "-o", str(tmp_path / "xy.png"))
+    ds["dmi"].attrs["units"] = "degree_Celsius"
+    ds["precip"].attrs["units"] = "mm"
+    path = write_zarr(ds, tmp_path / "iod_rain.zarr")
+    user = {"data": [{"uid": "0", "meta": {"x": "dmi", "y": "precip"}}]}
+    spec = _dump(plot_fn, capsys, "-i", str(path), "--spec", json.dumps(user))
+    assert spec["data"][0]["meta"] == {"source": {"input": "0"}, "x": "dmi", "y": "precip"}
+    run_skill(plot_fn, "-i", str(path), "-o", str(tmp_path / "xy.png"), "--spec", json.dumps(user))
+    assert "data: not null (0 3/3 finite)" in capsys.readouterr().out
 
 
 def test_layers(tmp_path, plot_fn, capsys):

@@ -26,7 +26,7 @@ keys (`inputs`, `traces`, `geo`, `theme`, …) is rejected with a pointer here.
 
 ```mermaid
 flowchart LR
-  Files["-i / --layer / --x / --y"] --> Skeleton[Skill builds a Plotly figure]
+  Files["-i / --layer"] --> Skeleton[Skill builds a Plotly figure]
   SpecFlag["--spec"] --> Merge[merge_spec]
   Skeleton --> Merge
   Merge --> Validate[check meta + Plotly validation]
@@ -74,7 +74,7 @@ dumped spec replays without file flags.
 | `points` | scatter | station markers colored by value |
 | `geojson` | scatter | boundary lines from a GeoJSON file; repeats on every panel |
 | `series` | scatter, bar | one line (or `along` fan, `band`) along time or valid time |
-| `pair` | scatter | one series against another, joined on time / year / index |
+| `xy` | scatter | one variable against another from the same input (`meta.x` / `meta.y`) |
 | `samples` | box, scatter | all samples per step (box) or their mean (scatter) at a point |
 | `windrose` | barpolar | one barpolar trace per speed class, frequency in percent |
 
@@ -149,7 +149,7 @@ export(fig, "out.png", datasets={"0": dataset})
 
 | Skill | Job | Inputs | Built traces |
 | --- | --- | --- | --- |
-| [`plot`](../skills/plot/SKILL.md) | maps, series, xy, wind rose | `-i`, `--layer KIND:PATH`, `--x`/`--y` | one per file: heatmap / points / series / pair |
+| [`plot`](../skills/plot/SKILL.md) | maps, series, xy, wind rose | `-i`, `--layer KIND:PATH` | one per file: heatmap / points / series |
 | [`plot-timeseries`](../skills/plot-timeseries/SKILL.md) | many series on one time axis | repeatable `-i` | one `series` per input; `data[0]` settings inherited |
 | [`plot-verify`](../skills/plot-verify/SKILL.md) | obs / lead forecasts / verify grid | `--obs`, `--forecast`, `--verify` | 2-row grid, two color axes |
 | [`plot-mediogram`](../skills/plot-mediogram/SKILL.md) | ensemble vs m-climate at a point | forecast + m-climate `-i` | two `box` traces and a mean line |
