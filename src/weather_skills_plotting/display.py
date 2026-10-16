@@ -166,9 +166,13 @@ def format_units_for_display(units: str | None) -> str:
         if units_equal(raw, STANDARD[kind]["units"]):
             return nice
     try:
-        return format(ureg.Unit(raw), "cf").replace(" d-1", "/day").replace(" h-1", "/h")
+        text = format(ureg.Unit(raw), "cf").replace(" d-1", "/day").replace(" h-1", "/h")
     except Exception:  # noqa: BLE001 — leave unparseable strings alone
         return raw
+    if text == "1":
+        # Dimensionless: a ratio of like units (m3 m-3) says what it is; a bare 1 says nothing.
+        return "" if raw.lower() in ("1", "dimensionless") else raw
+    return text
 
 
 _LABEL_NOISE = (

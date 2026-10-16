@@ -97,6 +97,7 @@ FIGURE_TITLE = 50
 COLORBAR_RIGHT = 110  # a vertical colorbar with its title turned along it
 COLORBAR_BELOW = 80  # a row of horizontal colorbars
 SEAL_CLEAR = 0.88  # horizontal colorbars end left of the provenance seal (plot-width fraction)
+SEAL_CLEAR_Y = 0.06  # vertical colorbars start above it (plot-height fraction)
 WIDE_MAP = 2.5  # a single map wider than this (lon / lat span) gets its colorbar below
 
 
@@ -233,6 +234,8 @@ def place_colorbars(mode: str, panels_of: dict, domains) -> dict:
         ds = [domains[p] for p in panels]
         if mode in ("right", "rows"):
             y0, y1 = min(d[2] for d in ds), max(d[3] for d in ds)
+            # Clear of the provenance seal in the bottom-right corner.
+            y0 = max(y0, SEAL_CLEAR_Y)
             out[name] = {
                 "len": y1 - y0,
                 "y": (y0 + y1) / 2,

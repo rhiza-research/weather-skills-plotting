@@ -159,3 +159,9 @@ def test_sub_daily_rate_stays_a_rate():
     assert precip_for_display(ds, "precip") is ds
     ds["precip"].attrs["aggregation_period"] = "1 day"
     assert precip_for_display(ds, "precip")["precip"].attrs["units"] == "mm"
+
+
+def test_dimensionless_units():
+    assert dl.format_units_for_display("dimensionless") == ""
+    assert dl.format_units_for_display("m3 m-3") == "m3 m-3"
+    assert dl.format_units_for_display("mm h-1") == "mm/h"

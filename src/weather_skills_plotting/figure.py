@@ -16,6 +16,7 @@ import copy
 import json
 import math
 import re
+import sys
 
 import numpy as np
 from weather_skills_core.errors import UsageError
@@ -68,6 +69,7 @@ from weather_skills_plotting.spec import (
 )
 
 # Draw order inside a map panel: fields under overlays, then arrows, stations, outlines.
+MANY_PANELS = 24  # more map panels than this get a warning
 _MAP_RANK = {"field": 0, "speed": 0, "overlay": 1, "arrows": 2, "points": 3, "geojson": 4, None: 5}
 _TRACE_COLOR_KEYS = ("colorscale", "reversescale", "showscale", "colorbar")
 _TRACE_LIMIT_KEYS = {"zmin": "cmin", "zmax": "cmax", "zmid": "cmid"}
@@ -399,6 +401,12 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     else:
         panels = [(0, k) for k in plan[0]]
     n = len(panels)
+    if n > MANY_PANELS:
+        print(
+            f"Warning: {n} map panels; each will be small. Pick the ones you need with "
+            'meta.source.isel (e.g. {"step": [0, 6, 12, 18]}) or aggregate first.',
+            file=sys.stderr,
+        )
 
     # Bind results per panel.
     panel_traces = [[] for _ in range(n)]  # (rank, trace dict, spec_trace, bound)
