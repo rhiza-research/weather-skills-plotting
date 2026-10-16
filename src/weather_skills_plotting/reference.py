@@ -85,6 +85,42 @@ _RECIPES = [
         '"textfont": {"color": "#c8102e"}}]}',
     ),
     (
+        "Tropical Tidbits MSLP & precip (--theme-file tropical_tidbits; precip unit-convert to "
+        "mm h-1): --layer heatmap:precip.zarr=PRECIP --layer contour:msl.zarr=MSLP --layer "
+        "scatter:highs.zarr=HIGHS --layer scatter:lows.zarr=LOWS; value above H / L",
+        '{"data": [{"uid": "PRECIP", "meta": {"palette": "tt_precip_rate"}}, {"uid": "MSLP", '
+        '"contours": {"coloring": "none", "showlabels": true, "start": 900, "end": 1080, '
+        '"size": 2}}, {"uid": "HIGHS", "mode": "text", "texttemplate": '
+        '"<b>%{customdata:.0f}</b><br><b>H</b>", "textfont": {"color": "#1f3fbf"}}, '
+        '{"uid": "LOWS", "mode": "text", "texttemplate": "<b>%{customdata:.0f}</b><br><b>L</b>", '
+        '"textfont": {"color": "#b5121b"}}]}',
+    ),
+    (
+        "Tropical Tidbits MSLP & 10 m wind (--theme-file tropical_tidbits colors the speed): "
+        "--layer heatmap:uv.zarr=WIND --layer quiver:uv.zarr=ARROWS --layer contour:msl.zarr=MSLP",
+        '{"data": [{"uid": "WIND", "meta": {"bind": "speed"}}, {"uid": "ARROWS", "meta": '
+        '{"arrows": {"step": 12}}}, {"uid": "MSLP", "contours": {"coloring": "none", '
+        '"showlabels": true, "start": 900, "end": 1080, "size": 2}}]}',
+    ),
+    (
+        "Tropical Tidbits total precip (aggregate-temporal, then convert-to-totals; "
+        "--theme-file tropical_tidbits makes tt_precip_total the precip default): -i total.zarr",
+        '{"layout": {"title": {"text": "Total precipitation, 0–48 h"}}}',
+    ),
+    (
+        "Tropical Tidbits MSLP & precipitable water (--theme-file tropical_tidbits): "
+        "--layer heatmap:pwat.zarr=PWAT --layer contour:msl.zarr=MSLP",
+        '{"data": [{"uid": "PWAT", "meta": {"palette": "tt_pwat"}}, {"uid": "MSLP", "contours": '
+        '{"coloring": "none", "showlabels": true, "start": 900, "end": 1080, "size": 2}}]}',
+    ),
+    (
+        "Tropical Tidbits 500 mb height & MSLP (--theme-file tropical_tidbits; select vertical "
+        "500, unit-convert to dam): --layer contour:z500.zarr=Z500 --layer contour:msl.zarr=MSLP",
+        '{"data": [{"uid": "Z500", "meta": {"palette": "tt_z500"}, "line": {"width": 0}}, '
+        '{"uid": "MSLP", "contours": {"coloring": "none", "showlabels": true, "start": 900, '
+        '"end": 1080, "size": 4}, "line": {"color": "white"}}]}',
+    ),
+    (
         "Color limits and colorscale (continuous)",
         '{"data": [{"uid": "0", "zmin": 0, "zmax": 50, "colorscale": "YlGnBu"}]}',
     ),

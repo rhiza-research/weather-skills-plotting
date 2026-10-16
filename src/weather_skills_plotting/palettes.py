@@ -662,11 +662,18 @@ def default_theme() -> dict:
 def load_theme(path=None) -> dict:
     """The standard theme with ``--theme-file`` layered on top.
 
+    ``path`` is a JSON/TOML file, or the name of a theme shipped in
+    ``themes/`` (``tropical_tidbits``).
+
     Falls back to ``$WEATHER_SKILLS_PLOT_THEME``, then
     ``~/.config/weather-skills/plot.{json,toml}``. Palettes and defaults
     replace by name; overlay styles merge into the standard line styles.
     """
     candidates = [Path(path)] if path is not None else []
+    shipped = DEFAULT_THEME_FILE.parent / f"{path}.json"
+    if path is not None and not Path(path).exists() and shipped.is_file():
+        # A shipped theme by name: --theme-file tropical_tidbits.
+        candidates = [Path(str(shipped))]
     if not candidates and os.environ.get(_THEME_ENV):
         candidates = [Path(os.environ[_THEME_ENV])]
     if not candidates:

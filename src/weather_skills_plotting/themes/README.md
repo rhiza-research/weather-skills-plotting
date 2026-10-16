@@ -6,6 +6,12 @@ anything it sets is layered on top of `default.json`. So a theme lists only
 what it changes. To start a house style, copy `default.json`, delete the
 parts you keep as they are, and edit the rest.
 
+`--theme-file` also takes the name of a theme shipped here:
+
+| Name | Look |
+|---|---|
+| [`tropical_tidbits`](tropical_tidbits.json) | Tropical Tidbits model-chart colors, sampled from its colorbars: `tt_precip_rate` (mm/h), `tt_precip_total` (mm, the precip default), `tt_pwat` (mm), `tt_wind` (m/s, the wind-speed default; TT's knot classes converted), `tt_z500` (dam). Black coastlines and borders. |
+
 Without `--theme-file`, `$WEATHER_SKILLS_PLOT_THEME` or
 `~/.config/weather-skills/plot.json|toml` is used if present.
 

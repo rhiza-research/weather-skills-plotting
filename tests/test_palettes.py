@@ -143,3 +143,22 @@ def test_default_theme_file_is_a_theme_file_and_is_the_standard_look():
     assert theme["defaults"]["precip"] == "default_precip"
     assert theme["overlays"]["lakes"]["fill"] == "toself"
     assert "rocket" in theme["palettes"]
+
+
+def test_shipped_theme_by_name():
+    theme = load_theme("tropical_tidbits")
+    assert theme["defaults"]["precip"] == "tt_precip_total"
+    assert theme["defaults"]["wind_speed"] == "tt_wind"
+    # Layered on the standard look: what it leaves out is unchanged.
+    assert theme["overlays"]["lakes"]["fill"] == "toself"
+    for name in ("tt_precip_rate", "tt_precip_total", "tt_pwat", "tt_wind", "tt_z500"):
+        assert name in theme["palettes"]
+
+
+def test_reference_recipes_are_json():
+    import json
+
+    from weather_skills_plotting.reference import _RECIPES
+
+    for _, example in _RECIPES:
+        json.loads(example)

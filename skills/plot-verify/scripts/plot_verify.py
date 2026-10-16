@@ -131,7 +131,8 @@ def _user_variable(user, uid):
 @weather_skill.argument("--spec", type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
 @weather_skill.argument(
     "--theme-file",
-    help="Theme JSON/TOML layered on the standard look: {template, palettes, defaults, overlays}.",
+    help="Theme JSON/TOML, or a shipped theme name (tropical_tidbits), layered on the "
+    "standard look: {template, palettes, defaults, overlays}.",
 )
 @weather_skill.argument("--dump-spec", nargs="?", const="-", probe=True, help=DUMP_SPEC_HELP)
 def plot_verify(obs, forecast, verify, output, spec, theme_file, dump_spec, **kwargs):

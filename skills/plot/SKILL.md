@@ -121,6 +121,13 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -o mslp.png \
   {"uid": "MSLP", "contours": {"coloring": "none", "showlabels": true, "start": 900, "end": 1080, "size": 4}},
   {"uid": "HIGHS", "mode": "text", "texttemplate": "<b>H</b><br>%{customdata:.0f}", "textfont": {"color": "#1f4fbf"}},
   {"uid": "LOWS", "mode": "text", "texttemplate": "<b>L</b><br>%{customdata:.0f}", "textfont": {"color": "#c8102e"}}]}'
+# Tropical Tidbits look: --theme-file tropical_tidbits adds TT's palettes (tt_precip_rate in
+# mm/h, tt_precip_total, tt_pwat, tt_wind, tt_z500 in dam). --help RECIPES has MSLP & precip,
+# MSLP & 10 m wind, total precip, MSLP & PWAT, and 500 mb height & MSLP.
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -o tt_pwat.png --theme-file tropical_tidbits \
+  --layer heatmap:pwat.zarr=PWAT --layer contour:msl.zarr=MSLP --spec '{"data": [
+  {"uid": "PWAT", "meta": {"palette": "tt_pwat"}},
+  {"uid": "MSLP", "contours": {"coloring": "none", "showlabels": true, "start": 900, "end": 1080, "size": 2}}]}'
 # Ensemble members as lines with a 10–90% band
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i ens_area_mean.zarr -o ens.png \
   --spec '{"data": [{"uid": "0", "meta": {"along": "number", "band": [10, 90]}}]}'

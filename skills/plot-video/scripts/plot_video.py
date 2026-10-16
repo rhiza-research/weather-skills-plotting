@@ -40,7 +40,8 @@ _SKILL_VERSION = "0.0.1"
 @weather_skill.argument(
     "--theme-file",
     default=None,
-    help="Theme JSON/TOML layered on the standard look: {template, palettes, defaults, overlays}.",
+    help="Theme JSON/TOML, or a shipped theme name (tropical_tidbits), layered on the "
+    "standard look: {template, palettes, defaults, overlays}.",
 )
 @weather_skill.argument(
     "--dump-spec", nargs="?", const="-", default=None, probe=True, help=DUMP_SPEC_HELP
