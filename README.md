@@ -14,7 +14,7 @@ for dataset loading, the CLI decorator, and a handful of shared utilities.
 | [`plot`](skills/plot/) | Heatmap, contour, timeseries, xy scatter, wind-rose, quiver, or layered map, one dataset or several side by side; several 1-D series share one time axis |
 | [`plot-verify`](skills/plot-verify/) | Lead-week event-verification grid of maps for one observation week |
 | [`plot-mediogram`](skills/plot-mediogram/) | ECMWF-style mediogram comparing a forecast ensemble against an m-climate ensemble |
-| [`plot-video`](skills/plot-video/) | Animated HTML map of one gridded Zarr, one frame per time or forecast step |
+| [`plot-animation`](skills/plot-animation/) | Animated HTML map of one gridded Zarr, one frame per time or forecast step |
 
 The spec design (Plotly figure plus `meta` bindings) is documented in
 [`docs/plotting.md`](docs/plotting.md). PNG/JPG export needs Chrome: kaleido
@@ -55,7 +55,7 @@ uv run skills/plot-mediogram/scripts/plot_mediogram.py \
   --spec '{"layout": {"meta": {"geo": {"point": {"lat": -1.3, "lon": 36.8}}}}}' 
 
 # An animated map (HTML only)
-uv run skills/plot-video/scripts/plot_video.py \
+uv run skills/plot-animation/scripts/plot_animation.py \
   -i /tmp/forecast.zarr -o /tmp/forecast.html
 ```
 

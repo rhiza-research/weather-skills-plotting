@@ -28,7 +28,7 @@ from weather_skills_plotting.spec import DUMP_SPEC_HELP, SPEC_ARGUMENT_HELP
 _SKILL_VERSION = "0.0.1"
 
 
-@weather_skill(name="plot-video", version=_SKILL_VERSION)
+@weather_skill(name="plot-animation", version=_SKILL_VERSION)
 @weather_skill.argument(
     "-i",
     "--input",
@@ -45,26 +45,28 @@ _SKILL_VERSION = "0.0.1"
 @weather_skill.argument(
     "--dump-spec", nargs="?", const="-", default=None, probe=True, help=DUMP_SPEC_HELP
 )
-def plot_video(ds, output, spec=None, theme_file=None, dump_spec=None, **kwargs):
+def plot_animation(ds, output, spec=None, theme_file=None, dump_spec=None, **kwargs):
     """Animate a gridded Zarr through its times or forecast steps as an interactive HTML map."""
     datasets = spec_datasets(spec, {"0": ds} if ds is not None else {})
     if not datasets:
         raise UsageError("pass -i/--input, or a --spec with layout.meta.inputs")
     if len(datasets) > 1:
-        raise UsageError("plot-video animates one gridded input; got several in layout.meta.inputs")
+        raise UsageError(
+            "plot-animation animates one gridded input; got several in layout.meta.inputs"
+        )
     key, grid = next(iter(datasets.items()))
     lat, lon = cf_dim(grid, "latitude"), cf_dim(grid, "longitude")
     if lat not in grid.dims or lon not in grid.dims:
         raise UsageError(
-            f"plot-video needs a latitude/longitude grid; got dims {list(grid.dims)}. "
+            f"plot-animation needs a latitude/longitude grid; got dims {list(grid.dims)}. "
             "For station or 1-D data use plot"
         )
     data = [{"uid": key, "type": "heatmap", "meta": {"source": {"input": key}}}]
-    base = skeleton("plot-video", datasets, data)
+    base = skeleton("plot-animation", datasets, data)
     return run(base, spec, datasets, output, dump_spec, theme_file=theme_file, animate=True)
 
 
-install_spec_help(plot_video)
+install_spec_help(plot_animation)
 
 if __name__ == "__main__":
-    plot_video()
+    plot_animation()

@@ -1,22 +1,22 @@
 ---
-name: plot-video
+name: plot-animation
 description: "Animate a gridded weather-skills Zarr through its times or forecast steps as a self-contained interactive HTML map, with play and pause buttons and a frame slider. Use to show how a field such as rainfall, temperature, or air quality changes over time, one map per frame on one color scale."
 license: MIT
 compatibility: Requires Python 3.12 and uv. The HTML embeds plotly.js and works offline; no Chrome needed.
-allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/plot_video.py *)
+allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/plot_animation.py *)
 metadata:
   version: "0.0.1"
   catalog-group: figure
 ---
 
-# plot-video
+# plot-animation
 
 Turns one gridded Zarr into an animated map, one frame per time or step.
 
 ## Usage
 
 ```bash
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot_video.py -i chirps_daily.zarr -o chirps.html
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot_animation.py -i chirps_daily.zarr -o chirps.html
 ```
 
 The page opens paused on the first frame; **▶ Play** runs the frames, **❚❚ Pause** stops, and the slider jumps to any frame. The title names the current frame. Each frame is the map `plot` draws for that time, with the same palettes and base map, and every frame shares one color scale.
@@ -55,7 +55,7 @@ A self-contained HTML file at `-o`; it embeds plotly.js (about 4.5 MB) and opens
 
 ### Example
 ```bash
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot_video.py -i gefs_3h.zarr -o gefs_rain.html --spec '{
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot_animation.py -i gefs_3h.zarr -o gefs_rain.html --spec '{
   "data": [{"uid": "0", "meta": {"source": {"variable": "tp", "isel": {"number": 0}}}}],
   "layout": {"title": {"text": "GEFS rainfall"}, "meta": {"geo": {"bbox": [5.5, 33.5, -5, 42.5]}, "animation": {"duration": 300}}}}'
 ```

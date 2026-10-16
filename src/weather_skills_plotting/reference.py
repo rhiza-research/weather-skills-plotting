@@ -65,7 +65,7 @@ _LAYOUT_META = {
     'style such as {"line": {"width": 2}}}',
     "export.scale": 'PNG/JPG pixel multiplier (default 1), e.g. {"export": {"scale": 2}}',
     "(dotted names)": 'are nested keys: geo.bbox is {"geo": {"bbox": […]}}',
-    "animation": "plot-video only: {duration: ms per frame (500), transition: ms between "
+    "animation": "plot-animation only: {duration: ms per frame (500), transition: ms between "
     "frames (0)}",
     "version / skill": "leave as dumped",
 }
