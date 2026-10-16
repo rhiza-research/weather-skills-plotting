@@ -1,6 +1,6 @@
 ---
 name: plot-timeseries
-description: Render a PNG with traces overlaid on a shared time axis, as lines or bars. Name files with repeatable -i. Set parameters in --spec: traces[].reduce, traces[].along (e.g. number for ensemble spaghetti), traces[].mark, traces[].line, layout.facet.per_trace, layout.bar_mode, title, theme.fontsize (default 16). --dump-spec prints the merged spec. Leftover non-time dims must be reduced or fanned out; nothing is averaged silently. For precipitation, run aggregate-temporal then convert-to-totals first.
+description: "Render a PNG with traces overlaid on a shared time axis, as lines or bars. Name files with repeatable -i. Set parameters in --spec: traces[].reduce, traces[].along (e.g. number for ensemble spaghetti), traces[].mark, traces[].line, layout.facet.per_trace, layout.bar_mode, title, theme.fontsize (default 16). --dump-spec prints the merged spec. Leftover non-time dims must be reduced or fanned out; nothing is averaged silently. For precipitation, run aggregate-temporal then convert-to-totals first."
 license: MIT
 compatibility: Requires Python 3.12 and uv.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/plot_timeseries.py *)
