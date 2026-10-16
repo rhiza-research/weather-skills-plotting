@@ -235,8 +235,16 @@ def _sel(da, source: dict, loc: str):
                 f"{loc}.sel {dim}={value!r} does not match the coordinate ({exc})"
             ) from None
     # A one-value dim (a single pressure level or member) has nothing to choose
-    # or average; time and step stay so a single map keeps its date.
-    keep = {"time", "step", cf_dim(da, "time"), cf_dim(da, "latitude"), cf_dim(da, "longitude")}
+    # or average; time and step stay so a single map keeps its date, and a
+    # one-station file keeps its station axis.
+    keep = {
+        "time",
+        "step",
+        cf_dim(da, "time"),
+        cf_dim(da, "latitude"),
+        cf_dim(da, "longitude"),
+        point_dim(da),
+    }
     single = [d for d in da.dims if da.sizes[d] == 1 and d not in keep]
     return da.squeeze(single) if single else da
 

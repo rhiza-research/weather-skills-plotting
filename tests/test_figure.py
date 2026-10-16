@@ -163,6 +163,15 @@ def _pressure():
     return ds
 
 
+def test_one_station_keeps_its_station_axis():
+    # local-extrema finds a single high: a one-point file still draws as a point.
+    stations = make_station(n_station=1, n_time=1).isel(time=0)
+    spec = {"data": [_trace("a"), _trace("c", type="scatter", meta={"bind": "points"})]}
+    fig = compile(spec, {"a": _pressure(), "c": stations})
+    point = next(t for t in fig.data if t["uid"] == "c")
+    assert len(point["x"]) == 1
+
+
 def test_line_only_contour_over_shading_keeps_the_shading_colorbar():
     spec = {
         "data": [
