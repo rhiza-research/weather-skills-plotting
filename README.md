@@ -16,13 +16,6 @@ for dataset loading, the CLI decorator, and a handful of shared utilities.
 | [`plot-mediogram`](skills/plot-mediogram/) | ECMWF-style mediogram comparing a forecast ensemble against an m-climate ensemble |
 | [`plot-video`](skills/plot-video/) | Animated HTML map of one gridded Zarr, one frame per time or forecast step |
 
-The matplotlib renderers these replaced stay available as
-[`plot-mpl`](skills/plot-mpl/), [`plot-timeseries-mpl`](skills/plot-timeseries-mpl/),
-[`plot-verify-mpl`](skills/plot-verify-mpl/) and
-[`plot-mediogram-mpl`](skills/plot-mediogram-mpl/), for machines without Chrome.
-They write PNG only, need no Chrome, and take their own `--spec` format, documented in
-[`mpl/docs/plotting.md`](mpl/docs/plotting.md).
-
 The spec design (Plotly figure plus `meta` bindings) is documented in
 [`docs/plotting.md`](docs/plotting.md). PNG/JPG export needs Chrome: kaleido
 uses an installed one, or run `uv run plotly_get_chrome -y` once.
@@ -80,9 +73,8 @@ claude plugin install rhiza-plotting@weather-skills-plotting
 Same packaging model as [`chc-skills`](https://github.com/rhiza-research/chc-skills):
 canonical skills under `skills/<name>/`, Claude plugin via `.claude-plugin/` +
 `agents/`. Unlike `chc-skills`, this repo also carries its own rendering
-engine at `src/weather_skills_plotting/` (Plotly) and, for the `*-mpl` skills,
-`mpl/src/weather_skills_plotting_mpl/` (matplotlib). Every skill script depends
-on one of them as local library code (not a separately published package),
-since a script and the code it calls should always move together in one commit.
+engine at `src/weather_skills_plotting/` — every skill script depends on it
+as local library code (not a separately published package), since a script
+and the code it calls should always move together in one commit.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
