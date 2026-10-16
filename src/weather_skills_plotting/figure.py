@@ -238,11 +238,9 @@ def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
     diverging = user.get("cmin", lo) < 0 < user.get("cmax", hi)
     axis = {"colorbar": {"title": {"text": first.color_title or ""}}}
     if palette is None and "colorscale" not in user:
-        # The theme's color for this kind of field: wind speed, precip, diverging, temperature …
+        # The theme's color for this kind of field: precip, wind speed, diverging, temperature …
         das = [b.color_da for _, b, _ in members if b.color_da is not None]
-        palette = default_palette(
-            *(das or [None]), theme=ctx.theme, diverging=diverging, speed=first.speed
-        )
+        palette = default_palette(*(das or [None]), theme=ctx.theme, diverging=diverging)
         if palette.get("colorscale"):
             axis["colorscale"] = palette["colorscale"]
             palette = None

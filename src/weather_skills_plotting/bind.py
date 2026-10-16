@@ -100,7 +100,6 @@ class Bound:
     color_key: str | None = None
     color_da: object = None
     color_title: str | None = None
-    speed: bool = False
     axis_titles: dict = field(default_factory=dict)
     title: str | None = None
     layout: dict = field(default_factory=dict)
@@ -403,9 +402,8 @@ def bind_field(trace, meta, ctx, loc, *, speed=False):
         extent=extent_from_da(da, lat, lon, ctx.bbox),
         color_values=values,
         color_key="z",
-        color_da=None if speed else da,
+        color_da=da,
         color_title=title,
-        speed=speed,
     )
 
 

@@ -56,7 +56,9 @@ def test_default_palette_follows_aggregation_period():
     temp.attrs["standard_name"] = "air_temperature"
     assert default_palette(temp) == {"name": "RdYlBu_r", "colorscale": "RdYlBu_r"}
     assert default_palette(temp, diverging=True)["colorscale"] == "RdBu_r"
-    assert default_palette(None, speed=True)["colorscale"] == "YlGn"
+    speed = make_gridded(n_time=1, name="ws", units="m s-1")["ws"]
+    speed.attrs["standard_name"] = "wind_speed"
+    assert default_palette(speed)["colorscale"] == "YlGn"
 
 
 def test_theme_defaults_replace_kind_colors(tmp_path):

@@ -363,14 +363,15 @@ def is_spi(da) -> bool:
     return "spi" in tokens or "standardized precipitation" in name
 
 
-def default_kind(da, *, diverging: bool = False, speed: bool = False) -> str:
+def default_kind(da, *, diverging: bool = False) -> str:
     """The field kind whose ``theme["defaults"]`` entry colors ``da``.
 
-    Precipitation kinds come from the field itself. Other fields are wind
-    speed, ``diverging`` (the color range straddles zero), temperature, or
-    ``sequential``. A spread or variance is never a precip amount.
+    Precipitation kinds and wind speed (CF ``standard_name: wind_speed``) come
+    from the field itself. Other fields are ``diverging`` (the color range
+    straddles zero), temperature, or ``sequential``. A spread or variance is
+    never a precip amount.
     """
-    if speed:
+    if da is not None and da.attrs.get("standard_name") == "wind_speed":
         return "wind_speed"
     if da is not None and not is_statistic(da):
         if is_spi(da):
@@ -749,9 +750,7 @@ def flag_palette(da) -> dict | None:
     return {"name": "flags", "colors": colors, "bounds": bounds, "labels": labels}
 
 
-def default_palette(
-    da, *others, theme: dict | None = None, diverging: bool = False, speed: bool = False
-) -> dict:
+def default_palette(da, *others, theme: dict | None = None, diverging: bool = False) -> dict:
     """The palette ``da`` gets when the spec names none.
 
     CF flags get one class per flag. Every other field gets the theme's
@@ -764,7 +763,7 @@ def default_palette(
     if flags is not None:
         return flags
     theme = theme or default_theme()
-    value = theme["defaults"][default_kind(da, diverging=diverging, speed=speed)]
+    value = theme["defaults"][default_kind(da, diverging=diverging)]
     if isinstance(value, str) and value.lower() in DEFAULT_PRECIP_PALETTES:
         # A rate (mm/day) with no period is a daily amount: the daily window, not the weekly.
         days = [
