@@ -696,16 +696,6 @@ def test_colorblind_template_keeps_its_colorway_under_a_theme(tmp_path):
     assert _data(fig)[0]["line"]["color"] == COLORBLIND[0]
 
 
-def test_partial_theme_dict_gets_the_standard_keys():
-    from weather_skills_plotting.themes import default_theme
-
-    ds = make_gridded(n_time=1)
-    fig = compile(
-        {"data": [_trace("a")]}, {"a": ds}, theme={"palettes": default_theme()["palettes"]}
-    )
-    assert any(str(t["uid"]).startswith("overlay-borders") for t in _data(fig, "scatter"))
-
-
 def test_precip_rate_keeps_its_mm_units_for_a_spec_palette():
     # unit-convert to mm/h: class edges in mm/h must meet mm/h values, not mm/day.
     ds = make_gridded(n_time=1, fill=2.0, units="mm h-1")

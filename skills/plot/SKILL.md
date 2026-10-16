@@ -68,7 +68,7 @@ The figure at `-o`. PNG/JPG also print `data: NULL` when every value drawn is Na
 
 ### Notes
 - A map shows one value per cell: pick one value of any extra dim (`number`, `vertical`) with `isel` / `sel`, panel it with `"meta": {"facet": "number"}`, or average it first with summarize-dim.
-- Precip rates with an `aggregation_period` of a day or more are drawn as period totals (mm); sub-daily means (`6 hour`) stay rates (mm/h after unit-convert). If only some lines on an axis have one, all stay rates.
+- Plot draws the values in the file. A precip rate stays a rate (mm/day); for period totals (mm) run aggregate-temporal, then convert-to-totals.
 
 ### Example
 ```bash

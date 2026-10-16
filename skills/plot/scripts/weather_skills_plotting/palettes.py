@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import numpy as np
 from weather_skills_core.errors import UsageError
-from weather_skills_core.units import parse_aggregation_period, ureg, variable_units
+from weather_skills_core.units import classify_variable, ureg, variable_units
+
+from weather_skills_plotting.kinds import aggregation_days, default_kind
 
 
 def _rgb(*rows: tuple[int, int, int]) -> list[str]:
@@ -162,32 +164,37 @@ def precip_window_name(days: float | None) -> str:
     return "ppt_season"
 
 
-def precip_anomaly_window_name(days: float | None) -> str:
-    """Nested anomaly window matching ``precip_window_name`` (same day cuts)."""
-    return "ppt_anom_" + precip_window_name(days).removeprefix("ppt_")
-
-
-def widest_precip_window(*days: float | None) -> str:
-    """Window that covers every aggregation in ``days`` (highest vmax)."""
-    return max((precip_window_name(d) for d in days), key=PRECIP_WINDOW_ORDER.index)
-
-
-def widest_precip_anomaly_window(*days: float | None) -> str:
-    """Anomaly window that covers every aggregation in ``days``."""
-    return "ppt_anom_" + widest_precip_window(*days).removeprefix("ppt_")
-
-
-def default_precip_window(*days: float | None, anomaly: bool = False) -> str:
-    """Totals or anomaly nested window covering every aggregation in ``days``."""
-    if anomaly:
-        return widest_precip_anomaly_window(*days)
-    return widest_precip_window(*days)
-
-
 # Palette names that follow the field's ``aggregation_period`` like the
 # automatic precip default, but skip detection (so an all-positive anomaly
 # still gets the diverging scale). Value: whether it is the anomaly scale.
 DEFAULT_PRECIP_PALETTES = {"default_precip": False, "default_precip_anom": True}
+
+
+def resolve_default_precip(value, das, palettes: dict):
+    """``default_precip`` / ``default_precip_anom`` → the window covering every field in ``das``.
+
+    The window (``ppt_daily`` … ``ppt_season``, or ``ppt_anom_*``) follows each
+    field's ``aggregation_period``. A rate with no period is an amount per its
+    unit's time step: mm/day is a daily amount, mm/h an hourly one (still the
+    daily window). Any other value, or a theme palette of that name, comes back as is.
+    """
+    key = value.lower() if isinstance(value, str) else None
+    if key not in DEFAULT_PRECIP_PALETTES or any(k.lower() == key for k in palettes):
+        return value
+    days = []
+    for d in das:
+        if d is None:
+            continue
+        step = None
+        try:
+            step = (
+                (ureg.Quantity(1, "mm") / ureg.Quantity(1, variable_units(d))).to("day").magnitude
+            )
+        except Exception:  # noqa: BLE001 — not a length-per-time rate
+            pass
+        days.append(aggregation_days(d) or step)
+    window = max((precip_window_name(d) for d in days or [None]), key=PRECIP_WINDOW_ORDER.index)
+    return window.replace("ppt_", "ppt_anom_", 1) if DEFAULT_PRECIP_PALETTES[key] else window
 
 
 def precip_nested_palette(name: str) -> dict:
@@ -226,113 +233,6 @@ def precip_nested_anomaly_palette(name: str) -> dict:
         else PRECIP_ANOMALY_OVER
     )
     return {"colors": [under, *classes, over], "bounds": list(bounds)}
-
-
-def aggregation_days(da) -> float | None:
-    """Return stamped ``aggregation_period`` in days, or None."""
-    period = da.attrs.get("aggregation_period")
-    if not (isinstance(period, str) and period.strip()):
-        return None
-    try:
-        return float(parse_aggregation_period(period).to("day").magnitude)
-    except UsageError:
-        return None
-
-
-def is_precip(da) -> bool:
-    from weather_skills_core.units import classify_variable
-
-    kind = classify_variable(
-        da.name or "",
-        units=variable_units(da),
-        standard_name=da.attrs.get("standard_name"),
-    )
-    return kind in ("precip", "precip_amount")
-
-
-def is_precip_anomaly(da) -> bool:
-
-    if not is_precip(da):
-        return False
-    name = f"{da.name or ''} {da.attrs.get('long_name') or ''}".lower()
-    if "anomal" in name:
-        return True
-    values = da.data
-    values = getattr(values, "magnitude", values)  # a pint quantity: its numbers
-    sample = np.asarray(values, dtype=float).ravel()
-    finite = sample[np.isfinite(sample)]
-    # Real negatives, not the -1e-6 rounding a deaccumulated total can carry.
-    return bool(finite.size) and bool(np.nanmin(finite) < -0.01)
-
-
-def is_precip_poa(da) -> bool:
-    """Percent-of-normal precip (CHC ``ppt_poa``)."""
-    name = f"{da.name or ''} {da.attrs.get('long_name') or ''}".lower()
-    tokens = name.replace("_", " ").replace("-", " ").split()
-    if "percent of" in name or "pct of" in name or "poa" in tokens:
-        return True
-    units = (variable_units(da) or "").strip().lower()
-    return units in {"%", "percent"}
-
-
-def is_temperature(da) -> bool:
-    """Air, surface or sea temperature (not an anomaly): drawn cool to warm."""
-    text = " ".join(str(da.attrs.get(k) or "") for k in ("standard_name", "long_name")).lower()
-    return "temperature" in text and "anomal" not in text and "anomal" not in str(da.name).lower()
-
-
-# Standard-atmosphere sea-level pressure: the white middle of the pressure scale.
-STANDARD_SEA_LEVEL_PRESSURE_HPA = 1013.25
-
-
-def is_sea_level_pressure(da) -> bool:
-    """Sea-level pressure in pressure units (not surface pressure, not an anomaly)."""
-    from weather_skills_core.units import classify_variable
-
-    standard_name = da.attrs.get("standard_name")
-    kind = classify_variable(da.name or "", units=variable_units(da), standard_name=standard_name)
-    surface = standard_name == "surface_air_pressure" or "surface" in str(da.name).lower()
-    return kind == "pressure" and not surface and "anomal" not in str(da.name).lower()
-
-
-def is_statistic(da) -> bool:
-    """A spread or variance (``cell_methods`` from summarize-dim): not a precip amount."""
-    methods = str(da.attrs.get("cell_methods") or "")
-    return "standard_deviation" in methods or "variance" in methods
-
-
-def is_spi(da) -> bool:
-    name = f"{da.name or ''} {da.attrs.get('long_name') or ''}".lower()
-    tokens = name.replace("_", " ").replace("-", " ").split()
-    return "spi" in tokens or "standardized precipitation" in name
-
-
-def default_kind(da, *, diverging: bool = False) -> str:
-    """The field kind whose ``theme["defaults"]`` entry colors ``da``.
-
-    Precipitation kinds and wind speed (CF ``standard_name: wind_speed``) come
-    from the field itself. Other fields are ``diverging`` (the color range
-    straddles zero), sea-level pressure, temperature, or ``sequential``. A
-    spread or variance is never a precip amount.
-    """
-    if da is not None and da.attrs.get("standard_name") == "wind_speed":
-        return "wind_speed"
-    if da is not None and not is_statistic(da):
-        if is_spi(da):
-            return "spi"
-        if is_precip_poa(da):
-            return "precip_poa"
-        if is_precip_anomaly(da):
-            return "precip_anomaly"
-        if is_precip(da):
-            return "precip"
-    if diverging:
-        return "diverging"
-    if da is not None and not is_statistic(da) and is_sea_level_pressure(da):
-        return "sea_level_pressure"
-    if da is not None and is_temperature(da):
-        return "temperature"
-    return "sequential"
 
 
 def rank_colorscale(n_seasons: int) -> dict:
@@ -576,8 +476,6 @@ def default_palette(da, *others, theme: dict, diverging: bool = False) -> dict:
         return flags
     kind = default_kind(da, diverging=diverging)
     if kind == "precip_anomaly" and theme["defaults"][kind] == "default_precip_anom":
-        from weather_skills_core.units import classify_variable
-
         rate = classify_variable(
             da.name or "", units=variable_units(da), standard_name=da.attrs.get("standard_name")
         )
@@ -587,26 +485,7 @@ def default_palette(da, *others, theme: dict, diverging: bool = False) -> dict:
             return {"name": "BrBG", "colorscale": "BrBG"}
     value = theme["defaults"][kind]
     palettes = theme["palettes"]
-    key = value.lower() if isinstance(value, str) else None
-    if key in DEFAULT_PRECIP_PALETTES and not any(k.lower() == key for k in palettes):
-        # A --theme-file entry of the same name wins over the window-following default.
-        # A rate with no period is an amount per its unit's time step: mm/day is a
-        # daily amount, mm/h an hourly one (still the daily window, not the weekly).
-        days = []
-        for d in (da, *others):
-            if d is None:
-                continue
-            step = None
-            try:
-                step = (
-                    (ureg.Quantity(1, "mm") / ureg.Quantity(1, variable_units(d)))
-                    .to("day")
-                    .magnitude
-                )
-            except Exception:  # noqa: BLE001 — not a length-per-time rate
-                pass
-            days.append(aggregation_days(d) or step)
-        value = default_precip_window(*(days or [None]), anomaly=DEFAULT_PRECIP_PALETTES[key])
+    value = resolve_default_precip(value, (da, *others), palettes)
     if isinstance(value, str) and not any(k.lower() == value.lower() for k in palettes):
         return {"name": value, "colorscale": value}
     return parse_palette(value, registry=palettes)

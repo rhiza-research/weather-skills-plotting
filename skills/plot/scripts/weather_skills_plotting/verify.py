@@ -14,15 +14,15 @@ from weather_skills_core.cf import auto_variable, cf_dim
 from weather_skills_core.units import units_equal, variable_units
 
 from weather_skills_plotting.cli import skeleton, warn
-from weather_skills_plotting.display import (
+from weather_skills_plotting.geodata import plain
+from weather_skills_plotting.kinds import aggregation_days, is_precip
+from weather_skills_plotting.labels import (
     combine_display_labels,
     dataset_display_label,
+    format_plot_date_range,
     format_units_for_display,
 )
-from weather_skills_plotting.geodata import plain
-from weather_skills_plotting.labels import format_plot_date_range
-from weather_skills_plotting.layout import axis_suffix, panel_title
-from weather_skills_plotting.palettes import aggregation_days, is_precip
+from weather_skills_plotting.layout import axis_suffix, panel_title_annotation
 from weather_skills_plotting.spec import merge_spec
 
 VERIFY_VARS = {"hits": "event_hit", "bias": "bias", "mae": "mae"}
@@ -207,12 +207,12 @@ def build_verify_spec(obs, forecast, verify, spec):
     obs_label = dataset_display_label(obs, "Observation")
     fc_label = combine_display_labels([dataset_display_label(f, "Forecast") for f in forecasts])
     titles = [obs_label] + [f"{i}-week lead" for i in range(1, n + 1)]
-    annotations = [panel_title(p, t) for p, t in enumerate(titles)]
+    annotations = [panel_title_annotation(p, t) for p, t in enumerate(titles)]
     units = format_units_for_display(variable_units(obs_da))
     metric_label = METRIC_LABELS[metric]
     metric_title = f"{metric_label} [{units}]" if units and metric != "hits" else metric_label
     if single:
-        annotations.append(panel_title(2, f"{metric_label} · {fc_label}"))
+        annotations.append(panel_title_annotation(2, f"{metric_label} · {fc_label}"))
     else:
         # Verify cells sit under their forecast column title; no date of their own.
         annotations += [

@@ -348,11 +348,9 @@ def test_too_many_series(tmp_path, plot_fn, capsys):
     assert "at most 26" in capsys.readouterr().err
 
 
-def test_mixed_rate_and_aggregated_precip_stay_rates_on_shared_axis(tmp_path, plot_fn, capsys):
-    """A daily rate next to a weekly aggregate must not mix mm/day with mm totals."""
+def test_aggregated_precip_rate_is_drawn_as_a_rate(tmp_path, plot_fn, capsys):
+    """Plot draws the file's values: a weekly mean rate stays mm/day, with a hint."""
     import numpy as np
-
-    from weather_skills_plotting.series import keep_mixed_precip_as_rates
 
     daily = _area(make_gridded(n_time=14))
     weekly = _area(make_gridded(n_time=2, fill=3.0)).assign_coords(
@@ -363,23 +361,8 @@ def test_mixed_rate_and_aggregated_precip_stay_rates_on_shared_axis(tmp_path, pl
     b = write_zarr(weekly, tmp_path / "weekly.zarr")
     run_skill(plot_fn, *("-i", str(a), "-i", str(b), "-o", str(tmp_path / "ts.html")))
     err = capsys.readouterr().err
-    assert "drawn as a rate" in err
+    assert "run convert-to-totals" in err
     assert "different units" not in err
-
-    spec = {"data": [{"meta": {"source": {"input": "a"}}}, {"meta": {"source": {"input": "b"}}}]}
-    kept = keep_mixed_precip_as_rates(spec, {"a": daily, "b": weekly})
-    assert "aggregation_period" not in kept["b"]["precip"].attrs
-    assert weekly["precip"].attrs["aggregation_period"] == "7 day"  # input untouched
-
-    # Each on its own axis: the weekly series keeps its period and becomes a total.
-    spec["data"][1]["yaxis"] = "y2"
-    kept = keep_mixed_precip_as_rates(spec, {"a": daily, "b": weekly})
-    assert kept["b"]["precip"].attrs["aggregation_period"] == "7 day"
-    # Separate grid panels count as separate axes too.
-    del spec["data"][1]["yaxis"]
-    spec["layout"] = {"grid": {"rows": 2, "columns": 1, "pattern": "coupled"}}
-    kept = keep_mixed_precip_as_rates(spec, {"a": daily, "b": weekly})
-    assert kept["b"]["precip"].attrs["aggregation_period"] == "7 day"
 
 
 def test_one_station_over_time_defaults_to_a_series(tmp_path, plot_fn, capsys):

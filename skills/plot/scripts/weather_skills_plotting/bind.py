@@ -28,11 +28,6 @@ from weather_skills_core.units import (
     variable_units,
 )
 
-from weather_skills_plotting.display import (
-    format_units_for_display,
-    precip_for_display,
-    variable_label_for_display,
-)
 from weather_skills_plotting.geodata import (
     extent_from_da,
     plain,
@@ -40,20 +35,22 @@ from weather_skills_plotting.geodata import (
     subset_points,
     subset_spatial,
 )
+from weather_skills_plotting.kinds import aggregation_days, is_precip
 from weather_skills_plotting.labels import (
     axis_label,
     format_plot_date,
     format_step,
+    format_units_for_display,
     is_datetime_axis,
     panel_title,
     period_axis_title,
     timeseries_axis,
+    variable_label_for_display,
 )
 from weather_skills_plotting.palettes import (
     along_dim,
     along_member_label,
     continuous_colorscale,
-    is_precip,
     parse_palette,
 )
 from weather_skills_plotting.spec import DEFAULT_BIND
@@ -177,14 +174,16 @@ def _display(ds, variable):
             # Totals or anomalies can carry a rate/temperature standard_name that
             # the standard-units table would force into an incompatible target.
             pass
-    out = precip_for_display(ds, variable)
-    if out is not ds:
+    period = da.attrs.get("aggregation_period")
+    days = aggregation_days(da)
+    if kind == "precip" and period and (days is None or days >= 1):
+        # Plotting draws what the file holds; the total is convert-to-totals' job.
         print(
-            f"Note: {variable!r} is a rate with aggregation_period "
-            f"{ds[variable].attrs.get('aggregation_period')!r}; drawing period totals (mm)",
+            f"Note: {variable!r} is a rate with aggregation_period {period!r}; "
+            "run convert-to-totals first to draw period totals (mm)",
             file=sys.stderr,
         )
-    return out
+    return ds
 
 
 def _variable(ds, name, loc):

@@ -5,17 +5,11 @@ from __future__ import annotations
 import copy
 from pathlib import Path
 
-from weather_skills_core import UsageError
 from weather_skills_core.cf import auto_variable
-from weather_skills_core.units import (
-    AGGREGATION_PERIOD_ATTR,
-    to_standard_units,
-    units_equal,
-    variable_units,
-)
+from weather_skills_core.units import units_equal, variable_units
 
 from weather_skills_plotting.cli import input_path, warn
-from weather_skills_plotting.display import dataset_display_label, precip_for_display
+from weather_skills_plotting.labels import dataset_display_label
 from weather_skills_plotting.layout import axis_suffix
 
 MAX_INPUTS = 26
@@ -102,40 +96,6 @@ def _by_yaxis(spec: dict, datasets: dict) -> dict:
             axis = f"y{axis_suffix(k)}"
         by_axis.setdefault(axis, []).append((trace.get("uid") or key, key, ds, var))
     return by_axis
-
-
-def keep_mixed_precip_as_rates(spec: dict, datasets: dict) -> dict:
-    """Draw every precip series on a y-axis as a rate unless all become totals.
-
-    Series with an ``aggregation_period`` are drawn as period totals (mm);
-    one without stays a rate (mm/day). Mixed on one axis, a weekly 35 mm
-    total would read as 35 mm/day, so drop the period from those inputs.
-    """
-    out = dict(datasets)
-    for items in _by_yaxis(spec, datasets).values():
-        converted = []
-        for _, key, ds, var in items:
-            if var not in ds:
-                continue
-            try:
-                rate = to_standard_units(ds, variables=[var])
-            except UsageError:
-                rate = ds
-            converted.append((key, var, precip_for_display(rate, var) is not rate))
-        if not any(c for _, _, c in converted) or all(c for _, _, c in converted):
-            continue
-        for key, var, c in converted:
-            if c:
-                ds = out[key].copy(deep=False)
-                ds[var] = ds[var].copy(deep=False)
-                ds[var].attrs.pop(AGGREGATION_PERIOD_ATTR, None)
-                out[key] = ds
-        warn(
-            "some precip inputs have no aggregation_period, so every series on a shared "
-            "y-axis is drawn as a rate (mm/day). Run aggregate-temporal on all inputs to "
-            'plot totals, or give each its own axis (yaxis "y2", or layout.grid).'
-        )
-    return out
 
 
 def warn_disjoint_dates(spec: dict, datasets: dict) -> None:

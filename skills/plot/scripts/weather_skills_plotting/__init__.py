@@ -9,10 +9,12 @@ Module                 Role
 :mod:`.spec`           Load, merge (by uid / name), validate, dump the spec
 :mod:`.bind`           Fill traces from datasets (``meta.bind`` modes)
 :mod:`.figure`         Panels, color axes, overlays → ``go.Figure``
-:mod:`.layout`         Templates and the map panel grid
-:mod:`.palettes`       CHC precipitation / SPI class palettes, theme files
+:mod:`.layout`         Templates, template lookups and the map panel grid
+:mod:`.themes`         ``themes/default.json`` and ``--theme-file`` loading
+:mod:`.palettes`       Class palettes, the precip windows, Plotly colorscales
+:mod:`.kinds`          What a field is (precip, anomaly, SPI, temperature …)
 :mod:`.geodata`        Natural Earth overlays, spatial subsets, extents
-:mod:`.labels`         Date and panel labels
+:mod:`.labels`         Figure text: dates, panel titles, product, variable, units
 :mod:`.wind`           u/v detection, arrows, wind-rose histograms, xy pairing
 :mod:`.qa`             Pixel hash + finite-data report printed by ``export()``
 =====================  ========================================================

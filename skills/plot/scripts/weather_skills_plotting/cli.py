@@ -107,7 +107,7 @@ def run(
     user = user_spec.data if isinstance(user_spec, SpecArg) else (user_spec or {})
     merged = merge_spec(skill_spec, user)
     theme = load_theme(theme_file)
-    validate(merged, theme["palettes"])
+    validate(merged, theme)
     dest = dump_spec_dest(dump)
     if dest is not None:
         dump_spec(merged, dest)

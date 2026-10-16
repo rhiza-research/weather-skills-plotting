@@ -115,8 +115,8 @@ def _bundled_country_geoms(clip_geom):
     return [shapely.boundary(g) for g in geoms if g is not None and not g.is_empty]
 
 
-# Base-map layers ``geo.overlays`` can switch on or off.
-OVERLAY_NAMES = ("coastline", "borders", "lakes", "rivers", "admin1")
+# Base-map layers ``layout.meta.overlays`` can switch on or off, in draw order (later on top).
+OVERLAY_NAMES = ("admin1", "rivers", "lakes", "borders", "coastline")
 
 
 def plain(da):
@@ -356,7 +356,7 @@ def overlay_geoms(extent, settings: dict):
             out = [("borders", unwrap_geoms(geoms, extent[0]) if extent[1] > 180 else geoms)]
         _OVERLAY_CACHE[key] = out
         return out
-    for name in OVERLAY_NAMES_DRAW_ORDER:
+    for name in OVERLAY_NAMES:
         choice = settings.get(name)
         if choice is False:
             continue
@@ -374,9 +374,6 @@ def overlay_geoms(extent, settings: dict):
             out.append((name, geoms))
     _OVERLAY_CACHE[key] = out
     return out
-
-
-OVERLAY_NAMES_DRAW_ORDER = ("admin1", "rivers", "lakes", "borders", "coastline")
 
 
 def geoms_to_xy(geoms, *, rings_only=False, tolerance=0.0):

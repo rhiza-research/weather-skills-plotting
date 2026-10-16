@@ -18,6 +18,8 @@ from pathlib import Path
 from weather_skills_core.errors import UsageError
 from weather_skills_core.standard_utils import parse_bbox
 
+from weather_skills_plotting.geodata import OVERLAY_NAMES
+
 SPEC_VERSION = 3
 
 TOP_KEYS = frozenset({"data", "layout"})
@@ -64,7 +66,6 @@ LAYOUT_META_KEYS = frozenset(
 GEO_KEYS = frozenset({"bbox", "mask_geojson", "point"})
 EXPORT_KEYS = frozenset({"scale"})
 ANIMATION_KEYS = frozenset({"duration", "transition"})
-OVERLAY_NAMES = ("coastline", "borders", "lakes", "rivers", "admin1")
 # Layout lists that merge by ``name`` (Plotly's own item identity).
 NAMED_LAYOUT_LISTS = ("annotations", "shapes", "images")
 
@@ -277,7 +278,7 @@ def _check_source(source, loc: str) -> None:
             raise UsageError(f'plot spec {loc}.point must be {{"lat": …, "lon": …}}')
 
 
-def check_trace_meta(meta, loc: str, palettes: dict | None = None) -> None:
+def check_trace_meta(meta, loc: str, palettes: dict) -> None:
     from weather_skills_plotting.palettes import (
         DEFAULT_PRECIP_PALETTES,
         parse_palette,
@@ -313,11 +314,7 @@ def check_trace_meta(meta, loc: str, palettes: dict | None = None) -> None:
         raise UsageError(f"plot spec {loc}.align must be 'dayofyear'")
     palette = meta.get("palette")
     if palette is not None and str(palette).lower() not in DEFAULT_PRECIP_PALETTES:
-        # Names resolve against the theme in use (the standard theme when none is given).
-        if palettes is None:
-            from weather_skills_plotting.themes import default_theme
-
-            palettes = default_theme()["palettes"]
+        # Names resolve against the theme in use.
         parse_palette(palette, loc=f"{loc}.palette", registry=palettes)
 
 
@@ -384,7 +381,7 @@ def check_layout_meta(meta) -> None:
                 )
 
 
-def check_meta(spec: dict, palettes: dict | None = None) -> None:
+def check_meta(spec: dict, palettes: dict) -> None:
     """Check every ``meta`` block (Plotly does not look inside them)."""
     seen = set()
     for i, trace in enumerate(spec.get("data") or []):
@@ -436,21 +433,22 @@ def plotly_error(exc: Exception, loc: str = "") -> UsageError:
     )
 
 
-def validate(spec: dict, palettes: dict | None = None) -> dict:
+def validate(spec: dict, theme: dict | None = None) -> dict:
     """Check the meta blocks, then let Plotly validate everything else.
 
-    ``palettes`` is the theme's registry (``load_theme``) that palette names resolve in.
+    ``theme`` is ``load_theme()``'s (read here when None): palette names resolve in
+    its palettes, and its template becomes ``weather_skills``.
     """
     import plotly.graph_objects as go
-    import plotly.io as pio
 
     from weather_skills_plotting.layout import register_templates
+    from weather_skills_plotting.themes import load_theme
 
+    theme = theme or load_theme()
     check_shape(spec)
-    check_meta(spec, palettes)
+    check_meta(spec, theme["palettes"])
     # Our template names must exist before Plotly checks layout.template.
-    if "weather_skills" not in pio.templates:
-        register_templates()
+    register_templates(theme["template"])
     try:
         go.Figure(spec)
     except ValueError as exc:
