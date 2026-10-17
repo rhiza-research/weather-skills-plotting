@@ -275,21 +275,17 @@ def build_verify_spec(obs, forecast, verify, spec):
             "no verifying-week date found (select drops the time coordinate); put the week "
             'in the title, e.g. --spec \'{"layout": {"title": {"text": "IMERG vs ENS, 3–9 Aug"}}}\''
         )
-    user_title = (user.get("layout") or {}).get("title") or {}
-    user_title = user_title.get("text") if isinstance(user_title, dict) else user_title
-    title = (
-        week
-        if not user_title
-        else (f"{user_title} · {week}" if week and week not in user_title else user_title)
-    )
+    user_layout = user.get("layout") or {}
+    user_title = user_layout.get("title") or {}
+    user_title = user_title if isinstance(user_title, dict) else {"text": user_title}
+    text = user_title.get("text")
+    title = week if not text else (f"{text} · {week}" if week and week not in text else text)
     grid = {"rows": 1, "columns": 3} if single else {"rows": 2, "columns": cols}
     layout = {"grid": grid, "annotations": annotations, "coloraxis2": axis2}
     if title:
         layout["title"] = {"text": title}
     base = skeleton("plot --verify", datasets, data, layout)
-    if user_title:
-        user = {
-            **user,
-            "layout": {k: v for k, v in (user.get("layout") or {}).items() if k != "title"},
-        }
+    if text:
+        # Only the text changes: a subtitle or font in the user's title stays.
+        user = {**user, "layout": {**user_layout, "title": {**user_title, "text": title}}}
     return merge_spec(base, user), datasets

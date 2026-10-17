@@ -116,10 +116,11 @@ def build_mediogram_spec(ds, spec):
     # A user title keeps the place and init date, as the verification grid keeps the week.
     user_layout = user.get("layout") or {}
     user_title = user_layout.get("title") or {}
-    user_title = user_title.get("text") if isinstance(user_title, dict) else user_title
-    if user_title:
-        title = f"{user_title} · {where}{suffix}"
-        user = {**user, "layout": {k: v for k, v in user_layout.items() if k != "title"}}
+    user_title = user_title if isinstance(user_title, dict) else {"text": user_title}
+    if user_title.get("text"):
+        title = f"{user_title['text']} · {where}{suffix}"
+        # Only the text changes: a subtitle or font in the user's title stays.
+        user = {**user, "layout": {**user_layout, "title": {**user_title, "text": title}}}
     else:
         title = f"Mediogram: {qty} at {where}{suffix}"
     layout = {"title": {"text": title}, "boxmode": "group", "scattermode": "group", "xaxis": xaxis}

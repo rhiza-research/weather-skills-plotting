@@ -17,7 +17,7 @@ import re
 
 from weather_skills_core.errors import UsageError
 
-from weather_skills_plotting.layout import map_layout
+from weather_skills_plotting.layout import map_layout, title_lines
 
 DEFAULT_DURATION_MS = 500
 DEFAULT_TRANSITION_MS = 0
@@ -150,7 +150,7 @@ def animate_figure(fig, *, user_layout: dict | None = None, animation: dict | No
         1,
         1,
         aspect,
-        titled=bool((out_layout.get("title") or {}).get("text")),
+        titled=title_lines(out_layout.get("title")),
         panel_titles=True,
         right=bool(bars) and not horizontal,
         below=horizontal,

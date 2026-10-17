@@ -55,6 +55,7 @@ Each input file is one entry in `data`. Name it on the command line (`-i ecmwf.z
 | To | `--spec` |
 | --- | --- |
 | Set the title | `{"layout": {"title": {"text": "Week 1"}}}` |
+| Add a second title line | `{"layout": {"title": {"text": "ECMWF rainfall", "subtitle": {"text": "Week 1: 16–22 Oct"}}}}` (not `<br>` in `text`: only `subtitle` gets room above the maps) |
 | Title a panel | `{"data": [{"uid": "OBS", "name": "CHIRPS"}]}` |
 | Pick one step | `{"data": [{"uid": "FC", "meta": {"source": {"isel": {"step": 0}}}}]}` |
 | Set the color range | `{"data": [{"uid": "0", "zmin": 0, "zmax": 100}]}` |

@@ -48,6 +48,7 @@ from weather_skills_plotting.layout import (
     map_layout,
     panel_title_annotation,
     place_colorbars,
+    title_lines,
 )
 from weather_skills_plotting.palettes import (
     _class_slots,
@@ -608,7 +609,7 @@ def _assemble_map(items, user_layout, lmeta, ctx):
         rows,
         cols,
         aspect,
-        titled=bool((user_layout.get("title") or {}).get("text")),
+        titled=title_lines(user_layout.get("title")),
         panel_titles=any(panel_titles),
         right=bool(panels_of) and mode in ("right", "rows"),
         below=bool(panels_of) and mode in ("columns", "below"),
@@ -783,9 +784,9 @@ def _assemble_chart(items, user_layout):
             layout.setdefault("title", {"text": bound.title})
     layout.update(axis_titles)
     # Room above the plot only for what is there: a title, a legend row.
-    titled = bool((user_layout.get("title") or layout.get("title") or {}).get("text"))
+    lines = title_lines(user_layout.get("title") or layout.get("title"))
     named = [tr for tr in data if tr.get("name") and tr.get("showlegend") is not False]
-    top = 60 if titled else 20
+    top = (20, 60, 84)[lines]
     # Legend order follows the inputs even with filled bands (Plotly reverses those).
     layout["legend"] = {**(layout.get("legend") or {}), "traceorder": "normal"}
     if len(named) < 2:

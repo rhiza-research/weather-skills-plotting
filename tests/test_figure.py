@@ -907,3 +907,14 @@ def test_isel_range_picks_every_nth_position():
     ds = make_gridded(n_time=6)
     spec = {"data": [_trace("a", source={"isel": {"time": {"start": 0, "stop": 6, "step": 2}}})]}
     assert len(_data(compile(spec, {"a": ds}), "heatmap")) == 3
+
+
+def test_a_subtitle_moves_the_maps_down_and_survives_the_merge():
+    ds = make_gridded(n_time=2)
+    title = {"text": "ECMWF rainfall"}
+    sub = {**title, "subtitle": {"text": "Week 1: 16–22 Oct"}}
+    data = [_trace("0")]
+    plain = _layout(compile({"data": data, "layout": {"title": title}}, {"0": ds}))
+    with_sub = _layout(compile({"data": data, "layout": {"title": sub}}, {"0": ds}))
+    assert with_sub["margin"]["t"] > plain["margin"]["t"]
+    assert with_sub["title"]["subtitle"]["text"] == "Week 1: 16–22 Oct"

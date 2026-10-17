@@ -119,10 +119,21 @@ def layout_value(user_layout: dict, path: str):
     return None
 
 
+def title_lines(title) -> int:
+    """Lines the figure title takes: 0, 1, or 2 when it has a ``subtitle``."""
+    if not isinstance(title, dict):
+        return 1 if title else 0
+    if not title.get("text"):
+        return 0
+    return 2 if (title.get("subtitle") or {}).get("text") else 1
+
+
 def map_layout(
     rows, cols, aspect, *, titled, panel_titles, right=False, below=False, below_lines=0, user=None
 ) -> tuple[dict, list[tuple[float, float, float, float]]]:
     """Canvas, margins and per-panel ``(x0, x1, y0, y1)`` domains for a map grid.
+
+    ``titled`` is how many lines the figure title takes (``title_lines``).
 
     ``right`` / ``below`` say a colorbar stands there; ``below_lines`` is more
     room under the maps, in lines of text. ``user`` is the spec layout: its
@@ -143,7 +154,8 @@ def map_layout(
     title_lines = LINE if panel_titles else 0
     ml = TICK_ROOM * em
     mr = (COLORBAR_ROOM if right else 1) * em
-    mt = ((LINE if titled else 0) + title_lines + 1) * em
+    # A subtitle takes a line plus a little air above the panel titles.
+    mt = (LINE * int(titled) + (1 if titled > 1 else 0) + title_lines + 1) * em
     mb = (LINE + (COLORBAR_ROOM if below else 0) + below_lines) * em
 
     def gaps(w, h):
