@@ -78,7 +78,7 @@ def animate_figure(fig, *, user_layout: dict | None = None, animation: dict | No
     if n < 2:
         raise UsageError(
             "nothing to animate: the map has a single panel. Animate a dim with at least two "
-            "values (data[].meta.facet, default step or time), or use the plot skill for one map"
+            "values (data[].meta.facet, default step or time), or drop --animate for one map"
         )
 
     panels = [[t for t in data if _panel_of(t) == p] for p in range(n)]

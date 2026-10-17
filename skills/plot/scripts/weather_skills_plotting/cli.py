@@ -117,7 +117,7 @@ def run(
     if animate and Path(output).suffix.lower() not in (".html", ".htm"):
         raise UsageError(
             f"output {Path(output).name!r} must end in .html: an animation plays only in a "
-            "browser. For a still image of one time, use the plot skill"
+            "browser. For a still image of one time, drop --animate"
         )
     fig = compile(merged, datasets, theme=theme)
     layout_meta = (merged.get("layout") or {}).get("meta") or {}
