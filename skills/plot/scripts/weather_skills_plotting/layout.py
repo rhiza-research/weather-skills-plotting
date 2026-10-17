@@ -14,16 +14,16 @@ import math
 import numpy as np
 from weather_skills_core.errors import UsageError
 
-from weather_skills_plotting.themes import COLORBLIND
+from weather_skills_plotting.palettes import parse_palette
 
 DEFAULT_TEMPLATE = "weather_skills"
 
 
-def register_templates(template: dict) -> None:
+def register_templates(theme: dict) -> None:
     """``weather_skills`` and ``colorblind``: Plotly's ``seaborn`` with the theme's template.
 
-    ``template`` is the theme's.
-    ``colorblind`` keeps its own colorway, since picking it is an accessibility choice.
+    ``colorblind`` takes the theme's ``colorblind`` palette as its colorway, even when
+    the template sets one, since picking it is an accessibility choice.
     """
     import plotly.graph_objects as go
     import plotly.io as pio
@@ -31,13 +31,15 @@ def register_templates(template: dict) -> None:
     for name in ("weather_skills", "colorblind"):
         base = copy.deepcopy(pio.templates["seaborn"])
         try:
-            base.update(go.layout.Template(template))
+            base.update(go.layout.Template(theme["template"]))
         except ValueError as exc:
             from weather_skills_plotting.spec import plotly_error
 
             raise plotly_error(exc, "theme file template") from None
         if name == "colorblind":
-            base.layout.colorway = COLORBLIND
+            base.layout.colorway = parse_palette(
+                theme["palettes"]["colorblind"], loc="palettes.colorblind", registry={}
+            )["colors"]
         pio.templates[name] = base
 
 

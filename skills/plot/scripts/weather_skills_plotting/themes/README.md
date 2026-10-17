@@ -1,7 +1,7 @@
 # Plot themes
 
 [`default.json`](default.json) is the standard weather-skills plot look. A
-theme file (`--theme-file`, JSON or TOML) has the same four sections, and
+theme file (`--theme-file`, JSON or TOML) has the same five sections, and
 anything it sets is layered on top of `default.json`. So a theme lists only
 what it changes. To start a house style, copy `default.json`, delete the
 parts you keep as they are, and edit the rest.
@@ -29,8 +29,9 @@ one key by key, and a list such as `colorway` is replaced whole.
   a box given only a line color would draw as a tinted patch. Here a shape is
   an outline unless it sets a fill.
 
-The `colorblind` template gets the same settings but always keeps its own
-colorblind-safe colorway, even when a theme sets one.
+The `colorblind` template gets the same settings, but its colorway is always
+the `colorblind` palette (seaborn "colorblind"), even when a theme's template
+sets one. A theme recolors it by replacing that palette.
 
 ## `palettes`
 
@@ -40,24 +41,30 @@ Named palettes for a trace's `meta.palette` and for `defaults`:
   bounds (optional `under`, `over`, `labels`).
 - `{"colors": [...]}`, or a plain list, draws a continuous scale.
 
-The standard palettes come from two places. Fixed tables are listed in
-`default.json`, so a copy of it shows them:
+Every fixed color table is in `default.json`, so a copy of it shows them:
 
 | Names | Use |
 |---|---|
+| `ppt_master` | Precipitation totals classes (0 … 1000 mm), packed under + classes + over; the totals windows are cropped from it |
+| `ppt_anom_master` | Precipitation anomaly classes (±500 mm, CHC `ppt_anomaly_cmap.pro`), packed the same way; the anomaly windows are cropped from it |
+| `ppt_total` | Historical CHC rainbow scale (0 … 2500 mm, CHC `ppt_total_cmap.pro`) |
 | `ppt_poa` | Precipitation as percent of normal (CHC `ppt_poa_cmap.pro`) |
 | `ppt_spp` | Seasonal rainfall performance probability classes (CHC `ppt_spp_cmap.pro`) |
 | `spi` | Standardized Precipitation Index (CHC `spi_cmap.pro`) |
 | `rocket` | Default sequential scale (seaborn "rocket", light to dark) |
+| `hits` | Three-flag fields: verify hits (disagree / below / hit) and any CF field with three `flag_values`. Red / white / green; white so the grey no-data background never reads as a class |
+| `bias`, `precip_bias`, `mae` | plot-verify's bias (RdBu), rainfall bias (brown too dry … green too wet) and MAE scales |
+| `wind_rose` | One color per wind-rose speed class, light to dark |
+| `colorblind` | The `colorblind` template's colorway |
 
-Palettes that are computed are built in `palettes.py`. A theme can still use
-or replace them by name:
+The precipitation windows are cropped in `palettes.py` from the masters, so a
+theme that replaces `ppt_master` or `ppt_anom_master` recolors every window.
+A theme can also use or replace a window by name:
 
 | Names | Use |
 |---|---|
-| `ppt_daily`, `ppt_week`, `ppt_month`, `ppt_season` | Precipitation totals, each cropped from one master so a color means the same millimetres on every window |
-| `ppt_anom_daily`, `ppt_anom_week`, `ppt_anom_month`, `ppt_anom_season` | Precipitation anomalies, cropped the same way |
-| `ppt_total` | Historical CHC rainbow scale (0 … 2500 mm), the source of the totals master |
+| `ppt_daily`, `ppt_week`, `ppt_month`, `ppt_season` | Precipitation totals up to 50, 200, 400 and 1000 mm, so a color means the same millimetres on every window |
+| `ppt_anom_daily`, `ppt_anom_week`, `ppt_anom_month`, `ppt_anom_season` | Precipitation anomalies within ± the same amounts |
 
 `default_precip` and `default_precip_anom` are not palettes of their own:
 they pick `ppt_daily` … `ppt_season` (or `ppt_anom_*`) from the field's
@@ -84,6 +91,24 @@ object, or a Plotly colorscale name (`Viridis`, `RdBu_r`, …).
 
 The kinds are checked top to bottom. A spread or variance is never a precip
 amount, and CF flag fields (e.g. verify hits) always get one color per flag.
+
+## `styles`
+
+Plotly settings for elements the plotter draws itself. Each is merged into
+what it styles, and anything the spec sets on a trace wins. A theme's style
+merges into the standard one.
+
+| Name | Merged into |
+|---|---|
+| `maps` | A map figure's layout. `plot_bgcolor` is the no-data grey seen where cells are NaN, darker than a dry class or a diverging zero |
+| `classed_colorbar` | The colorbar of a class palette; the outline keeps white classes visible |
+| `isobars` | A contour trace with no colors of its own, drawn over shading |
+| `map_marks` | A plain trace (no `meta.bind`) repeated on every map panel |
+| `boundary` | A GeoJSON outline of five polygons or fewer (more use `overlays.admin1`) |
+| `arrows` | Wind arrows and the reference arrow |
+| `arrow_key_box` | The box behind the reference arrow |
+| `members` | Ensemble members drawn as spaghetti |
+| `band_members` | Members drawn under a percentile band |
 
 ## `overlays`
 

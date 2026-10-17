@@ -556,7 +556,7 @@ def test_cf_flag_field_gets_named_classes():
 
 
 def test_default_precip_palette_names_follow_aggregation_window():
-    from weather_skills_plotting.palettes import precip_nested_anomaly_palette
+    from weather_skills_plotting.palettes import precip_window_palette
     from weather_skills_plotting.themes import load_theme
 
     # An all-positive field with no precip name: detection would not call it an anomaly.
@@ -565,7 +565,7 @@ def test_default_precip_palette_names_follow_aggregation_window():
     ds["diff"].attrs["aggregation_period"] = "30 day"
     spec = {"data": [_trace("a", meta={"palette": "Default_Precip_Anom"})]}
     bar = _layout(compile(spec, {"a": ds}))["coloraxis"]["colorbar"]
-    month = precip_nested_anomaly_palette("ppt_anom_month")
+    month = precip_window_palette("ppt_anom_month", load_theme()["palettes"])
     assert bar["ticktext"] == [f"{b:g}" for b in month["bounds"]]
 
     spec = {"data": [_trace("a", meta={"palette": "default_precip"})]}
@@ -682,7 +682,7 @@ def test_theme_file_sets_palette_colorway_and_overlays(tmp_path):
 
 
 def test_colorblind_template_keeps_its_colorway_under_a_theme(tmp_path):
-    from weather_skills_plotting.themes import COLORBLIND, load_theme
+    from weather_skills_plotting.themes import default_theme, load_theme
 
     path = tmp_path / "theme.json"
     path.write_text(json.dumps({"template": {"layout": {"colorway": ["#123456", "#654321"]}}}))
@@ -693,7 +693,7 @@ def test_colorblind_template_keeps_its_colorway_under_a_theme(tmp_path):
         "layout": {"template": "colorblind"},
     }
     fig = compile(spec, {"a": area_mean}, theme=load_theme(path))
-    assert _data(fig)[0]["line"]["color"] == COLORBLIND[0]
+    assert _data(fig)[0]["line"]["color"] == default_theme()["palettes"]["colorblind"]["colors"][0]
 
 
 def test_precip_rate_keeps_its_mm_units_for_a_spec_palette():
@@ -861,11 +861,11 @@ def test_xy_year_labels_do_not_share_a_spot():
 
 
 def test_wind_speed_classes_are_one_ramp():
-    from weather_skills_plotting.wind import WIND_SPEED_COLORS
+    from weather_skills_plotting.themes import default_theme
 
     lum = [
         sum(int(c[i : i + 2], 16) * w for i, w in ((1, 0.299), (3, 0.587), (5, 0.114)))
-        for c in WIND_SPEED_COLORS
+        for c in default_theme()["palettes"]["wind_rose"]["colors"]
     ]
     assert lum == sorted(lum, reverse=True)
 

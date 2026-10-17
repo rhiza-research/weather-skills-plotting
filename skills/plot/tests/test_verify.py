@@ -114,3 +114,11 @@ def test_grid_mismatch_rejected(tmp_path, files, ver_fn, capsys):
             "x.png",
         )
     assert "coarsen --obs onto the forecast" in capsys.readouterr().err
+
+
+def test_rainfall_bias_takes_the_theme_precip_bias_palette(files, ver_fn, tmp_path, capsys):
+    ver = [str(write_zarr(_verify("bias"), tmp_path / f"b{i}.zarr")) for i in (1, 2)]
+    out = tmp_path / "bias.html"
+    run_skill(ver_fn, *_argv({**files, "ver": ver}), "-o", str(out))
+    html = out.read_text()
+    assert "#543005" in html and "#003c30" in html  # brown (too dry) … green (too wet)

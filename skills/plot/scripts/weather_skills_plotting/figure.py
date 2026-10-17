@@ -66,7 +66,6 @@ from weather_skills_plotting.spec import (
 from weather_skills_plotting.themes import load_theme
 
 # Draw order inside a map panel: fields under overlays, then arrows, stations, outlines.
-NO_DATA_COLOR = "#cccccc"  # map background, seen where cells are NaN
 MANY_PANELS = 24  # more map panels than this get a warning
 _MAP_RANK = {"field": 0, "speed": 0, "overlay": 1, "arrows": 2, "points": 3, "geojson": 4, None: 5}
 _TRACE_COLOR_KEYS = ("colorscale", "reversescale", "showscale", "colorbar")
@@ -285,7 +284,7 @@ def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
         axis.update(colorscale=scale["colorscale"], cmin=scale["cmin"], cmax=scale["cmax"])
         axis["colorbar"].update(tickvals=scale["tickvals"], ticktext=scale["ticktext"])
         # An outline keeps white classes (dry, near-zero anomaly) visible on the bar.
-        axis["colorbar"].update(outlinewidth=1, outlinecolor="#999999")
+        axis["colorbar"].update(copy.deepcopy(ctx.theme["styles"]["classed_colorbar"]))
         n_slots = len(scale["colorscale"]) // 2
         for tr in contour_traces:
             tr.setdefault("autocontour", False)
@@ -411,9 +410,7 @@ def _assemble_map(items, user_layout, lmeta, ctx):
                 tr["uid"] = safe_uid(f"{uid}-p{p + 1}" if n > 1 else uid)
                 if any(spec_trace is f[1] for f in floating):
                     # One color on every panel, not the next colorway entry per copy.
-                    fill_defaults(
-                        tr, {"marker": {"color": "#262626"}, "line": {"color": "#262626"}}
-                    )
+                    fill_defaults(tr, ctx.theme["styles"]["map_marks"])
                 panel_traces[p].append((_MAP_RANK[None], tr, spec_trace, None))
                 continue
             if len(bound.panels) == 1:
@@ -506,7 +503,7 @@ def _assemble_map(items, user_layout, lmeta, ctx):
             if _uncolored(spec_trace):
                 if tr.get("type") == "contour":
                     # Isobars over shading: plain black lines, no colorbar of their own.
-                    fill_defaults(tr, {"showscale": False, "line": {"color": "black", "width": 1}})
+                    fill_defaults(tr, {"showscale": False, **ctx.theme["styles"]["isobars"]})
                 continue
             if bound is None or id(spec_trace) not in axis_of:
                 continue
@@ -589,10 +586,10 @@ def _assemble_map(items, user_layout, lmeta, ctx):
         user={**user_layout, "grid": grid_in},
     )
     slots = place_colorbars(mode, panels_of, domains)
-    # No-data cells show the plot background: a neutral grey, not the template's tint.
-    # Darker than the near-white of a diverging zero or a dry class, so a missing cell
-    # never reads as zero.
-    layout["plot_bgcolor"] = NO_DATA_COLOR
+    # No-data cells show the plot background (the theme's maps style): a neutral grey,
+    # not the template's tint, darker than a diverging zero or a dry class, so a missing
+    # cell never reads as zero.
+    layout.update(copy.deepcopy(ctx.theme["styles"]["maps"]))
     layout["annotations"] = []
     for p in range(n):
         s = axis_suffix(p)

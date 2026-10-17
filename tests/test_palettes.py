@@ -9,7 +9,7 @@ from weather_skills_plotting.palettes import (
     default_palette,
     discretize,
     parse_palette,
-    precip_nested_palette,
+    precip_window_palette,
 )
 from weather_skills_plotting.themes import default_theme
 
@@ -18,7 +18,9 @@ PALETTES = THEME["palettes"]
 
 
 def test_discretize_packed_under_classes_over():
-    pal = precip_nested_palette("ppt_daily")  # bounds 0,1,2,5,…,50; under + 9 classes + over
+    pal = precip_window_palette(
+        "ppt_daily", PALETTES
+    )  # bounds 0,1,2,5,…,50; under + 9 classes + over
     slots, scale = discretize(np.array([-1, 0, 0.5, 1, 4, 49, 50, 51, np.nan]), pal)
     assert slots[:8].tolist() == [0, 1, 1, 2, 3, 9, 10, 10]
     assert np.isnan(slots[8])

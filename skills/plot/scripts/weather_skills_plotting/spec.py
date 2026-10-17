@@ -448,7 +448,7 @@ def validate(spec: dict, theme: dict | None = None) -> dict:
     check_shape(spec)
     check_meta(spec, theme["palettes"])
     # Our template names must exist before Plotly checks layout.template.
-    register_templates(theme["template"])
+    register_templates(theme)
     try:
         go.Figure(spec)
     except ValueError as exc:

@@ -27,14 +27,6 @@ from weather_skills_plotting.spec import merge_spec
 
 VERIFY_VARS = {"hits": "event_hit", "bias": "bias", "mae": "mae"}
 METRIC_LABELS = {"hits": "Hits", "bias": "Bias", "mae": "MAE"}
-# "below" is white: the map's no-data grey must not read as a class.
-HITS_PALETTE = {"colors": ["#d73027", "#ffffff", "#1a9850"], "bounds": [-1.5, -0.5, 0.5, 1.5]}
-BIAS_COLORS = ["#053061", "#2166ac", "#4393c3", "#92c5de", "#d1e5f0", "#ffffff",
-               "#fddbc7", "#f4a582", "#d6604d", "#b2182b", "#67001f"]  # fmt: skip
-# Rainfall bias: brown where the forecast is too dry, green where too wet (BrBG).
-PRECIP_BIAS_COLORS = ["#543005", "#8c510a", "#bf812d", "#dfc27d", "#f6e8c3", "#f5f5f5",
-                      "#c7eae5", "#80cdc1", "#35978f", "#01665e", "#003c30"]  # fmt: skip
-MAE_COLORS = ["#ffffff", "#fddbc7", "#f4a582", "#d6604d", "#b2182b", "#67001f"]
 
 
 def _as_list(value):
@@ -186,6 +178,10 @@ def build_verify_spec(obs, forecast, verify, spec):
                 "meta": {"source": {"input": f"forecast{i}", "variable": var}},
             }
         )
+    # Theme palettes: hits red / white / green ("below" is white, so the map's no-data
+    # grey never reads as a class); rainfall bias brown (too dry) to green (too wet).
+    palette = {"hits": "hits", "bias": "precip_bias" if is_precip(obs_da) else "bias"}
+    palette = palette.get(metric, "mae")
     single = n == 1
     for i in range(1, n + 1):
         # One lead: obs | forecast | verify in one row. More: verify maps under each lead.
@@ -199,7 +195,7 @@ def build_verify_spec(obs, forecast, verify, spec):
                 "yaxis": f"y{p}",
                 "meta": {
                     "source": {"input": f"verify{i}", "variable": VERIFY_VARS[metric]},
-                    **({"palette": HITS_PALETTE} if metric == "hits" else {}),
+                    "palette": palette,
                 },
             }
         )
@@ -251,7 +247,6 @@ def build_verify_spec(obs, forecast, verify, spec):
             }
         }
     elif metric == "bias":
-        colors = PRECIP_BIAS_COLORS if is_precip(obs_da) else BIAS_COLORS
         # Symmetric about zero, set by the bulk of the errors, not the few largest.
         values = np.concatenate(
             [
@@ -262,14 +257,12 @@ def build_verify_spec(obs, forecast, verify, spec):
         values = values[np.isfinite(values)]
         limit = float(np.percentile(values, 98)) if values.size else 1.0
         axis2 = {
-            "colorscale": [[i / 10, c] for i, c in enumerate(colors)],
             "cmin": -limit,
             "cmax": limit,
             "colorbar": {"title": {"text": metric_title}},
         }
     else:
         axis2 = {
-            "colorscale": [[i / 5, c] for i, c in enumerate(MAE_COLORS)],
             "cmin": 0,
             "colorbar": {"title": {"text": metric_title}},
         }

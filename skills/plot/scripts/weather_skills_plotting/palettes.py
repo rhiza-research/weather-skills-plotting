@@ -1,9 +1,11 @@
-"""Weather palettes (CHC precipitation classes, rank) and their Plotly form.
+"""Palette logic and its Plotly form; the color tables themselves live in the theme.
 
-The class palettes are data: ``{colors, bounds}`` with ``colors`` packed as
-under + classes + over. Fixed tables (SPI, percent of normal, rocket) live in
-``themes/default.json``; this module keeps the palettes that are computed: the
-precip windows cropped from one master, and rank classes sized to the record. ``discretize`` turns a field into class indices plus a
+Every fixed table (CHC precip classes and masters, SPI, verify, wind rose) is
+in ``themes/default.json``. A class palette is ``{colors, bounds}`` with
+``colors`` packed as under + classes + over. This module crops the precip
+windows (``ppt_daily`` … ``ppt_season``, ``ppt_anom_*``) from the theme's
+``ppt_master`` / ``ppt_anom_master``, so a theme that recolors a master
+recolors every window. ``discretize`` turns a field into class indices plus a
 stepped Plotly colorscale so uneven bounds (0, 1, 2, 5, 10 … mm) get equal
 colorbar slots, which a linear Plotly colorscale cannot do on raw values.
 """
@@ -16,78 +18,8 @@ from weather_skills_core.units import classify_variable, ureg, variable_units
 
 from weather_skills_plotting.kinds import aggregation_days, default_kind
 
-
-def _rgb(*rows: tuple[int, int, int]) -> list[str]:
-    """``(r, g, b)`` 0–255 → ``#rrggbb``. Source values are CHC IDL palettes."""
-    return [f"#{r:02x}{g:02x}{b:02x}" for r, g, b in rows]
-
-
-# CHC ``ppt_total_cmap.pro`` (Will Turner, 6 Feb 2018). 17 colors / 16 interior
-# breaks: null/negative white, 0–2 mm white, then the published classes;
-# over (>2500 mm) is pale pink. Data-dependent IDL min/max ends are under/over.
-PRECIP_COLORS = _rgb(
-    (255, 255, 255),  # null / negative
-    (255, 255, 255),  # 0–2 mm
-    (200, 255, 190),
-    (120, 245, 115),
-    (30, 180, 30),
-    (180, 240, 250),
-    (80, 165, 245),
-    (30, 110, 235),
-    (220, 220, 255),
-    (160, 140, 255),
-    (112, 96, 220),
-    (255, 250, 170),
-    (255, 160, 0),
-    (255, 20, 0),
-    (165, 0, 0),
-    (230, 140, 140),
-    (255, 230, 230),
-)
-
-
-PRECIP_BOUNDS = [0, 2, 5, 10, 25, 50, 75, 100, 150, 200, 300, 500, 750, 1000, 1500, 2500]
-
-
-# Nested absolute-mm default: one color per millimetre class; colorbars crop
-# this master (same color = same millimetres on every window). Hues follow CHC
-# ``ppt_total`` — white, beige, light / mid / dark green, blue, purple,
-# yellow, orange, red — so adjacent classes stay distinct. 0–1 mm is white,
-# matching CHC's 0–2 mm class; 1–2 and 2–5 mm are beige so green starts at
-# 5 mm. CHC's pale cyan and pale lavender are skipped. Overflow above 1000 mm
-# is a darker maroon than the last class, not CHC's pale pink.
-PRECIP_BEIGE_TRACE = "#f6e8c3"  # 1–2 mm
-
-
-PRECIP_BEIGE_LIGHT = "#e8d4a0"  # 2–5 mm
-
-
-PRECIP_MASTER_BOUNDS = [0, 1, 2, 5, 10, 15, 20, 30, 40, 50, 75, 100, 150, 200, 400, 700, 1000]
-
-
-PRECIP_MASTER_COLORS = [
-    PRECIP_COLORS[1],  # 0–1 mm white
-    PRECIP_BEIGE_TRACE,  # 1–2 mm pale beige
-    PRECIP_BEIGE_LIGHT,  # 2–5 mm tan beige
-    PRECIP_COLORS[2],  # 5–10 mm light green
-    PRECIP_COLORS[3],  # 10–15 mm mid green
-    PRECIP_COLORS[4],  # 15–20 mm dark green
-    PRECIP_COLORS[6],  # 20–30 mm sky blue
-    PRECIP_COLORS[7],  # 30–40 mm blue
-    *PRECIP_COLORS[9:16],  # 40–700 mm purple … salmon (skip pale lavender)
-    "#7a0000",  # 700–1000 mm
-]
-
-
-PRECIP_UNDER = "#ffffff"
-
-
-PRECIP_OVER = "#5a0000"
-
-
-PRECIP_WINDOW_ORDER = ("ppt_daily", "ppt_week", "ppt_month", "ppt_season")
-
-
+# Totals windows: the master's classes up to this many mm. An anomaly window
+# keeps the anomaly master's classes within ± the same amount.
 PRECIP_WINDOW_VMAX = {
     "ppt_daily": 50.0,
     "ppt_week": 200.0,
@@ -96,58 +28,10 @@ PRECIP_WINDOW_VMAX = {
 }
 
 
-# CHC ``ppt_anomaly_cmap.pro`` (Will Turner, 8 Feb 2018).
-PRECIP_ANOMALY_COLORS = _rgb(
-    (192, 0, 0),
-    (255, 50, 0),
-    (255, 160, 0),
-    (255, 232, 120),
-    (120, 80, 70),
-    (180, 140, 130),
-    (240, 220, 210),
-    (255, 255, 255),
-    (200, 255, 190),
-    (120, 245, 115),
-    (30, 180, 30),
-    (150, 210, 250),
-    (40, 130, 240),
-    (220, 220, 255),
-    (128, 112, 235),
-)
+PRECIP_WINDOW_ORDER = tuple(PRECIP_WINDOW_VMAX)
 
 
-PRECIP_ANOMALY_BOUNDS = [-500, -300, -200, -100, -50, -25, -10, 10, 25, 50, 100, 200, 300, 500]
-
-
-# Packed CHC list is under + 13 classes + over. Nested windows crop this master
-# the same way totals crop PRECIP_MASTER_* (same colour = same millimetres).
-PRECIP_ANOMALY_UNDER = PRECIP_ANOMALY_COLORS[0]
-
-
-PRECIP_ANOMALY_OVER = PRECIP_ANOMALY_COLORS[-1]
-
-
-PRECIP_ANOMALY_MASTER_COLORS = PRECIP_ANOMALY_COLORS[1:-1]
-
-
-PRECIP_ANOMALY_WINDOW_ORDER = (
-    "ppt_anom_daily",
-    "ppt_anom_week",
-    "ppt_anom_month",
-    "ppt_anom_season",
-)
-
-
-# CHC ``rank_cmap.pro`` (missing gray omitted; bounds depend on ``n_seasons``).
-RANK_COLORS = _rgb(
-    (115, 0, 0),
-    (231, 0, 0),
-    (255, 170, 0),
-    (255, 255, 255),
-    (189, 235, 255),
-    (0, 113, 255),
-    (0, 0, 85),
-)
+PRECIP_ANOMALY_WINDOW_ORDER = tuple(n.replace("ppt_", "ppt_anom_", 1) for n in PRECIP_WINDOW_ORDER)
 
 
 def precip_window_name(days: float | None) -> str:
@@ -197,57 +81,33 @@ def resolve_default_precip(value, das, palettes: dict):
     return window.replace("ppt_", "ppt_anom_", 1) if DEFAULT_PRECIP_PALETTES[key] else window
 
 
-def precip_nested_palette(name: str) -> dict:
-    """Packed under + master prefix + next-class over for a window name."""
-    if name not in PRECIP_WINDOW_VMAX:
-        raise UsageError(f"unknown precip window {name!r}")
-    vmax = PRECIP_WINDOW_VMAX[name]
-    bounds = [b for b in PRECIP_MASTER_BOUNDS if b <= vmax]
-    n_bins = len(bounds) - 1
-    classes = PRECIP_MASTER_COLORS[:n_bins]
-    over = PRECIP_MASTER_COLORS[n_bins] if n_bins < len(PRECIP_MASTER_COLORS) else PRECIP_OVER
-    return {"colors": [PRECIP_UNDER, *classes, over], "bounds": list(bounds)}
+def precip_window_palette(name: str, palettes: dict) -> dict:
+    """Crop the theme's master to the window ``name`` (``ppt_week``, ``ppt_anom_month`` …).
 
-
-def precip_nested_anomaly_palette(name: str) -> dict:
-    """Crop the CHC anomaly master to ± the matching totals window.
-
-    Same colour is always the same millimetres. Stops are the CHC edges whose
-    absolute value is ≤ the totals ``vmax`` (month 400 mm → ±300 mm; season
-    1000 mm → ±500 mm). Overflow uses the next master class.
+    Totals keep ``ppt_master``'s classes up to the window's mm; anomalies keep
+    ``ppt_anom_master``'s within ± that (month 400 mm → ±300 mm). Same color is
+    always the same millimetres. Under and over are the master's neighbouring
+    classes, or its own under / over at the ends.
     """
-    if name not in PRECIP_ANOMALY_WINDOW_ORDER:
-        raise UsageError(f"unknown precip anomaly window {name!r}")
-    totals = "ppt_" + name.removeprefix("ppt_anom_")
+    anomaly = name.startswith("ppt_anom_")
+    totals = name.replace("ppt_anom_", "ppt_", 1)
+    if totals not in PRECIP_WINDOW_VMAX:
+        raise UsageError(f"unknown precip window {name!r}")
+    master_name = "ppt_anom_master" if anomaly else "ppt_master"
+    master = parse_palette(palettes[master_name], loc=f"palettes.{master_name}", registry={})
+    under, classes, over = _class_slots(master) if master.get("bounds") else (None, [], None)
+    if under is None or over is None:
+        raise UsageError(
+            f"palettes.{master_name} needs bounds and an under and over color "
+            "(colors packed as under + one per class + over)"
+        )
+    colors, master_bounds = [under, *classes, over], master["bounds"]
     vmax = PRECIP_WINDOW_VMAX[totals]
-    bounds = [b for b in PRECIP_ANOMALY_BOUNDS if abs(b) <= vmax]
+    bounds = [b for b in master_bounds if abs(b) <= vmax]
     if len(bounds) < 2:
-        raise UsageError(f"precip anomaly window {name!r} has no classes at ±{vmax:g} mm")
-    i0 = PRECIP_ANOMALY_BOUNDS.index(bounds[0])
-    i1 = PRECIP_ANOMALY_BOUNDS.index(bounds[-1])
-    classes = PRECIP_ANOMALY_MASTER_COLORS[i0:i1]
-    under = PRECIP_ANOMALY_MASTER_COLORS[i0 - 1] if i0 > 0 else PRECIP_ANOMALY_UNDER
-    over = (
-        PRECIP_ANOMALY_MASTER_COLORS[i1]
-        if i1 < len(PRECIP_ANOMALY_MASTER_COLORS)
-        else PRECIP_ANOMALY_OVER
-    )
-    return {"colors": [under, *classes, over], "bounds": list(bounds)}
-
-
-def rank_colorscale(n_seasons: int) -> dict:
-    """CHC ``rank_cmap.pro`` classes for a climatology of ``n_seasons`` years."""
-    n = int(n_seasons)
-    if n < 4:
-        raise UsageError("--colormap ppt_rank needs n_seasons ≥ 4")
-    bounds = [-0.5, 1.5, 2.5, 3.5, n - 2.5, n - 1.5, n - 0.5, n + 0.5]
-    return {
-        "name": "ppt_rank",
-        "colors": list(RANK_COLORS),
-        "bounds": bounds,
-        "cmin": bounds[0],
-        "cmax": bounds[-1],
-    }
+        raise UsageError(f"precip window {name!r} has no classes at ±{vmax:g} mm")
+    i0, i1 = master_bounds.index(bounds[0]), master_bounds.index(bounds[-1])
+    return {"colors": list(colors[i0 : i1 + 2]), "bounds": list(bounds)}
 
 
 def along_dim(da, along: str | None) -> str | None:
@@ -365,12 +225,11 @@ def check_color_bound_counts(colors, bounds, under=None, over=None, *, loc="pale
 PALETTE_KEYS = frozenset({"colors", "bounds", "under", "over", "labels"})
 
 
-def builtin_palettes() -> dict:
-    """Named palettes built here rather than listed in ``themes/default.json``."""
+def builtin_palettes(palettes: dict) -> dict:
+    """The precip windows, cropped from the masters in the theme's ``palettes``."""
     return {
-        **{name: precip_nested_palette(name) for name in PRECIP_WINDOW_ORDER},
-        **{name: precip_nested_anomaly_palette(name) for name in PRECIP_ANOMALY_WINDOW_ORDER},
-        "ppt_total": {"colors": PRECIP_COLORS, "bounds": PRECIP_BOUNDS},
+        name: precip_window_palette(name, palettes)
+        for name in (*PRECIP_WINDOW_ORDER, *PRECIP_ANOMALY_WINDOW_ORDER)
     }
 
 
@@ -429,14 +288,11 @@ def parse_palette(value, *, registry: dict, loc="meta.palette") -> dict:
     return out
 
 
-# A three-flag field (verify's disagree / below / hit) reads red / grey / green.
-FLAG3_COLORS = ["#d73027", "#f0f0f0", "#1a9850"]
-
-
-def flag_palette(da, colorway: list) -> dict | None:
+def flag_palette(da, colorway: list, hits: list) -> dict | None:
     """One class per CF ``flag_values`` entry, labelled with ``flag_meanings``.
 
-    Three flags read red / grey / green; any other count takes ``colorway`` in order.
+    Three flags (verify's disagree / below / hit) take ``hits``, the theme's
+    red / white / green; any other count takes ``colorway`` in order.
     """
     raw = da.attrs.get("flag_values")
     if raw is None:
@@ -452,7 +308,7 @@ def flag_palette(da, colorway: list) -> dict | None:
     else:
         labels = [f"{v:g}" for v in values]
     colors = (
-        FLAG3_COLORS
+        list(hits)
         if values.size == 3
         else [colorway[i % len(colorway)] for i in range(values.size)]
     )
@@ -471,7 +327,8 @@ def default_palette(da, *others, theme: dict, diverging: bool = False) -> dict:
     comes back as ``{"name", "colorscale"}``.
     """
     colorway = theme["template"]["layout"]["colorway"]
-    flags = flag_palette(da, colorway) if da is not None else None
+    hits = parse_palette(theme["palettes"]["hits"], loc="palettes.hits", registry={})["colors"]
+    flags = flag_palette(da, colorway, hits) if da is not None else None
     if flags is not None:
         return flags
     kind = default_kind(da, diverging=diverging)
