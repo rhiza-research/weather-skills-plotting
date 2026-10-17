@@ -34,6 +34,15 @@ def test_load_rejects_non_object_and_bad_json():
         load_spec("missing.json")
 
 
+def test_a_br_in_the_title_points_at_subtitle():
+    title = {"text": "Rainfall<br><sup>CHIRPS vs ECMWF</sup>"}
+    with pytest.raises(UsageError, match="layout.title.subtitle"):
+        load_spec({"layout": {"title": title}})
+    with pytest.raises(UsageError, match="layout.title.subtitle"):
+        load_spec({"layout": {"title": "Rainfall<BR/>CHIRPS"}})
+    load_spec({"layout": {"title": {"text": "Rainfall", "subtitle": {"text": "CHIRPS"}}}})
+
+
 def test_unknown_top_level_key():
     with pytest.raises(UsageError, match="top-level key"):
         load_spec({"data": [], "frames": []})

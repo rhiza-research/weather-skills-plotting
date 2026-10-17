@@ -135,6 +135,14 @@ def check_shape(data: dict) -> None:
         raise UsageError("plot spec data must be a list of trace objects")
     if not isinstance(data.get("layout", {}), dict):
         raise UsageError("plot spec layout must be an object")
+    title = (data.get("layout") or {}).get("title")
+    text = title.get("text") if isinstance(title, dict) else title
+    if isinstance(text, str) and "<br" in text.lower():
+        # Only a subtitle gets room above the plot; a <br> line runs into the legend or panels.
+        raise UsageError(
+            "plot spec layout.title.text has a <br>; put the second line in "
+            'layout.title.subtitle: {"title": {"text": "…", "subtitle": {"text": "…"}}}'
+        )
     for i, trace in enumerate(data.get("data") or []):
         if not isinstance(trace, dict):
             raise UsageError(f"plot spec data[{i}] must be an object")
