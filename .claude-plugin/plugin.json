@@ -14,11 +14,11 @@
     "weather",
     "climate",
     "plotting",
-    "matplotlib",
+    "plotly",
     "cartopy",
     "geospatial",
     "zarr",
     "xarray"
   ],
-  "version": "2026.926.0"
+  "version": "2026.1017.0"
 }
