@@ -229,7 +229,9 @@ jobs:
           cp .claude-plugin/plugin.json "$stage/.claude-plugin/plugin.json"
           cp agents/plotting.md "$stage/agents/plotting.md"
           cp LICENSE "$stage/LICENSE"
+          # Each skill is self-contained: plot's library sits in skills/plot/scripts.
           cp -R skills "$stage/skills"
+          find "$stage" -name __pycache__ -type d -prune -exec rm -rf {} +
 
           worktree="${RUNNER_TEMP}/plugin-dist-wt"
           rm -rf "$worktree"

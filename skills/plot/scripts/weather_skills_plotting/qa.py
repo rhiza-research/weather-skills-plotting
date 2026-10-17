@@ -82,11 +82,53 @@ def data_status(datasets) -> tuple[str, str]:
     return "NULL", detail
 
 
-def report_figure(path, datasets=None, *, file=None) -> str:
+def figure_counts(fig) -> list[tuple[str, int, int]]:
+    """``(trace, n_finite, n)`` for what the figure draws, one row per input trace.
+
+    Counts the plotted selection (a heatmap's ``z``, station colours, a
+    series' ``y``), not the whole input file; base-map overlays are skipped.
+    """
+    import numpy as np
+
+    rows: dict[str, list[int]] = {}
+    for tr in fig.data:
+        uid = str(tr.uid or "")
+        if uid.startswith(("overlay-", "empty-")) or getattr(tr, "hoverinfo", None) == "skip":
+            continue
+        if getattr(tr, "z", None) is not None:
+            raw = tr.z
+        elif getattr(getattr(tr, "marker", None), "color", None) is not None and not isinstance(
+            tr.marker.color, str
+        ):
+            raw = tr.marker.color
+        elif getattr(tr, "y", None) is not None:
+            raw = tr.y
+        elif getattr(tr, "r", None) is not None:
+            raw = tr.r
+        else:
+            continue
+        try:
+            values = np.asarray(raw, dtype=float).ravel()
+        except (TypeError, ValueError):
+            continue
+        # One row per input: 0, 1, … or its NAME (not 0-3 or 0-1-station_id-TA00057).
+        name = uid.split("-")[0] or "trace"
+        count = rows.setdefault(name, [0, 0])
+        count[0] += int(np.isfinite(values).sum())
+        count[1] += values.size
+    return [(name, f, n) for name, (f, n) in rows.items()]
+
+
+def report_figure(path, datasets=None, *, file=None, fig=None) -> str:
     """Print ``plot hash`` and ``data:`` lines. Returns the pixel hash."""
     dest = sys.stdout if file is None else file
     digest = hash_png_pixels(path)
-    status, detail = data_status(datasets)
+    rows = figure_counts(fig) if fig is not None else []
+    if rows:
+        detail = ", ".join(f"{name} {finite}/{n} finite" for name, finite, n in rows)
+        status = "not null" if any(finite for _, finite, _ in rows) else "NULL"
+    else:
+        status, detail = data_status(datasets)
     print(f"plot hash: {digest}", file=dest)
     print(f"data: {status} ({detail})", file=dest)
     if status == "NULL":

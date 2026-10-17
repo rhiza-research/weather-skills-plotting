@@ -189,7 +189,8 @@ def _bump_script_constants(scripts_dir: Path, new_version: str) -> tuple[list[Pa
         return [], []
     updated: list[Path] = []
     missing: list[Path] = []
-    for py in sorted(scripts_dir.rglob("*.py")):
+    # Entry scripts only: a library package under scripts/ does not carry the version.
+    for py in sorted(scripts_dir.glob("*.py")):
         text = py.read_text(encoding="utf-8")
         if not _VERSION_LINE_RE_REWRITE.search(text):
             missing.append(py)
@@ -222,7 +223,7 @@ def _skill_uses_constant(scripts_dir: Path) -> bool:
     """
     if not scripts_dir.is_dir():
         return False
-    for py in scripts_dir.rglob("*.py"):
+    for py in scripts_dir.glob("*.py"):
         text = py.read_text(encoding="utf-8")
         if _VERSION_LINE_RE_REWRITE.search(text):
             return True
