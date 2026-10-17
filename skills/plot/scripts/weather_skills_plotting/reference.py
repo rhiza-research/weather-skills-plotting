@@ -74,7 +74,7 @@ _LAYOUT_META = {
 _RECIPES = [
     ("Title and font size", '{"layout": {"title": {"text": "Week 1"}, "font": {"size": 20}}}'),
     (
-        "Two-line title (subtitle, not <br>)",
+        "Two-line title, any plot (subtitle; <br> in text is an error)",
         '{"layout": {"title": {"text": "ECMWF rainfall", "subtitle": {"text": "Week 1: 16–22 Oct"}}}}',
     ),
     ("Contour instead of heatmap", '{"data": [{"uid": "0", "type": "contour"}]}'),

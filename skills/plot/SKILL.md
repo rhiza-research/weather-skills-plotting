@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires Python 3.12 and uv. PNG/JPG export needs Chrome (installed, or `plotly_get_chrome -y`). Self-contained; the plotting library ships in scripts/.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py *)
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   catalog-group: figure
 ---
 
@@ -55,7 +55,7 @@ Each input file is one entry in `data`. Name it on the command line (`-i ecmwf.z
 | To | `--spec` |
 | --- | --- |
 | Set the title | `{"layout": {"title": {"text": "Week 1"}}}` |
-| Add a second title line | `{"layout": {"title": {"text": "ECMWF rainfall", "subtitle": {"text": "Week 1: 16–22 Oct"}}}}` (not `<br>` in `text`: only `subtitle` gets room above the maps) |
+| Add a second title line | `{"layout": {"title": {"text": "ECMWF rainfall", "subtitle": {"text": "Week 1: 16–22 Oct"}}}}` (maps, time series, every plot; a `<br>` in `text` is an error: only `subtitle` gets room above the plot) |
 | Title a panel | `{"data": [{"uid": "OBS", "name": "CHIRPS"}]}` |
 | Pick one step | `{"data": [{"uid": "FC", "meta": {"source": {"isel": {"step": 0}}}}]}` |
 | Set the color range | `{"data": [{"uid": "0", "zmin": 0, "zmax": 100}]}` |
