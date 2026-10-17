@@ -190,6 +190,39 @@ def test_line_only_contour_over_shading_keeps_the_shading_colorbar():
     assert "coloraxis2" not in layout
 
 
+def test_contour_over_heatmap_defaults_to_labeled_isobars_every_4_hpa():
+    # --layer heatmap:msl.zarr --layer contour:msl.zarr with no spec.
+    spec = {"data": [_trace("a"), _trace("iso", input="a", type="contour")]}
+    fig = compile(spec, {"a": _pressure()})
+    iso = _data(fig, "contour")[0]
+    assert iso["coloraxis"] is None and iso["showscale"] is False
+    assert iso["contours"]["coloring"] == "none" and iso["contours"]["showlabels"] is True
+    assert iso["line"]["color"] == "black"
+    assert iso["autocontour"] is False
+    assert (iso["contours"]["start"], iso["contours"]["end"], iso["contours"]["size"]) == (
+        988,
+        1032,
+        4,
+    )
+    assert "coloraxis2" not in _layout(fig)
+
+
+def test_contour_over_heatmap_keeps_a_fill_or_levels_the_spec_asks_for():
+    spec = {
+        "data": [
+            _trace("a"),
+            _trace("iso", input="a", type="contour", contours={"start": 1000, "size": 10}),
+        ]
+    }
+    iso = _data(compile(spec, {"a": _pressure()}), "contour")[0]
+    assert iso["contours"]["coloring"] == "none"
+    assert (iso["contours"]["start"], iso["contours"]["size"]) == (1000, 10)
+    assert iso["contours"]["end"] is None
+    spec["data"][1]["contours"] = {"coloring": "fill"}
+    iso = _data(compile(spec, {"a": _pressure()}), "contour")[0]
+    assert iso["contours"]["coloring"] == "fill" and iso["coloraxis"] == "coloraxis"
+
+
 def test_text_only_points_have_no_colorbar_and_keep_customdata_in_images(tmp_path, monkeypatch):
     import plotly.io as pio
 

@@ -31,6 +31,7 @@ from weather_skills_plotting.geodata import (
     overlay_settings,
 )
 from weather_skills_plotting.kinds import (
+    ISOBAR_INTERVAL_HPA,
     STANDARD_SEA_LEVEL_PRESSURE_HPA,
     is_precip_anomaly,
     is_sea_level_pressure,
@@ -353,6 +354,13 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     if not groups:
         groups[1] = []
     order = sorted(groups)
+    for g in order:
+        if any(b is not None and st.get("type") == "heatmap" for _, st, b in groups[g]):
+            for _, st, b in groups[g]:
+                if b is not None and st.get("type") == "contour":
+                    # Contours stacked on shading are labeled lines (isobars over a
+                    # field), not a fill that hides it; coloring "fill" keeps the fill.
+                    fill_defaults(st, {"contours": {"coloring": "none", "showlabels": True}})
     plan = []  # per group: list of panel keys (None for an unfaceted group)
     for g in order:
         faceted = [
@@ -504,6 +512,27 @@ def _assemble_map(items, user_layout, lmeta, ctx):
                 if tr.get("type") == "contour":
                     # Isobars over shading: plain black lines, no colorbar of their own.
                     fill_defaults(tr, {"showscale": False, **ctx.theme["styles"]["isobars"]})
+                    contours = tr.setdefault("contours", {})
+                    if (
+                        bound is not None
+                        and bound.color_da is not None
+                        and is_sea_level_pressure(bound.color_da)
+                        and not {"start", "end", "size"} & contours.keys()
+                    ):
+                        # Isobars every 4 hPa on multiples of 4 (1008, 1012, …), not
+                        # Plotly's ~15 automatic levels at odd values.
+                        size = float(
+                            convert_values(
+                                ISOBAR_INTERVAL_HPA, "hPa", variable_units(bound.color_da) or "hPa"
+                            )[0]
+                        )
+                        values = np.concatenate([np.ravel(v) for v in bound.color_values])
+                        tr["autocontour"] = False
+                        contours.update(
+                            start=math.floor(np.nanmin(values) / size) * size,
+                            end=math.ceil(np.nanmax(values) / size) * size,
+                            size=size,
+                        )
                 continue
             if bound is None or id(spec_trace) not in axis_of:
                 continue

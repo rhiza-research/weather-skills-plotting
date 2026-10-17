@@ -38,7 +38,7 @@ The plot type follows the data: a lat/lon grid is a colored map, stations are co
 
 ### Arguments
 - `--input`, `-i` — Zarr to draw, as `PATH` or `PATH=NAME`; repeat for side-by-side maps or more lines.
-- `--layer` — `KIND:PATH` or `KIND:PATH=NAME` to stack on one map; repeat. Kinds: `heatmap`, `contour`, `scatter` (stations), `quiver` (wind u/v), `outline` and `mask` (GeoJSON). `outline` and `mask` layers also combine with `-i` inputs (`-i grid.zarr --layer outline:counties.geojson`); `-i` itself takes Zarr paths only.
+- `--layer` — `KIND:PATH` or `KIND:PATH=NAME` to stack on one map; repeat. Kinds: `heatmap`, `contour` (over a heatmap: labeled black lines, every 4 hPa for sea-level pressure; `"contours": {"coloring": "fill"}` fills it), `scatter` (stations), `quiver` (wind u/v), `outline` and `mask` (GeoJSON). `outline` and `mask` layers also combine with `-i` inputs (`-i grid.zarr --layer outline:counties.geojson`); `-i` itself takes Zarr paths only.
 - `--obs`, `--forecast`, `--verify` — verification grid: the observation for one week, then each lead's forecast (repeat, week-1 first) and its verify-skill output (once per `--forecast`, same order). See **Verification grid**.
 - `--mediogram` — forecast vs model climate at one point; pass `-i` twice (forecast, then m-climate). See **Mediogram**.
 - `--animate` — one `-i` grid animated through its times or steps; `-o` must end in `.html`. See **Animation**.
@@ -146,7 +146,6 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -o nairobi.png \
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -o mslp.png \
   --layer heatmap:msl_anom.zarr --layer contour:msl.zarr=MSLP \
   --layer scatter:highs.zarr=HIGHS --layer scatter:lows.zarr=LOWS --spec '{"data": [
-  {"uid": "MSLP", "contours": {"coloring": "none", "showlabels": true, "start": 900, "end": 1080, "size": 4}},
   {"uid": "HIGHS", "mode": "text", "texttemplate": "<b>H</b><br>%{customdata:.0f}", "textfont": {"color": "#1f4fbf", "shadow": "0 0 3px white"}},
   {"uid": "LOWS", "mode": "text", "texttemplate": "<b>L</b><br>%{customdata:.0f}", "textfont": {"color": "#c8102e", "shadow": "0 0 3px white"}}]}'
 # Tropical Tidbits look: --theme-file tropical_tidbits adds TT's palettes (tt_precip_rate in
