@@ -53,7 +53,7 @@ Every fixed color table is in `default.json`, so a copy of it shows them:
 | `spi` | Standardized Precipitation Index (CHC `spi_cmap.pro`) |
 | `rocket` | Default sequential scale (seaborn "rocket", light to dark) |
 | `hits` | Three-flag fields: verify hits (disagree / below / hit) and any CF field with three `flag_values`. Red / white / green; white so the grey no-data background never reads as a class |
-| `bias`, `precip_bias`, `mae` | plot-verify's bias (RdBu), rainfall bias (brown too dry … green too wet) and MAE scales |
+| `bias`, `precip_bias`, `mae` | the verify grid's bias (RdBu), rainfall bias (brown too dry … green too wet) and MAE scales |
 | `wind_rose` | One color per wind-rose speed class, light to dark |
 | `colorblind` | The `colorblind` template's colorway |
 
