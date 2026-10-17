@@ -99,7 +99,7 @@ def run(
     """Merge, then either dump the spec or draw it. Returns the output path or ``None``.
 
     ``animate`` turns the figure's map panels into frames of one animated panel
-    (``plot-animation``); the output must then be HTML.
+    (``plot --animate``); the output must then be HTML.
     """
     from weather_skills_plotting import SpecArg, compile, export
     from weather_skills_plotting.themes import load_theme
@@ -129,7 +129,7 @@ def run(
         )
         size = estimate_html_mb(fig)
         print(
-            f"plot-animation: {len(fig.frames)} frames, {size:.1f} MB of figure data",
+            f"animation: {len(fig.frames)} frames, {size:.1f} MB of figure data",
             file=sys.stderr,
         )
         if size > LARGE_HTML_MB:

@@ -1,4 +1,4 @@
-"""End-to-end tests for plot-verify."""
+"""End-to-end tests for plot verification grids (--obs, --forecast, --verify)."""
 
 import json
 
@@ -6,12 +6,12 @@ import numpy as np
 import pytest
 from skill_conftest import load_skill, make_gridded, run_skill, write_zarr
 
-mod = load_skill("plot-verify", "plot_verify")
+mod = load_skill("plot", "plot")
 
 
 @pytest.fixture(scope="module")
 def ver_fn():
-    return mod.plot_verify
+    return mod.plot
 
 
 def _week(fill, name="precip"):

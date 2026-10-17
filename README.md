@@ -3,18 +3,15 @@
 General-purpose weather and climate data plotting: heatmaps, filled-contour
 maps, station maps, time series, xy scatter, wind roses, quiver, ECMWF-style
 mediograms, lead-week event-verification grids, and animated maps, from weather-skills
-standard dataset Zarrs. Figures are Plotly: the `--spec` every skill takes is
+standard dataset Zarrs, all from one `plot` skill. Figures are Plotly: its `--spec` is
 a standard Plotly figure JSON, and output is PNG, JPG, or interactive HTML. Built on [`weather-skills-core`](https://github.com/weather-skills/weather-skills-core)
 for dataset loading, the CLI decorator, and a handful of shared utilities.
 
-## Skills
+## Skill
 
 | Skill | Role |
 | --- | --- |
-| [`plot`](skills/plot/) | Heatmap, contour, timeseries, xy scatter, wind-rose, quiver, or layered map, one dataset or several side by side; several 1-D series share one time axis |
-| [`plot-verify`](skills/plot-verify/) | Lead-week event-verification grid of maps for one observation week |
-| [`plot-mediogram`](skills/plot-mediogram/) | ECMWF-style mediogram comparing a forecast ensemble against an m-climate ensemble |
-| [`plot-animation`](skills/plot-animation/) | Animated HTML map of one gridded Zarr, one frame per time or forecast step |
+| [`plot`](skills/plot/) | Heatmap, contour, timeseries, xy scatter, wind-rose, quiver, or layered map, one dataset or several side by side; several 1-D series share one time axis. `--obs`/`--forecast`/`--verify` draw a lead-week verification grid, `--mediogram` an ECMWF-style mediogram, and `--animate` an animated HTML map |
 
 The spec design (Plotly figure plus `meta` bindings) is documented in
 [`docs/plotting.md`](docs/plotting.md). PNG/JPG export needs Chrome: kaleido
@@ -45,17 +42,17 @@ uv run skills/plot/scripts/plot.py -i /tmp/a_area.zarr -i /tmp/b_area.zarr \
   -o /tmp/timeseries.png
 
 # A lead-week verification grid
-uv run skills/plot-verify/scripts/plot_verify.py \
-  --obs /tmp/obs.zarr --forecast /tmp/wk1.zarr /tmp/wk2.zarr /tmp/wk3.zarr /tmp/wk4.zarr \
+uv run skills/plot/scripts/plot.py --obs /tmp/obs.zarr \
+  --forecast /tmp/wk1.zarr --verify /tmp/v1.zarr --forecast /tmp/wk2.zarr --verify /tmp/v2.zarr \
   -o /tmp/verify.png
 
 # A mediogram
-uv run skills/plot-mediogram/scripts/plot_mediogram.py \
+uv run skills/plot/scripts/plot.py --mediogram \
   -i /tmp/forecast.zarr -i /tmp/mclimate.zarr -o /tmp/medio.png \
   --spec '{"layout": {"meta": {"geo": {"point": {"lat": -1.3, "lon": 36.8}}}}}' 
 
 # An animated map (HTML only)
-uv run skills/plot-animation/scripts/plot_animation.py \
+uv run skills/plot/scripts/plot.py --animate \
   -i /tmp/forecast.zarr -o /tmp/forecast.html
 ```
 
@@ -72,9 +69,10 @@ claude plugin install rhiza-plotting@weather-skills-plotting
 
 Same packaging model as [`chc-skills`](https://github.com/rhiza-research/chc-skills):
 canonical skills under `skills/<name>/`, Claude plugin via `.claude-plugin/` +
-`agents/`. Unlike `chc-skills`, this repo also carries its own rendering
-engine at `src/weather_skills_plotting/` — every skill script depends on it
-as local library code (not a separately published package), since a script
-and the code it calls should always move together in one commit.
+`agents/`. The one skill carries its own rendering engine,
+`skills/plot/scripts/weather_skills_plotting/`, next to its script: the skill
+folder is self-contained (Python finds the package on the script's own path),
+and a script and the code it calls always move together in one commit. The
+repo-root `pyproject.toml` installs that package for tests and development.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).

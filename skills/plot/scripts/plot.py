@@ -1,22 +1,31 @@
 # /// script
 # requires-python = ">=3.12,<3.13"
 # dependencies = [
-#   "weather-skills-plotting",
 #   "weather-skills-core>=0.1.1",
+#   "cf-xarray>=0.11",
+#   "cftime>=1.6",
+#   "numpy>=2.5",
+#   "xarray>=2026.7",
+#   "zarr>=3.2",
+#   "pint-xarray>=0.6",
+#   "cartopy",
+#   "shapely>=2.1.2",
+#   "plotly>=7.1",
+#   "kaleido>=1.5",
 # ]
-#
-# [tool.uv.sources]
-# weather-skills-plotting = { path = "../../..", editable = true }
 # ///
-"""Draw weather-skills Zarrs as maps, time series, xy scatter plots, or wind roses, as PNG, JPG, or HTML."""
+# The weather_skills_plotting library sits next to this script (scripts/weather_skills_plotting),
+# so the skill folder is self-contained: Python finds it on the script's own path.
+"""Draw weather-skills Zarrs as maps, time series, scatter plots, wind roses, verification grids, mediograms, or animations."""
 
 import argparse
 from pathlib import Path
 
-from weather_skills_core import UsageError, weather_skill
+from weather_skills_core import Dataset, UsageError, weather_skill
 from weather_skills_core.cf import cf_dim
 
 from weather_skills_plotting import parse_spec_arg
+from weather_skills_plotting.animate import build_animation_spec
 from weather_skills_plotting.cli import (
     input_ids,
     parse_input,
@@ -26,6 +35,7 @@ from weather_skills_plotting.cli import (
     split_name,
 )
 from weather_skills_plotting.geodata import point_dim
+from weather_skills_plotting.mediogram import build_mediogram_spec
 from weather_skills_plotting.reference import install_spec_help
 from weather_skills_plotting.series import (
     MAX_INPUTS,
@@ -35,6 +45,7 @@ from weather_skills_plotting.series import (
     warn_mixed_units,
 )
 from weather_skills_plotting.spec import DUMP_SPEC_HELP, SPEC_ARGUMENT_HELP, merge_spec
+from weather_skills_plotting.verify import build_verify_spec
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
 _SKILL_VERSION = "0.0.3"
@@ -145,6 +156,35 @@ def _layer_traces(layers):
     "first. Kinds: heatmap, contour, scatter (stations), quiver (u/v), outline (GeoJSON), mask "
     "(GeoJSON). In --spec the layer is uid NAME, else its position: 0, 1, ….",
 )
+@weather_skill.argument(
+    "--obs",
+    type=Dataset("spatial"),
+    help="Verification grid: observation Zarr for the verifying week (input id obs).",
+)
+@weather_skill.argument(
+    "--forecast",
+    type=Dataset("spatial"),
+    action="append",
+    help="Verification grid: forecast Zarr for that week at one lead; repeat, week-1 first "
+    "(input ids forecast1, forecast2, …).",
+)
+@weather_skill.argument(
+    "--verify",
+    type=Dataset("any"),
+    action="append",
+    help="Verification grid: verify Zarr from the verify skill, once per --forecast, same order.",
+)
+@weather_skill.argument(
+    "--mediogram",
+    action="store_true",
+    help="Mediogram at one point: -i the forecast Zarr, then -i the m-climate Zarr "
+    "(input ids forecast, mclimate); set layout.meta.geo.point in --spec.",
+)
+@weather_skill.argument(
+    "--animate",
+    action="store_true",
+    help="Animate one gridded -i input through its times or steps; -o must end in .html.",
+)
 @weather_skill.argument("--spec", type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
 @weather_skill.argument(
     "--theme-file",
@@ -156,15 +196,45 @@ def plot(
     inputs,
     output,
     layer,
+    obs,
+    forecast,
+    verify,
+    mediogram,
+    animate,
     spec,
     theme_file,
     dump_spec,
     **kwargs,
 ):
-    """Draw weather-skills Zarrs as maps, time series, xy scatter plots, or wind roses, as PNG, JPG, or HTML."""
+    """Draw weather-skills Zarrs as maps, time series, scatter plots, wind roses, verification grids, mediograms, or animations."""
     inputs = list(inputs or [])
     files = [x.ds for x in inputs]
     layers = list(layer or [])
+    grid = obs is not None or bool(forecast) or bool(verify)
+    if grid + bool(mediogram) + bool(animate) > 1:
+        raise UsageError("pick one of --obs/--forecast/--verify, --mediogram, or --animate")
+    # A dumped spec replays its own mode: an animation spec animates again.
+    replayed = ((spec.data.get("layout") or {}).get("meta") or {}).get("skill") if spec else None
+    if grid:
+        if inputs or layers:
+            raise UsageError("--obs/--forecast/--verify make a verification grid; drop -i/--layer")
+        merged, datasets = build_verify_spec(obs, forecast, verify, spec)
+        return run(merged, None, datasets, output, dump_spec, theme_file=theme_file)
+    if mediogram:
+        if layers:
+            raise UsageError("--mediogram takes two -i inputs (forecast, m-climate), not --layer")
+        merged, datasets = build_mediogram_spec(files, spec)
+        return run(merged, None, datasets, output, dump_spec, theme_file=theme_file)
+    if animate or (replayed == "plot --animate" and not files):
+        if layers:
+            raise UsageError("--animate takes one -i input, not --layer")
+        cli = dict(zip(input_ids([x.name for x in inputs]), files, strict=True))
+        datasets = spec_datasets(spec, cli)
+        base = build_animation_spec(datasets)
+        return run(base, spec, datasets, output, dump_spec, theme_file=theme_file, animate=True)
+    if replayed in ("plot --verify", "plot --mediogram") and not files and not layers:
+        # The dumped spec already holds every trace and its layout.
+        return run(spec.data, None, spec.opened(), output, dump_spec, theme_file=theme_file)
     # Boundaries and masks go on -i maps too: an outline on every panel.
     shapes = [x for x in layers if x.kind in ("outline", "mask")] if files else []
     if shapes and len(shapes) == len(layers):

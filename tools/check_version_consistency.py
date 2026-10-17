@@ -84,7 +84,8 @@ def _read_script_constants(scripts_dir: Path) -> tuple[dict[Path, str], list[Pat
         return {}, []
     have: dict[Path, str] = {}
     lacking: list[Path] = []
-    for py in sorted(scripts_dir.rglob("*.py")):
+    # Entry scripts only: a library package under scripts/ does not carry the version.
+    for py in sorted(scripts_dir.glob("*.py")):
         text = py.read_text(encoding="utf-8")
         match = _VERSION_LINE_RE_VALUE.search(text)
         if match:
