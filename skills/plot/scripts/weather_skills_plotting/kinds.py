@@ -65,6 +65,8 @@ def is_temperature(da) -> bool:
 
 # Standard-atmosphere sea-level pressure: the white middle of the pressure scale.
 STANDARD_SEA_LEVEL_PRESSURE_HPA = 1013.25
+# Isobar spacing of a surface analysis chart (Met Office, NOAA WPC).
+ISOBAR_INTERVAL_HPA = 4
 
 
 def is_sea_level_pressure(da) -> bool:

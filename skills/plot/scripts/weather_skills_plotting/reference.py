@@ -79,8 +79,7 @@ _RECIPES = [
         "scatter:highs.zarr=HIGHS --layer scatter:lows.zarr=LOWS (from local-extrema --radius 7, a "
         "Tropical Tidbits-style set of centres; 15 or more misses most); black isobars every 4 hPa, "
         "H / L with the central value",
-        '{"data": [{"uid": "MSLP", "contours": {"coloring": "none", "showlabels": true, '
-        '"start": 900, "end": 1080, "size": 4}}, {"uid": "HIGHS", "mode": "text", '
+        '{"data": [{"uid": "HIGHS", "mode": "text", '
         '"texttemplate": "<b>H</b><br>%{customdata:.0f}", "textfont": {"color": "#1f4fbf", "shadow": "0 0 3px white"}}, '
         '{"uid": "LOWS", "mode": "text", "texttemplate": "<b>L</b><br>%{customdata:.0f}", '
         '"textfont": {"color": "#c8102e", "shadow": "0 0 3px white"}}]}',
