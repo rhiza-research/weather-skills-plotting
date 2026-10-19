@@ -53,7 +53,15 @@ def test_heatmap_panels_each_time_with_one_discrete_colorbar():
     assert titles == ["1 Jan '26", "2 Jan '26", "3 Jan '26"]
     # z holds class slots; the raw mm stay in customdata for hover.
     assert np.allclose(np.asarray(heat[0]["customdata"], dtype=float), 1.0)
+    assert "%{customdata" in heat[0]["hovertemplate"]
     assert layout["yaxis"]["scaleanchor"] == "x"
+
+
+def test_continuous_map_hovers_z_without_a_customdata_copy():
+    ds = make_gridded(n_time=1, name="t2m", units="K")
+    heat = _data(compile({"data": [_trace("a")]}, {"a": ds}), "heatmap")[0]
+    assert heat["customdata"] is None
+    assert "%{z:.4g}" in heat["hovertemplate"]
 
 
 def test_user_trace_keys_lift_to_coloraxis_and_win():

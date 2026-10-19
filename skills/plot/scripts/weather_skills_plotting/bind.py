@@ -438,15 +438,12 @@ def bind_field(trace, meta, ctx, loc, *, speed=False):
     panels, values = [], []
     units = format_units_for_display(variable_units(da))
     hover = (
-        f"lat %{{y:.2f}}, lon %{{x:.2f}}: %{{customdata:.4g}}{' ' + units if units else ''}"
-        "<extra></extra>"
+        f"lat %{{y:.2f}}, lon %{{x:.2f}}: %{{z:.4g}}{' ' + units if units else ''}<extra></extra>"
     )
     for key, ptitle, part in _slices(da, fdim):
         z = np.asarray(part.values, dtype=float)
         values.append(z)
-        panels.append(
-            Panel([{"x": x, "y": y, "z": z, "customdata": z, "hovertemplate": hover}], ptitle, key)
-        )
+        panels.append(Panel([{"x": x, "y": y, "z": z, "hovertemplate": hover}], ptitle, key))
     return Bound(
         panels,
         is_map=True,

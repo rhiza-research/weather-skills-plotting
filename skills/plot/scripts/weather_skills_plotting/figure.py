@@ -282,6 +282,11 @@ def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
                 raw = _get_path(tr, bound.color_key)
                 slots, scale = discretize(raw, palette)
                 _set_path(tr, bound.color_key, slots)
+                if bound.color_key == "z":
+                    # z now holds class slots: hover reads the raw values instead.
+                    tr["customdata"] = raw
+                    if "hovertemplate" in tr:
+                        tr["hovertemplate"] = tr["hovertemplate"].replace("%{z", "%{customdata")
         _, scale = discretize(finite, palette)
         axis.update(colorscale=scale["colorscale"], cmin=scale["cmin"], cmax=scale["cmax"])
         axis["colorbar"].update(tickvals=scale["tickvals"], ticktext=scale["ticktext"])
