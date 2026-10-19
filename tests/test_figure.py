@@ -274,6 +274,22 @@ def test_text_only_points_skip_nan_but_markers_keep_them():
     assert list(trace["marker"]["symbol"]) == ["circle", "x", "circle"]
 
 
+def test_local_extrema_points_print_h_or_l_unless_the_spec_restyles_them():
+    # --layer heatmap:msl.zarr --layer scatter:lows.zarr with no spec.
+    lows = make_station(n_station=3, n_time=1).isel(time=0)
+    lows["precip"].attrs["extremum_kind"] = "low"
+    lows["precip"].values[1] = np.nan
+    spec = {"data": [_trace("a"), _trace("c", type="scatter", meta={"bind": "points"})]}
+    fig = compile(spec, {"a": _pressure(), "c": lows})
+    text = next(t for t in fig.data if t["uid"] == "c")
+    assert text["mode"] == "text" and text["texttemplate"].startswith("<b>L</b>")
+    assert len(text["x"]) == 2 and text["marker"]["coloraxis"] is None
+    assert "coloraxis2" not in _layout(fig)
+    spec["data"][1]["mode"] = "markers"
+    marks = next(t for t in compile(spec, {"a": _pressure(), "c": lows}).data if t["uid"] == "c")
+    assert marks["mode"] == "markers" and len(marks["x"]) == 3
+
+
 def test_non_precip_gets_continuous_scale_symmetric_when_diverging():
     ds = make_gridded(n_time=1, name="t2m", units="degree_Celsius")
     ds["t2m"].values[:] = np.linspace(-2, 4, 12).reshape(1, 3, 4)

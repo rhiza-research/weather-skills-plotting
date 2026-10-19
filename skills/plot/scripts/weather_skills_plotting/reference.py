@@ -82,23 +82,17 @@ _RECIPES = [
         "MSLP chart: --layer heatmap:anom.zarr --layer contour:msl.zarr=MSLP --layer "
         "scatter:highs.zarr=HIGHS --layer scatter:lows.zarr=LOWS (from local-extrema --radius 7, a "
         "Tropical Tidbits-style set of centres; 15 or more misses most); black isobars every 4 hPa, "
-        "H / L with the central value",
-        '{"data": [{"uid": "HIGHS", "mode": "text", '
-        '"texttemplate": "<b>H</b><br>%{customdata:.0f}", "textfont": {"color": "#1f4fbf", "shadow": "0 0 3px white"}}, '
-        '{"uid": "LOWS", "mode": "text", "texttemplate": "<b>L</b><br>%{customdata:.0f}", '
-        '"textfont": {"color": "#c8102e", "shadow": "0 0 3px white"}}]}',
+        "H / L with the central value (the default for local-extrema points)",
+        '{"data": [{"uid": "MSLP", "contours": {"start": 900, "end": 1080, "size": 4}}]}',
     ),
     (
         "Tropical Tidbits MSLP & precip (--theme-file tropical_tidbits; precip: aggregate-temporal "
         "--period '6 hour' --time-dim step, select the step 6 h before the MSLP lead, unit-convert "
         "to mm h-1): --layer heatmap:precip.zarr=PRECIP --layer contour:msl.zarr=MSLP --layer "
-        "scatter:highs.zarr=HIGHS --layer scatter:lows.zarr=LOWS; value above H / L",
+        "scatter:highs.zarr=HIGHS --layer scatter:lows.zarr=LOWS; the theme puts the value above H / L",
         '{"data": [{"uid": "PRECIP", "meta": {"palette": "tt_precip_rate"}}, {"uid": "MSLP", '
         '"contours": {"coloring": "none", "showlabels": true, "start": 900, "end": 1080, '
-        '"size": 2}}, {"uid": "HIGHS", "mode": "text", "texttemplate": '
-        '"<b>%{customdata:.0f}</b><br><b>H</b>", "textfont": {"color": "#1f3fbf", "shadow": "0 0 3px white"}}, '
-        '{"uid": "LOWS", "mode": "text", "texttemplate": "<b>%{customdata:.0f}</b><br><b>L</b>", '
-        '"textfont": {"color": "#b5121b", "shadow": "0 0 3px white"}}]}',
+        '"size": 2}}]}',
     ),
     (
         "Tropical Tidbits MSLP & 10 m wind (--theme-file tropical_tidbits colors the speed): "

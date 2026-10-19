@@ -584,6 +584,9 @@ def bind_points(trace, meta, ctx, loc):
         )
     fdim = _facet_dim(meta, da, (pdim,), loc)
     _leftover_error(da, {pdim, fdim}, "station points", loc)
+    if da.attrs.get("extremum_kind") in ("high", "low"):
+        # Highs / lows from local-extrema print as H / L with the central value.
+        fill_defaults(trace, ctx.theme["styles"][f"{da.attrs['extremum_kind']}s"])
     if fdim:
         da = da.transpose(fdim, pdim)
     lat = np.asarray(da[cf_dim(da, "latitude")].values, dtype=float)
