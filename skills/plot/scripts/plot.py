@@ -8,7 +8,7 @@
 #   "xarray>=2026.7",
 #   "zarr>=3.2",
 #   "pint-xarray>=0.6",
-#   "cartopy",
+#   "pyshp>=2.3",
 #   "shapely>=2.1.2",
 #   "plotly>=7.1",
 #   "kaleido>=1.5",

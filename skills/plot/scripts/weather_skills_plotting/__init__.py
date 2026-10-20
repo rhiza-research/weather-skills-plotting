@@ -122,6 +122,11 @@ def export(fig, output, *, datasets=None, scale=None):
     for trace in image["data"]:
         if trace.get("type") in ("heatmap", "contour"):
             trace.pop("customdata", None)
+    from plotly.offline import get_plotlyjs_version
+
+    # Chrome loads plotly.js from the CDN faster than the bundled 4.8 MB file. The
+    # version matches plotly.py's, so the figure JSON means the same thing.
+    pio.defaults.plotlyjs = f"https://cdn.plot.ly/plotly-{get_plotlyjs_version()}.min.js"
     pio.write_image(image, output, scale=scale, validate=False)
     from weather_skills_plotting.qa import report_figure
 

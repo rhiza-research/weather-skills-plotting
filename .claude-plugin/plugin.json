@@ -15,7 +15,7 @@
     "climate",
     "plotting",
     "plotly",
-    "cartopy",
+    "natural-earth",
     "geospatial",
     "zarr",
     "xarray"

@@ -73,6 +73,7 @@ _MAP_RANK = {"field": 0, "speed": 0, "overlay": 1, "arrows": 2, "points": 3, "ge
 _TRACE_COLOR_KEYS = ("colorscale", "reversescale", "showscale", "colorbar")
 _TRACE_LIMIT_KEYS = {"zmin": "cmin", "zmax": "cmax", "zmid": "cmid"}
 _MARKER_LIMIT_KEYS = {"cmin": "cmin", "cmax": "cmax", "cmid": "cmid"}
+_MERGEABLE_HEATMAP_KEYS = {"type", "x", "y", "z", "coloraxis", "hovertemplate", "showlegend", "uid"}
 
 
 def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
@@ -725,7 +726,33 @@ def _assemble_map(items, user_layout, lmeta, ctx):
                 **style,
             }
             panel_traces[p].append((_MAP_RANK["overlay"], tr, None, None))
-        for _, tr, _, _ in sorted(panel_traces[p], key=lambda item: item[0]):
+        drawn = [tr for _, tr, _, _ in sorted(panel_traces[p], key=lambda item: item[0])]
+        # Isobars over shading of the same field become one contour trace that shades
+        # like the heatmap and draws the lines, so the field is written (and parsed by
+        # Chrome) once, not twice. A heatmap styled beyond its color axis stays apart.
+        for tr in [t for t in drawn if t.get("type") == "contour"]:
+            if (tr.get("contours") or {}).get("coloring") != "none":
+                continue
+            twin = next(
+                (
+                    h
+                    for h in drawn
+                    if h.get("type") == "heatmap"
+                    and "coloraxis" in h
+                    and set(h) <= _MERGEABLE_HEATMAP_KEYS
+                    and all(np.array_equal(h[k], tr.get(k), equal_nan=True) for k in "xyz")
+                ),
+                None,
+            )
+            if twin is None:
+                continue
+            tr["contours"]["coloring"] = "heatmap"
+            tr["coloraxis"] = twin["coloraxis"]
+            tr["hovertemplate"] = twin.get("hovertemplate", tr.get("hovertemplate"))
+            tr.pop("showscale", None)
+            # The merged trace takes the heatmap's place in the draw order.
+            drawn = [tr if t is twin else t for t in drawn if t is not tr]
+        for tr in drawn:
             tr["xaxis"], tr["yaxis"] = f"x{s}", f"y{s}"
             if not tr.get("name"):
                 # An unnamed added trace (city markers, a box) would read "trace 6".

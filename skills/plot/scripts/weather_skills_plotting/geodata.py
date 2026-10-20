@@ -71,13 +71,40 @@ def unwrap_geoms(geoms, lon_min):
 
 def clip_ne_geoms(resolution, category, name, clip_geom):
     """Natural Earth geometries intersecting ``clip_geom`` (eager download)."""
-    import cartopy.io.shapereader as shpreader
+    import io
+    import os
+    import urllib.request
+    import zipfile
+    from pathlib import Path
 
-    path = shpreader.natural_earth(resolution=resolution, category=category, name=name)
+    import shapefile
+    from shapely.geometry import shape
+
+    # Shapefiles live where cartopy keeps them, so ones it fetched before are reused.
+    data_home = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+    folder = data_home / "cartopy" / "shapefiles" / "natural_earth" / category
+    stem = f"ne_{resolution}_{name}"
+    path = folder / f"{stem}.shp"
+    if not path.exists():
+        url = f"https://naturalearth.s3.amazonaws.com/{resolution}_{category}/{stem}.zip"
+        with urllib.request.urlopen(url, timeout=60) as resp:
+            archive = zipfile.ZipFile(io.BytesIO(resp.read()))
+        folder.mkdir(parents=True, exist_ok=True)
+        # The .shp lands last, so a run that finds it finds the files it needs.
+        members = [m for m in archive.namelist() if m.startswith(stem + ".")]
+        for member in sorted(members, key=lambda m: m.endswith(".shp")):
+            tmp = folder / f"{member}.{os.getpid()}.tmp"
+            tmp.write_bytes(archive.read(member))
+            os.replace(tmp, folder / member)
     geoms = []
     # The bbox skips shapes outside the view without parsing them.
-    for geom in shpreader.Reader(path, bbox=clip_geom.bounds).geometries():
-        if geom is None or geom.is_empty:
+    with shapefile.Reader(str(path)) as reader:
+        shapes = list(reader.iterShapes(bbox=list(clip_geom.bounds)))
+    for record in shapes:
+        if not record.points:
+            continue
+        geom = shape(record.__geo_interface__)
+        if geom.is_empty:
             continue
         try:
             if not geom.intersects(clip_geom):
@@ -95,7 +122,7 @@ def clip_ne_geoms(resolution, category, name, clip_geom):
 
 
 def _bundled_country_geoms(clip_geom):
-    """Country outlines from the bundled Natural Earth extract (no cartopy)."""
+    """Country outlines from the bundled Natural Earth extract (no pyshp)."""
     import shapely
     from shapely.geometry import shape
 
@@ -349,7 +376,7 @@ def overlay_geoms(extent, settings: dict):
         return []
     out = []
     try:
-        import cartopy.io.shapereader  # noqa: F401
+        import shapefile  # noqa: F401
     except ImportError:
         if settings.get("borders") is not False:
             geoms = _bundled_country_geoms(clip)
