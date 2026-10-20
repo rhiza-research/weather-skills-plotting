@@ -52,6 +52,27 @@ def test_merge_traces_by_uid_position_and_append():
     assert out[0]["meta"]["source"] == {"input": "a", "variable": "tp"}
 
 
+def test_merge_traces_new_bound_trace_without_input_names_the_input_uids():
+    base = [
+        {"uid": "West", "type": "scatter", "meta": {"source": {"input": "West"}}},
+        {"uid": "East", "type": "scatter", "meta": {"source": {"input": "East"}}},
+    ]
+    xy = {"uid": "0", "type": "scatter", "meta": {"x": "precip_7d", "y": "county"}}
+    with pytest.raises(UsageError, match="uids 'West', 'East'.*set meta.source.input"):
+        merge_traces(base, [xy])
+    # Naming the input, or adding a trace that reads no input, is fine.
+    ok = merge_traces(base, [{**xy, "meta": {**xy["meta"], "source": {"input": "East"}}}])
+    assert ok[2]["meta"]["source"] == {"input": "East"}
+    edge = {
+        "uid": "edge",
+        "type": "scatter",
+        "meta": {"bind": "geojson", "source": {"geojson": "a"}},
+    }
+    assert len(merge_traces(base, [edge, {"uid": "city", "type": "scatter", "x": [1]}])) == 4
+    # One input: the trace falls back to it, as before.
+    assert len(merge_traces(base[:1], [xy])) == 2
+
+
 def test_merge_traces_position_past_end_errors():
     with pytest.raises(UsageError, match="give a new trace a uid"):
         merge_traces([{"uid": "a"}], [{}, {"type": "bar"}])

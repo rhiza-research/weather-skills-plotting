@@ -34,7 +34,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --mediogram -i forecast.zarr -i mclim
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --animate --layer heatmap:rain_daily.zarr --layer contour:msl_daily.zarr --layer outline:kenya.geojson -o rain.html
 ```
 
-The plot type follows the data: a lat/lon grid is a colored map, stations are colored markers, 1-D series are lines on one time axis. `meta.x` / `meta.y` scatter two variables. `--obs`/`--forecast`/`--verify` and `--mediogram` pick the two special figures (sections below); `--animate` plays any map through time instead of drawing side-by-side panels. Use one of the three at a time.
+The plot type follows the data: a lat/lon grid is a colored map, stations are colored markers, 1-D series are lines on one time axis. `meta.x` / `meta.y` scatter two variables or coordinates; a name coordinate such as `county` becomes a category axis (a dot chart: `"meta": {"x": "precip_7d", "y": "county"}`). `--obs`/`--forecast`/`--verify` and `--mediogram` pick the two special figures (sections below); `--animate` plays any map through time instead of drawing side-by-side panels. Use one of the three at a time.
 
 ### Arguments
 - `--input`, `-i` — Zarr to draw, as `PATH` or `PATH=NAME`; repeat for side-by-side maps or more lines.

@@ -930,14 +930,44 @@ def bind_xy(trace, meta, ctx, loc):
             f"{list(y_da.dims)}; select one value of the extra dims with {loc}.source.isel / sel"
         )
     y_da = y_da.transpose(*x_da.dims)
-    xv = np.asarray(x_da.values, dtype=float).ravel()
-    yv = np.asarray(y_da.values, dtype=float).ravel()
-    keep = np.isfinite(xv) & np.isfinite(yv)
+    # Numbers and dates draw on a value axis; names (counties, stations, models)
+    # draw as Plotly categories. Positions missing either value are dropped.
+    values = []
+    keep = np.ones(x_da.size, dtype=bool)
+    for da in (x_da, y_da):
+        v = np.asarray(da.values).ravel()
+        if v.dtype.kind in "biuf":
+            v = v.astype(float)
+            keep &= np.isfinite(v)
+        elif v.dtype.kind == "M":
+            keep &= ~np.isnat(v)
+        elif v.dtype.kind == "m":
+            keep &= ~np.isnat(v)
+            v = v / np.timedelta64(1, "D")
+        else:
+            # x != x is NaN; None and NaN mark a missing name.
+            keep &= np.array([not (x is None or x != x) for x in v], dtype=bool)
+            # cftime dates go as ISO strings, which Plotly draws on a date axis.
+            v = np.array(
+                [x.isoformat() if hasattr(x, "calendar") else str(x) for x in v], dtype=object
+            )
+        values.append(v)
+    xv, yv = values
     if not keep.any():
         raise UsageError(f"{loc}: no position has a finite x and y to plot")
     out = {"mode": "markers", "x": xv[keep], "y": yv[keep], "showlegend": False}
-    # A short 1-D series labels each point with its year or date.
-    if x_da.ndim == 1 and keep.sum() <= 25:
+    if trace.get("text") or trace.get("texttemplate"):
+        # The user's labels on the outermost points stay readable past the axis edge.
+        out["cliponaxis"] = False
+    # A short 1-D series of two numbers labels each point with its year, date or
+    # name, unless the trace sets its own text.
+    if (
+        x_da.ndim == 1
+        and xv.dtype.kind == "f"
+        and yv.dtype.kind == "f"
+        and keep.sum() <= 25
+        and not (trace.get("text") or trace.get("texttemplate"))
+    ):
         labels = [
             str(v) if isinstance(v, (int, np.integer)) else format_plot_date(v)
             for v in x_da[x_da.dims[0]].values

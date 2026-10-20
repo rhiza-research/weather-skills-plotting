@@ -211,6 +211,26 @@ def merge_traces(base: list, overlay: list) -> list:
                         + (f"; did you mean {near[0]!r}?" if near else "")
                         + "; a new trace needs a type"
                     )
+                meta = trace.get("meta") or {}
+                source = meta.get("source") or {}
+                inputs = {
+                    ((t.get("meta") or {}).get("source") or {}).get("input"): t.get("uid")
+                    for t in out
+                }
+                inputs.pop(None, None)
+                if (
+                    len(inputs) > 1
+                    and (meta.get("x") or meta.get("y") or meta.get("bind") or source)
+                    and not source.get("input")
+                    and not source.get("geojson")
+                ):
+                    # Likely meant to restyle an input's own trace, e.g. uid "0" for "West".
+                    raise UsageError(
+                        f"--spec data[{i}] uid {uid!r} matches no trace, so it would be a new "
+                        "trace with no meta.source.input; the inputs' traces have uids "
+                        f"{', '.join(repr(str(u)) for u in inputs.values())}. Use one of those "
+                        "uids to restyle that input's trace, or set meta.source.input"
+                    )
                 out.append(copy.deepcopy(trace))
                 continue
         else:

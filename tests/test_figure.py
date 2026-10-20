@@ -479,6 +479,92 @@ def test_xy_scatter_of_two_variables():
     assert list(tr["x"]) == [1.9, -0.2, -1.0] and list(tr["y"]) == [210, 60, 30]
 
 
+def _counties():
+    names = ["Turkana", "Kisumu", "Nairobi", "Mombasa"]
+    ds = xr.Dataset(
+        {"precip_7d": (("county",), [12.0, np.nan, 40.5, 3.25], {"units": "mm"})},
+        coords={"county": np.array(names, dtype=object)},
+    )
+    return ds, names
+
+
+def test_xy_names_on_y_are_a_category_axis():
+    ds, names = _counties()
+    spec = {
+        "data": [
+            {
+                "uid": "0",
+                "type": "scatter",
+                "mode": "markers+text",
+                "texttemplate": "%{x:.1f}",
+                "meta": {"x": "precip_7d", "y": "county"},
+            }
+        ],
+        "layout": {"yaxis": {"categoryorder": "total ascending"}},
+    }
+    tr = _data(compile(spec, {"0": ds}))[0]
+    # The county with no value is dropped, not drawn at 0.
+    assert list(tr["y"]) == ["Turkana", "Nairobi", "Mombasa"]
+    assert list(tr["x"]) == [12.0, 40.5, 3.25]
+    # The user's labels win; none are generated, and edge labels are not clipped.
+    assert tr["text"] is None and tr["texttemplate"] == "%{x:.1f}"
+    assert tr["cliponaxis"] is False
+
+
+def test_xy_names_on_x_and_missing_names():
+    ds, names = _counties()
+    ds = ds.assign(county=np.array(["Turkana", None, "Nairobi", np.nan], dtype=object))
+    ds["precip_7d"].values[1] = 5.0
+    spec = {"data": [{"uid": "0", "type": "scatter", "meta": {"x": "county", "y": "precip_7d"}}]}
+    tr = _data(compile(spec, {"0": ds}))[0]
+    assert list(tr["x"]) == ["Turkana", "Nairobi"] and list(tr["y"]) == [12.0, 40.5]
+    assert tr["text"] is None  # names already on the axis
+
+
+def test_xy_numbers_along_named_dim_keep_point_labels():
+    ds = xr.Dataset(
+        {"bias": (("model",), [0.5, -1.0, 2.0]), "mae": (("model",), [3.0, 4.0, 2.5])},
+        coords={"model": ["ecmwf", "gefs", "cumulus"]},
+    )
+    spec = {"data": [{"uid": "0", "type": "scatter", "meta": {"x": "bias", "y": "mae"}}]}
+    tr = _data(compile(spec, {"0": ds}))[0]
+    assert list(tr["text"]) == ["ecmwf", "gefs", "cumulus"]
+
+
+def test_xy_dates_and_leads_on_an_axis():
+    import cftime
+
+    times = np.array(["2026-10-13", "NaT", "2026-10-15"], dtype="datetime64[ns]")
+    ds = xr.Dataset(
+        {
+            "precip": (("i",), [1.0, 2.0, 3.0]),
+            "when": (("i",), times),
+            "lead": (("i",), np.array([1, 2, 3], dtype="timedelta64[D]")),
+            "model_day": (
+                ("i",),
+                np.array([cftime.DatetimeNoLeap(2026, 10, d) for d in (13, 14, 15)], dtype=object),
+            ),
+        }
+    )
+
+    def xy(x):
+        spec = {"data": [{"uid": "0", "type": "scatter", "meta": {"x": x, "y": "precip"}}]}
+        return _data(compile(spec, {"0": ds}))[0]
+
+    tr = xy("when")
+    assert len(tr["x"]) == 2 and list(tr["y"]) == [1.0, 3.0]
+    assert list(xy("lead")["x"]) == [1.0, 2.0, 3.0]  # leads in days
+    assert list(xy("model_day")["x"])[0].startswith("2026-10-13")
+
+
+def test_xy_counts_values_when_names_are_on_y():
+    from weather_skills_plotting.qa import figure_counts
+
+    ds, _ = _counties()
+    spec = {"data": [{"uid": "0", "type": "scatter", "meta": {"x": "precip_7d", "y": "county"}}]}
+    assert figure_counts(compile(spec, {"0": ds})) == [("0", 3, 3)]
+
+
 def test_xy_scatter_of_a_grid_is_one_point_per_cell():
     ds = make_gridded(n_time=1)
     ds["t2m"] = ds["precip"] * 0 + 25.0
