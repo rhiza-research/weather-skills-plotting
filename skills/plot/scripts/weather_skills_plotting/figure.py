@@ -149,6 +149,16 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
                 f"layout.annotations name {name!r} matches no panel; this figure's panel titles "
                 f"are {', '.join(have) or 'none'} (numbered from 1)"
             )
+    # An unnamed annotation on or above a panel's top edge ("y2 domain", y >= 1) is the
+    # spec's own title for that panel: it replaces the built one, not stacks on it.
+    retitled = set()
+    for ann in user_layout.get("annotations") or []:
+        match = re.fullmatch(r"y(\d*) domain", str(ann.get("yref") or ""))
+        y = ann.get("y")
+        if not ann.get("name") and match and isinstance(y, (int, float)) and y >= 1:
+            retitled.add(f"panel-title-{match.group(1) or 1}")
+    if retitled:
+        layout["annotations"] = [a for a in layout["annotations"] if a.get("name") not in retitled]
     out_layout = merge_spec({"layout": layout}, {"layout": user_layout})["layout"]
     try:
         return go.Figure({"data": data, "layout": out_layout})

@@ -787,6 +787,25 @@ def test_member_panels_titled_and_bad_panel_title_named():
         )
 
 
+def test_unnamed_annotation_above_a_panel_replaces_its_title():
+    ds = make_gridded(n_time=3)
+    fig = compile(
+        {
+            "data": [_trace("a")],
+            "layout": {
+                "annotations": [
+                    {"text": "Mine", "xref": "x2 domain", "yref": "y2 domain", "x": 0.5, "y": 1.04},
+                    # Inside the map: a label, not a title.
+                    {"text": "note", "xref": "x3 domain", "yref": "y3 domain", "x": 0.1, "y": 0.1},
+                ]
+            },
+        },
+        {"a": ds},
+    )
+    texts = [a["text"] for a in _layout(fig)["annotations"]]
+    assert texts == ["1 Jan '26", "3 Jan '26", "Mine", "note"]
+
+
 def test_string_bbox_and_horizontal_colorbar_below():
     ds = make_gridded(n_time=2)
     fig = compile(
