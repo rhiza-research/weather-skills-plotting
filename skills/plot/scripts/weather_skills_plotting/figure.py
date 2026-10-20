@@ -592,21 +592,37 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     aspect = float(np.median([(e[1] - e[0]) / max(e[3] - e[2], 1e-6) for e in extents if e]))
     grid_in = user_layout.pop("grid", None) or {}
     rows, cols = choose_grid(n, aspect, grid_in.get("rows"), grid_in.get("columns"))
+    # Trace-level colorbar / showscale lift onto the trace's color axis, under the
+    # spec's layout.<coloraxis>. On a shared axis one trace asking for the bar shows
+    # it: showscale false on the other traces only means "not drawn from me".
+    lifted_of, asked = {}, {}
+    for name, members in axis_members.items():
+        lifted = {}
+        for spec_trace, bound, _ in members:
+            lifted = deep_merge(lifted, _lift_color(spec_trace, bound.color_key))
+        if any(st.get("showscale") is True for st, _, _ in members):
+            lifted["showscale"] = True
+        lifted_of[name] = lifted
+        asked[name] = deep_merge(lifted, user_layout.get(name) or {})
     panels_of = {}
     for name in axis_members:
-        if (user_layout.get(name) or {}).get("showscale") is False:
+        if asked[name].get("showscale") is False:
             continue
         panels_of[name] = [
             p for p in range(n) for _, _, st, _ in panel_traces[p] if axis_of.get(id(st)) == name
         ]
     panels_of = dict(sorted(panels_of.items(), key=lambda item: min(item[1])))
-    mode = colorbar_mode(panels_of, cols)
+    # A bar the spec positions itself (colorbar x or y) stays where it was put; only
+    # the other bars are placed beside or under the maps.
+    placed = {name for name in panels_of if {"x", "y"} & (asked[name].get("colorbar") or {}).keys()}
+    auto_of = {name: ps for name, ps in panels_of.items() if name not in placed}
+    placed_h = {name for name in placed if asked[name]["colorbar"].get("orientation") == "h"}
+    mode = colorbar_mode(auto_of, cols)
     if mode in ("right", "rows") and aspect > WIDE_MAP:
         # A strip (a Pacific band, a polar belt) is too short for a vertical bar's title.
         mode = "below"
     if mode in ("right", "rows") and any(
-        ((user_layout.get(name) or {}).get("colorbar") or {}).get("orientation") == "h"
-        for name in panels_of
+        (asked[name].get("colorbar") or {}).get("orientation") == "h" for name in auto_of
     ):
         # A horizontal bar asked for in the spec gets room under the maps.
         mode = "below"
@@ -616,11 +632,11 @@ def _assemble_map(items, user_layout, lmeta, ctx):
         aspect,
         titled=title_lines(user_layout.get("title")),
         panel_titles=any(panel_titles),
-        right=bool(panels_of) and mode in ("right", "rows"),
-        below=bool(panels_of) and mode in ("columns", "below"),
+        right=(bool(auto_of) and mode in ("right", "rows")) or bool(placed - placed_h),
+        below=(bool(auto_of) and mode in ("columns", "below")) or bool(placed_h),
         user={**user_layout, "grid": grid_in},
     )
-    slots = place_colorbars(mode, panels_of, domains)
+    slots = place_colorbars(mode, auto_of, domains)
     # No-data cells show the plot background (the theme's maps style): a neutral grey,
     # not the template's tint, darker than a diverging zero or a dry class, so a missing
     # cell never reads as zero.
@@ -674,12 +690,9 @@ def _assemble_map(items, user_layout, lmeta, ctx):
                     bar["ticktext"] = [
                         t if i % k == 0 else "" for i, t in enumerate(bar["ticktext"])
                     ]
-        else:
+        elif name not in placed:
             axis["showscale"] = False
-        lifted = {}
-        for spec_trace, bound, _ in members:
-            lifted = deep_merge(lifted, _lift_color(spec_trace, bound.color_key))
-        layout[name] = deep_merge(axis, lifted)
+        layout[name] = deep_merge(axis, lifted_of[name])
 
     # Overlays, then assemble each panel's traces in draw order.
     settings = overlay_settings(lmeta.get("overlays"))

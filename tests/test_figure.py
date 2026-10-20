@@ -110,6 +110,40 @@ def test_shared_coloraxis_on_request():
     assert "coloraxis2" not in _layout(fig)
 
 
+def test_one_trace_showscale_true_shows_its_shared_bar():
+    # Rain on four panels shares one bar; the trace asking for it wins over the
+    # others' showscale false, wherever it sits in the list.
+    rain = [
+        _trace(f"r{i}", input="r", showscale=(i == 0), **({"xaxis": f"x{i + 1}"} if i else {}))
+        for i in range(4)
+    ]
+    prob = make_gridded(n_time=1, name="prob", units="1", fill=0.3)
+    spec = {"data": [*rain, _trace("p", xaxis="x5", showscale=True)]}
+    layout = _layout(compile(spec, {"r": make_gridded(n_time=1), "p": prob}))
+    assert layout["coloraxis"]["showscale"] is True
+    assert layout["coloraxis2"]["showscale"] is True
+
+
+def test_spec_placed_colorbars_keep_their_position():
+    # A bar given x / y is not turned into an automatic horizontal bar under its column.
+    prob = make_gridded(n_time=1, name="prob", units="1", fill=0.3)
+    spec = {
+        "data": [
+            _trace("a", colorbar={"x": 1.01, "y": 0.75, "len": 0.45}),
+            _trace("p", xaxis="x2", colorbar={"x": 1.01, "y": 0.25, "len": 0.45}),
+        ]
+    }
+    layout = _layout(compile(spec, {"a": make_gridded(n_time=1), "p": prob}))
+    for name, y in (("coloraxis", 0.75), ("coloraxis2", 0.25)):
+        bar = layout[name]["colorbar"]
+        assert (bar["x"], bar["y"]) == (1.01, y)
+        assert "orientation" not in bar and "yref" not in bar and "xanchor" not in bar
+        assert layout[name].get("showscale") is not False
+    # Room on the right for the bars, none reserved below.
+    assert layout["margin"]["r"] > layout["margin"]["l"]
+    assert layout["margin"]["b"] < 60
+
+
 def test_faceted_side_by_side_is_an_error():
     a = make_gridded(n_time=2)
     with pytest.raises(UsageError, match="single map"):
