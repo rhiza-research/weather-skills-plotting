@@ -183,7 +183,8 @@ def _layer_traces(layers):
 @weather_skill.argument(
     "--animate",
     action="store_true",
-    help="Animate one gridded -i input through its times or steps; -o must end in .html.",
+    help="Animate one gridded -i input through its times or steps; -o must end in .html. "
+    "outline: and mask: --layer GeoJSON stay on every frame.",
 )
 @weather_skill.argument("--spec", type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
 @weather_skill.argument(
@@ -226,11 +227,25 @@ def plot(
         merged, datasets = build_mediogram_spec(files, spec)
         return run(merged, None, datasets, output, dump_spec, theme_file=theme_file)
     if animate or (replayed == "plot --animate" and not files):
-        if layers:
-            raise UsageError("--animate takes one -i input, not --layer")
+        if any(x.kind not in ("outline", "mask") for x in layers):
+            raise UsageError(
+                "--animate takes one -i input; --layer may add only outline: and mask: GeoJSON"
+            )
         cli = dict(zip(input_ids([x.name for x in inputs]), files, strict=True))
         datasets = spec_datasets(spec, cli)
         base = build_animation_spec(datasets)
+        # Boundaries repeat on every panel, so they stay on screen through every frame.
+        for j, shape in enumerate(layers):
+            if shape.kind == "mask":
+                base["layout"]["meta"]["geo"] = {"mask_geojson": shape.path}
+                continue
+            base["data"].append(
+                {
+                    "uid": f"outline{j + 1}",
+                    "type": "scatter",
+                    "meta": {"bind": "geojson", "source": {"geojson": shape.path}},
+                }
+            )
         return run(base, spec, datasets, output, dump_spec, theme_file=theme_file, animate=True)
     if replayed in ("plot --verify", "plot --mediogram") and not files and not layers:
         # The dumped spec already holds every trace and its layout.

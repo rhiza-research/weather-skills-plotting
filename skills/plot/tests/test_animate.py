@@ -108,3 +108,60 @@ def test_single_frame_refused(tmp_path, animation_fn, capsys):
     with pytest.raises(SystemExit):
         run_skill(animation_fn, "--animate", "-i", str(path), "-o", str(tmp_path / "v.html"))
     assert "nothing to animate" in capsys.readouterr().err
+
+
+def base_of(text):
+    """The ``data`` and ``layout`` plotly writes into ``Plotly.newPlot``."""
+    decoder = json.JSONDecoder()
+    start = text.index("[", text.index("Plotly.newPlot("))
+    data, end = decoder.raw_decode(text, start)
+    layout, _ = decoder.raw_decode(text, text.index("{", end))
+    return data, layout
+
+
+@pytest.fixture
+def edge(tmp_path):
+    path = tmp_path / "edge.geojson"
+    path.write_text(
+        json.dumps(
+            {"type": "Polygon", "coordinates": [[[10, 1], [13, 1], [13, 3], [10, 3], [10, 1]]]}
+        )
+    )
+    return str(path)
+
+
+def test_outline_layer_on_every_frame(grid, edge, animation_fn, tmp_path, capsys):
+    run_skill(
+        animation_fn, "--animate", "-i", grid, "--layer", f"outline:{edge}", "--dump-spec", "-"
+    )
+    spec = json.loads(capsys.readouterr().out)
+    assert [t["uid"] for t in spec["data"]] == ["0", "outline1"]
+    out = tmp_path / "v.html"
+    run_skill(animation_fn, "--animate", "-i", grid, "--layer", f"outline:{edge}", "-o", str(out))
+    text, frames = figure_of(out)
+    data, _ = base_of(text)
+    # The outline is a base trace no frame replaces, so it stays drawn on every frame.
+    outline = data.index(next(t for t in data if t["uid"] == "outline1-p1"))
+    assert all(outline not in f["traces"] for f in frames)
+
+
+def test_mask_layer_and_data_layer_refused(grid, edge, animation_fn, capsys):
+    run_skill(animation_fn, "--animate", "-i", grid, "--layer", f"mask:{edge}", "--dump-spec", "-")
+    spec = json.loads(capsys.readouterr().out)
+    assert spec["layout"]["meta"]["geo"]["mask_geojson"] == edge
+    with pytest.raises(SystemExit):
+        run_skill(
+            animation_fn, "--animate", "-i", grid, "--layer", f"heatmap:{grid}", "-o", "v.html"
+        )
+    assert "only outline: and mask:" in capsys.readouterr().err
+
+
+def test_slider_starts_right_of_play_pause(grid, animation_fn, tmp_path):
+    out = tmp_path / "v.html"
+    spec = {"layout": {"title": {"text": "Rain", "subtitle": {"text": "East Africa"}}}}
+    run_skill(animation_fn, "--animate", "-i", grid, "--spec", json.dumps(spec), "-o", str(out))
+    _, layout = base_of(out.read_text())
+    (menu,), (slider,) = layout["updatemenus"], layout["sliders"]
+    # Both sit on one row under the map; the slider's left pad clears the two buttons.
+    assert menu["x"] == slider["x"] == 0 and menu["y"] == slider["y"] == 0
+    assert slider["len"] == 1 and slider["pad"]["l"] >= 150

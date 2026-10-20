@@ -197,12 +197,13 @@ def animate_figure(fig, *, user_layout: dict | None = None, animation: dict | No
         out_layout["sliders"] = [
             {
                 "active": 0,
-                "x": 0.2,
-                "len": 0.8,
+                "x": 0,
+                "len": 1,
                 "xanchor": "left",
                 "y": 0,
                 "yanchor": "top",
-                "pad": {"t": 35},
+                # Starts right of the ~140 px Play / Pause pair, and still ends at the map's edge.
+                "pad": {"t": 35, "l": 160},
                 "currentvalue": {"visible": False},
                 "font": {"color": "rgba(0,0,0,0)"},
                 "steps": [

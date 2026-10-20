@@ -30,8 +30,8 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i iod_rain.zarr -o iod_vs_rain.png -
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --obs chirps_week.zarr --forecast ecmwf_w1.zarr --verify verify_w1.zarr --forecast ecmwf_w2.zarr --verify verify_w2.zarr -o verify.png
 # Mediogram: forecast ensemble vs model climate at one point
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --mediogram -i forecast.zarr -i mclimate.zarr -o mediogram.png --spec '{"layout": {"meta": {"geo": {"point": {"lat": -1.3, "lon": 36.8}}}}}'
-# Animation through time, as interactive HTML
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --animate -i chirps_daily.zarr -o chirps.html
+# Animation through time, as interactive HTML, with a country outline on every frame
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --animate -i chirps_daily.zarr --layer outline:kenya.geojson -o chirps.html
 ```
 
 The plot type follows the data: a lat/lon grid is a colored map, stations are colored markers, 1-D series are lines on one time axis. `meta.x` / `meta.y` scatter two variables. `--obs`/`--forecast`/`--verify`, `--mediogram` and `--animate` pick the three special figures (sections below); use one at a time.
@@ -41,7 +41,7 @@ The plot type follows the data: a lat/lon grid is a colored map, stations are co
 - `--layer` — `KIND:PATH` or `KIND:PATH=NAME` to stack on one map; repeat. Kinds: `heatmap`, `contour` (over a heatmap: labeled black lines, every 4 hPa for sea-level pressure; `"contours": {"coloring": "fill"}` fills it), `scatter` (stations; local-extrema highs / lows print as a blue H / red L over the central value, restyled by a trace with that layer's uid), `quiver` (wind u/v), `outline` and `mask` (GeoJSON). `outline` and `mask` layers also combine with `-i` inputs (`-i grid.zarr --layer outline:counties.geojson`); `-i` itself takes Zarr paths only.
 - `--obs`, `--forecast`, `--verify` — verification grid: the observation for one week, then each lead's forecast (repeat, week-1 first) and its verify-skill output (once per `--forecast`, same order). See **Verification grid**.
 - `--mediogram` — forecast vs model climate at one point; pass `-i` twice (forecast, then m-climate). See **Mediogram**.
-- `--animate` — one `-i` grid animated through its times or steps; `-o` must end in `.html`. See **Animation**.
+- `--animate` — one `-i` grid animated through its times or steps, plus any `outline:` / `mask:` layers; `-o` must end in `.html`. See **Animation**.
 - `--spec` — Plotly figure JSON, inline or a file path.
 - `--theme-file` — house style: Plotly `template`, `palettes`, per-field `defaults`, base-map `overlays` (see Colors).
 - `--dump-spec` — print (`-`) or save (a path) the spec, without drawing.
@@ -127,6 +127,7 @@ CHIRPS and ECMWF week-1 rainfall side by side over Kenya, each on its own grid, 
 
 ### Animation
 `--animate -i GRID -o out.html` turns one gridded Zarr into a self-contained interactive map (plotly.js embedded, works offline): one frame per time or step, play / pause and a slider, every frame on one color scale and titled with its time. Each frame is the map `plot` draws for that time.
+- The base map (coastlines, borders, lakes, rivers; admin-1 lines on small boxes) is the still map's and stays on every frame. Add boundaries with `--layer outline:region.geojson` (resolve-region writes one) and clip with `--layer mask:region.geojson`, as on a still map.
 - Every dim other than latitude, longitude and the animated one must go (`isel` / `sel`, or summarize-dim); `{"data": [{"uid": "0", "meta": {"facet": "number"}}]}` animates another dim. Station and 1-D data are refused. It takes one input: to animate precip under isobars, `merge` the two fields into one Zarr and add a trace reading the other variable.
 - Speed: `{"layout": {"meta": {"animation": {"duration": 300}}}}` (ms per frame, default 500; `transition` ms between frames). Your own `layout.updatemenus` / `sliders` replace the default controls.
 - Size grows with frames × cells; stderr gives the frame count and data size and warns above 50 MB. Pick fewer frames (`{"step": {"start": 0, "stop": 12}}`) or a smaller `bbox`.
