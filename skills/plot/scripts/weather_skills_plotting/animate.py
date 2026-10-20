@@ -77,8 +77,9 @@ def animate_figure(fig, *, user_layout: dict | None = None, animation: dict | No
     n = 1 + max((_panel_of(t) for t in data), default=0)
     if n < 2:
         raise UsageError(
-            "nothing to animate: the map has a single panel. Animate a dim with at least two "
-            "values (data[].meta.facet, default step or time), or drop --animate for one map"
+            "nothing to animate: the figure has a single panel. Animation plays a map's "
+            "times or steps (data[].meta.facet picks another dim, at least two values); time "
+            "series and other non-map plots don't animate, so drop --animate"
         )
 
     panels = [[t for t in data if _panel_of(t) == p] for p in range(n)]
@@ -246,27 +247,3 @@ def estimate_html_mb(fig) -> float:
     from weather_skills_plotting import _float32
 
     return len(json.dumps(_float32(fig.to_plotly_json()))) / 1e6
-
-
-def build_animation_spec(datasets: dict) -> dict:
-    """The base spec for ``plot --animate``: one gridded input, one heatmap, a frame per value."""
-    from weather_skills_core.cf import cf_dim
-
-    from weather_skills_plotting.cli import skeleton
-
-    if not datasets:
-        raise UsageError("pass --animate with -i/--input, or a --spec with layout.meta.inputs")
-    if len(datasets) > 1:
-        raise UsageError(
-            "--animate draws one gridded input; got several. To animate precip under isobars, "
-            "merge the two fields into one Zarr and add a trace that reads the other variable"
-        )
-    key, grid = next(iter(datasets.items()))
-    lat, lon = cf_dim(grid, "latitude"), cf_dim(grid, "longitude")
-    if lat not in grid.dims or lon not in grid.dims:
-        raise UsageError(
-            f"--animate needs a latitude/longitude grid; got dims {list(grid.dims)}. "
-            "For station or 1-D data drop --animate"
-        )
-    data = [{"uid": key, "type": "heatmap", "meta": {"source": {"input": key}}}]
-    return skeleton("plot --animate", datasets, data)

@@ -98,7 +98,7 @@ def run(
 ):
     """Merge, then either dump the spec or draw it. Returns the output path or ``None``.
 
-    ``animate`` turns the figure's map panels into frames of one animated panel
+    ``animate`` turns the figure's map panels into frames of one animated map
     (``plot --animate``); the output must then be HTML.
     """
     from weather_skills_plotting import SpecArg, compile, export
@@ -124,8 +124,9 @@ def run(
     if animate:
         from weather_skills_plotting.animate import animate_figure, estimate_html_mb
 
+        # The skeleton adds only layout.meta, so the merged layout is the user's own.
         fig = animate_figure(
-            fig, user_layout=user.get("layout") or {}, animation=layout_meta.get("animation")
+            fig, user_layout=merged.get("layout") or {}, animation=layout_meta.get("animation")
         )
         size = estimate_html_mb(fig)
         print(

@@ -25,7 +25,6 @@ from weather_skills_core import Dataset, UsageError, weather_skill
 from weather_skills_core.cf import cf_dim
 
 from weather_skills_plotting import parse_spec_arg
-from weather_skills_plotting.animate import build_animation_spec
 from weather_skills_plotting.cli import (
     input_ids,
     parse_input,
@@ -183,8 +182,8 @@ def _layer_traces(layers):
 @weather_skill.argument(
     "--animate",
     action="store_true",
-    help="Animate one gridded -i input through its times or steps; -o must end in .html. "
-    "outline: and mask: --layer GeoJSON stay on every frame.",
+    help="Play the map's times or steps as frames of one animated map instead of side-by-side "
+    "panels; takes the same -i / --layer inputs as a still map. -o must end in .html.",
 )
 @weather_skill.argument("--spec", type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
 @weather_skill.argument(
@@ -216,6 +215,7 @@ def plot(
         raise UsageError("pick one of --obs/--forecast/--verify, --mediogram, or --animate")
     # A dumped spec replays its own mode: an animation spec animates again.
     replayed = ((spec.data.get("layout") or {}).get("meta") or {}).get("skill") if spec else None
+    animate = animate or (replayed == "plot --animate" and not files and not layers)
     if grid:
         if inputs or layers:
             raise UsageError("--obs/--forecast/--verify make a verification grid; drop -i/--layer")
@@ -226,27 +226,6 @@ def plot(
             raise UsageError("--mediogram takes two -i inputs (forecast, m-climate), not --layer")
         merged, datasets = build_mediogram_spec(files, spec)
         return run(merged, None, datasets, output, dump_spec, theme_file=theme_file)
-    if animate or (replayed == "plot --animate" and not files):
-        if any(x.kind not in ("outline", "mask") for x in layers):
-            raise UsageError(
-                "--animate takes one -i input; --layer may add only outline: and mask: GeoJSON"
-            )
-        cli = dict(zip(input_ids([x.name for x in inputs]), files, strict=True))
-        datasets = spec_datasets(spec, cli)
-        base = build_animation_spec(datasets)
-        # Boundaries repeat on every panel, so they stay on screen through every frame.
-        for j, shape in enumerate(layers):
-            if shape.kind == "mask":
-                base["layout"]["meta"]["geo"] = {"mask_geojson": shape.path}
-                continue
-            base["data"].append(
-                {
-                    "uid": f"outline{j + 1}",
-                    "type": "scatter",
-                    "meta": {"bind": "geojson", "source": {"geojson": shape.path}},
-                }
-            )
-        return run(base, spec, datasets, output, dump_spec, theme_file=theme_file, animate=True)
     if replayed in ("plot --verify", "plot --mediogram") and not files and not layers:
         # The dumped spec already holds every trace and its layout.
         return run(spec.data, None, spec.opened(), output, dump_spec, theme_file=theme_file)
@@ -257,6 +236,11 @@ def plot(
     if files and layers:
         raise UsageError(
             "pass -i/--input or --layer, not both (-i takes only outline: and mask: layers)"
+        )
+    if animate and len(files) > 1:
+        raise UsageError(
+            "--animate plays one map: stack the inputs with --layer (heatmap:, contour:, "
+            "scatter:, quiver:, outline:, mask:) instead of several -i"
         )
     layout = {}
     series = False
@@ -306,7 +290,7 @@ def plot(
             raise UsageError(
                 "pass -i/--input, --layer, or a --spec with data and layout.meta.inputs"
             )
-    base = skeleton("plot", datasets, data)
+    base = skeleton("plot --animate" if animate else "plot", datasets, data)
     if layout.get("meta"):
         base["layout"]["meta"].update(layout["meta"])
     merged = merge_spec(base, spec.data if spec is not None else {})
@@ -314,7 +298,7 @@ def plot(
         merged = inherit_from_first(merged, datasets)
         warn_mixed_units(merged, datasets)
         warn_disjoint_dates(merged, datasets)
-    return run(merged, None, datasets, output, dump_spec, theme_file=theme_file)
+    return run(merged, None, datasets, output, dump_spec, theme_file=theme_file, animate=animate)
 
 
 install_spec_help(plot)

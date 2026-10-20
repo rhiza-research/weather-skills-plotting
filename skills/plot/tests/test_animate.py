@@ -6,7 +6,14 @@ import re
 
 import numpy as np
 import pytest
-from skill_conftest import load_skill, make_forecast, make_gridded, run_skill, write_zarr
+from skill_conftest import (
+    load_skill,
+    make_forecast,
+    make_gridded,
+    make_point_obs,
+    run_skill,
+    write_zarr,
+)
 
 mod = load_skill("plot", "plot")
 
@@ -145,15 +152,48 @@ def test_outline_layer_on_every_frame(grid, edge, animation_fn, tmp_path, capsys
     assert all(outline not in f["traces"] for f in frames)
 
 
-def test_mask_layer_and_data_layer_refused(grid, edge, animation_fn, capsys):
+def test_mask_layer(grid, edge, animation_fn, capsys):
     run_skill(animation_fn, "--animate", "-i", grid, "--layer", f"mask:{edge}", "--dump-spec", "-")
     spec = json.loads(capsys.readouterr().out)
     assert spec["layout"]["meta"]["geo"]["mask_geojson"] == edge
+
+
+def test_layers_animate_like_a_still_map(grid, edge, animation_fn, tmp_path):
+    pts = make_point_obs(n_time=4)
+    pts["precip"].values = np.arange(4.0)[None, :] * np.ones(pts["precip"].shape)
+    pts = str(write_zarr(pts, tmp_path / "pts.zarr"))
+    out = tmp_path / "v.html"
+    layers = [
+        "--layer",
+        f"heatmap:{grid}",
+        "--layer",
+        f"contour:{grid}",
+        "--layer",
+        f"scatter:{pts}",
+    ]
+    run_skill(animation_fn, "--animate", *layers, "--layer", f"outline:{edge}", "-o", str(out))
+    text, frames = figure_of(out)
+    data, _ = base_of(text)
+    uids = [t["uid"] for t in data]
+    # Heatmap, contour and stations change frame to frame; the outline stays put.
+    moving = sorted(uids.index(f"{u}-p1") for u in ("0", "1", "2"))
+    assert len(frames) == 4 and all(f["traces"] == moving for f in frames)
+    assert uids.index("3-p1") not in frames[0]["traces"]
+
+
+def test_dumped_animation_replays_as_animation(grid, animation_fn, tmp_path, capsys):
+    run_skill(animation_fn, "--animate", "-i", grid, "--dump-spec", "-")
+    spec = capsys.readouterr().out
+    assert json.loads(spec)["layout"]["meta"]["skill"] == "plot --animate"
+    out = tmp_path / "v.html"
+    run_skill(animation_fn, "--spec", spec, "-o", str(out))
+    assert "animation: 4 frames" in capsys.readouterr().err
+
+
+def test_several_inputs_refused(grid, animation_fn, capsys):
     with pytest.raises(SystemExit):
-        run_skill(
-            animation_fn, "--animate", "-i", grid, "--layer", f"heatmap:{grid}", "-o", "v.html"
-        )
-    assert "only outline: and mask:" in capsys.readouterr().err
+        run_skill(animation_fn, "--animate", "-i", grid, "-i", grid, "-o", "v.html")
+    assert "stack the inputs with --layer" in capsys.readouterr().err
 
 
 def test_slider_starts_right_of_play_pause(grid, animation_fn, tmp_path):
