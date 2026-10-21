@@ -4,14 +4,14 @@ General-purpose weather and climate data plotting: heatmaps, filled-contour
 maps, station maps, time series, xy scatter, wind roses, quiver, ECMWF-style
 mediograms, lead-week event-verification grids, and animated maps, from weather-skills
 standard dataset Zarrs, all from one `plot` skill. Figures are Plotly: its `--spec` is
-a standard Plotly figure JSON, and output is PNG, JPG, or interactive HTML. Built on [`weather-skills-core`](https://github.com/weather-skills/weather-skills-core)
+a standard Plotly figure JSON, and output is PNG, JPG, interactive HTML, or animated GIF. Built on [`weather-skills-core`](https://github.com/weather-skills/weather-skills-core)
 for dataset loading, the CLI decorator, and a handful of shared utilities.
 
 ## Skill
 
 | Skill | Role |
 | --- | --- |
-| [`plot`](skills/plot/) | Heatmap, contour, timeseries, xy scatter, wind-rose, quiver, or layered map, one dataset or several side by side; several 1-D series share one time axis. `--obs`/`--forecast`/`--verify` draw a lead-week verification grid, `--mediogram` an ECMWF-style mediogram, and `--animate` plays any map (all its layers) through time as animated HTML |
+| [`plot`](skills/plot/) | Heatmap, contour, timeseries, xy scatter, wind-rose, quiver, or layered map, one dataset or several side by side; several 1-D series share one time axis. `--obs`/`--forecast`/`--verify` draw a lead-week verification grid, `--mediogram` an ECMWF-style mediogram, and `--animate` plays any map (all its layers) through time as animated HTML or GIF |
 
 The spec design (Plotly figure plus `meta` bindings) is documented in
 [`docs/plotting.md`](docs/plotting.md). PNG/JPG export needs Chrome: kaleido
@@ -51,9 +51,9 @@ uv run skills/plot/scripts/plot.py --mediogram \
   -i /tmp/forecast.zarr -i /tmp/mclimate.zarr -o /tmp/medio.png \
   --spec '{"layout": {"meta": {"geo": {"point": {"lat": -1.3, "lon": 36.8}}}}}' 
 
-# An animated map (HTML only)
+# An animated map (HTML or GIF)
 uv run skills/plot/scripts/plot.py --animate \
-  -i /tmp/forecast.zarr -o /tmp/forecast.html
+  -i /tmp/forecast.zarr -o /tmp/forecast.html -o /tmp/forecast.gif
 ```
 
 ## Install as a Claude plugin

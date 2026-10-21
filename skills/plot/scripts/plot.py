@@ -199,7 +199,7 @@ def _layer_traces(layers):
     "--animate",
     action="store_true",
     help="Play the map's times or steps as frames of one animated map instead of side-by-side "
-    "panels; takes the same -i / --layer inputs as a still map. -o must end in .html.",
+    "panels; takes the same -i / --layer inputs as a still map. -o must end in .html or .gif.",
 )
 @weather_skill.argument("--spec", type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
 @weather_skill.argument(
