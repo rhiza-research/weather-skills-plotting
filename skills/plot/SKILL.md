@@ -52,6 +52,24 @@ The plot type follows the data: a lat/lon grid is a colored map, stations are co
 
 Each input file is one entry in `data`. Name it on the command line (`-i ecmwf.zarr=FC`) and put that name in `"uid"`. Unnamed files are `"0"`, `"1"`, … in order.
 
+A trace's `uid` is its file's NAME when the file is named, else its position: `-i a.zarr=West` is `"uid": "West"`, and `"0"` then matches nothing (plot stops). Copy uids from the `-i` line, or run `--dump-spec -` to see them.
+
+```bash
+# Two named files, restyled by name: bars per county, one panel each
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i west.zarr=West -i east.zarr=East -o counties.png --spec '{"data": [
+  {"uid": "West", "type": "bar", "meta": {"x": "county", "y": "precip"}},
+  {"uid": "East", "type": "bar", "meta": {"x": "county", "y": "precip"}, "xaxis": "x2", "yaxis": "y2"}],
+  "layout": {"xaxis": {"domain": [0, 0.46]}, "xaxis2": {"domain": [0.54, 1]}, "yaxis2": {"anchor": "x2"}}}'
+# Named lines: legend names and colors
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i chirps_area.zarr=CHIRPS -i imerg_area.zarr=IMERG -o rain.png --spec '{"data": [
+  {"uid": "CHIRPS", "line": {"color": "black"}}, {"uid": "IMERG", "name": "IMERG Late", "line": {"dash": "dash"}}]}'
+# Named layers: the uid is the NAME after the path
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --layer heatmap:rain.zarr=RAIN --layer contour:msl.zarr=MSLP -o map.png --spec '{"data": [
+  {"uid": "RAIN", "zmin": 0, "zmax": 50}, {"uid": "MSLP", "contours": {"size": 2}}]}'
+```
+
+Every row below assumes `-i ecmwf.zarr=FC`.
+
 | To | `--spec` |
 | --- | --- |
 | Set the title | `{"layout": {"title": {"text": "Week 1"}}}` |
@@ -59,9 +77,9 @@ Each input file is one entry in `data`. Name it on the command line (`-i ecmwf.z
 | Title a panel | `{"layout": {"annotations": [{"name": "panel-title-2", "text": "ECMWF"}]}}` |
 | Pick one step | `{"data": [{"uid": "FC", "meta": {"source": {"isel": {"step": 0}}}}]}` |
 | Pick the variable to draw | `{"data": [{"uid": "FC", "meta": {"source": {"variable": "iod_mode_index"}}}]}` |
-| Set the color range | `{"data": [{"uid": "0", "zmin": 0, "zmax": 100}]}` |
+| Set the color range | `{"data": [{"uid": "FC", "zmin": 0, "zmax": 100}]}` |
 | Set the map window | `{"layout": {"meta": {"geo": {"bbox": [5.5, 33.5, -5, 42.5]}}}}` |
-| Draw contours | `{"data": [{"uid": "0", "type": "contour"}]}` |
+| Draw contours | `{"data": [{"uid": "FC", "type": "contour"}]}` |
 
 `isel` counts from 0 (`-1` is the last); `sel` picks by label. `bbox` is `[N, W, S, E]`. `--help` lists every option; `--dump-spec -` shows the spec for your files.
 
