@@ -8,8 +8,10 @@ https://plotly.com/python/reference/. This page covers the ``meta`` keys
 from __future__ import annotations
 
 import argparse
+import json
 
 from weather_skills_plotting import spec
+from weather_skills_plotting.themes import DEFAULT_THEME_FILE
 
 _BINDS = {
     "field": "lat/lon grid → z of a heatmap or contour (default for those types); panels the time/step dim",
@@ -37,7 +39,8 @@ _META = {
     "styled by its own data entry",
     "members": "series with band: false hides the member lines (band and mean only)",
     "align": "series: dayofyear overlays years on one seasonal axis",
-    "palette": "class palette name (default_precip, default_precip_anom, ppt_week, spi, …), "
+    "palette": "class palette name (default_precip, default_precip_anom, ppt_week, spi, …, or "
+    "one a theme adds: see THEMES), "
     "color list, or {colors, bounds, under, over}: bounds are class edges, one color per "
     "class (len(bounds) - 1), under / over color values outside the edges (or pack them "
     "first and last in colors); replaces the automatic precipitation palette",
@@ -98,9 +101,9 @@ _RECIPES = [
     ),
     (
         "Tropical Tidbits MSLP & 10 m wind (--theme-file tropical_tidbits colors the speed): "
-        "--layer heatmap:uv.zarr=WIND --layer quiver:uv.zarr=ARROWS --layer contour:msl.zarr=MSLP",
-        '{"data": [{"uid": "WIND", "meta": {"bind": "speed"}}, {"uid": "ARROWS", "meta": '
-        '{"arrows": {"step": 12}}}, {"uid": "MSLP", "contours": {"coloring": "none", '
+        "--layer quiver:uv.zarr=WIND (speed WIND, arrows WIND-arrows) --layer contour:msl.zarr=MSLP",
+        '{"data": [{"uid": "WIND-arrows", "meta": {"arrows": {"step": 12}}}, '
+        '{"uid": "MSLP", "contours": {"coloring": "none", '
         '"showlabels": true, "start": 900, "end": 1080, "size": 2}}]}',
     ),
     (
@@ -273,6 +276,17 @@ def _block(title: str, rows: dict) -> str:
 
 def spec_reference(recipes=None) -> str:
     """Plain-text reference appended to ``--help``; ``recipes`` defaults to plot's."""
+    # One line per theme shipped beside default.json: its palettes and the field kinds it recolors.
+    shipped = []
+    for path in sorted(DEFAULT_THEME_FILE.parent.iterdir(), key=lambda p: p.name):
+        if path.name.endswith(".json") and path.name != "default.json":
+            theme = json.loads(path.read_text())
+            defaults = ", ".join(f"{k} -> {v}" for k, v in theme.get("defaults", {}).items())
+            shipped += [
+                f"  {path.name.removesuffix('.json')}: palettes "
+                + ", ".join(theme.get("palettes", {}))
+                + (f"; defaults {defaults}" if defaults else "")
+            ]
     parts = [
         "PLOT SPEC (--spec)",
         '  A standard Plotly figure: {"data": [traces], "layout": {…}}. Every key is Plotly\'s',
@@ -295,7 +309,9 @@ def spec_reference(recipes=None) -> str:
         "",
         _block("layout.meta", _LAYOUT_META),
         "",
-        "THEMES (--theme-file PATH, or a shipped name: tropical_tidbits)",
+        "THEMES (--theme-file PATH, or a shipped theme by name, e.g. --theme-file tropical_tidbits)",
+        "  Shipped themes (their palettes exist only with that --theme-file):",
+        *shipped,
         "  JSON or TOML with any of five sections, layered on the standard look:",
         "  template  Plotly template (fonts, colorway, backgrounds)",
         "  palettes  name -> {colors, bounds[, under, over, labels]} or a color list; adds to the",
