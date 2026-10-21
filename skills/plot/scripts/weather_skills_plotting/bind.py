@@ -951,14 +951,18 @@ def bind_xy(trace, meta, ctx, loc):
     xv, yv = values
     if not keep.any():
         raise UsageError(f"{loc}: no position has a finite x and y to plot")
-    out = {"mode": "markers", "x": xv[keep], "y": yv[keep], "showlegend": False}
+    bar = trace.get("type") == "bar"
+    out = {"x": xv[keep], "y": yv[keep], "showlegend": False}
+    if not bar:
+        out["mode"] = "markers"
     if trace.get("text") or trace.get("texttemplate"):
         # The user's labels on the outermost points stay readable past the axis edge.
         out["cliponaxis"] = False
     # A short 1-D series of two numbers labels each point with its year, date or
     # name, unless the trace sets its own text.
     if (
-        x_da.ndim == 1
+        not bar
+        and x_da.ndim == 1
         and xv.dtype.kind == "f"
         and yv.dtype.kind == "f"
         and keep.sum() <= 25
@@ -1157,7 +1161,7 @@ _TYPES_FOR_BIND = {
     "points": {"scatter", "scattergl"},
     "geojson": {"scatter", "scattergl"},
     "series": {"scatter", "scattergl", "bar"},
-    "xy": {"scatter", "scattergl"},
+    "xy": {"scatter", "scattergl", "bar"},
     "samples": {"box", "scatter", "violin"},
     "windrose": {"barpolar"},
 }

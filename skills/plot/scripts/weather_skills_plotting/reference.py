@@ -18,7 +18,8 @@ _BINDS = {
     "points": "station_id / point_id values → colored scatter markers on a map",
     "geojson": "GeoJSON boundary → scatter lines (meta.source.geojson); repeats on every panel",
     "series": "1-D along time or step → scatter / bar (default for those types)",
-    "xy": "one variable against another from the same input → scatter markers (set by meta.x / meta.y)",
+    "xy": "one variable against another from the same input → scatter markers, or bars with "
+    'type "bar" (set by meta.x / meta.y)',
     "samples": "values at a point per step → box (all samples) or scatter (the mean)",
     "windrose": "u/v pooled into a polar wind rose → barpolar (default for that type)",
 }

@@ -1235,3 +1235,18 @@ def test_band_part_without_a_band_is_an_error():
         merge_traces(
             [{"uid": "f", "meta": {"source": {"input": "f"}}}], [{"uid": "f-band", "name": "x"}]
         )
+
+
+def test_xy_draws_bars_by_county():
+    ds = xr.Dataset(
+        {"precip": (("county",), [12.0, 30.5, 4.0])},
+        coords={"county": ["Kisii", "Siaya", "Busia"]},
+    )
+    spec = {
+        "data": [
+            {"uid": "0", "type": "bar", "orientation": "h", "meta": {"x": "precip", "y": "county"}}
+        ]
+    }
+    tr = _data(compile(spec, {"0": ds}))[0]
+    assert tr["type"] == "bar" and tr["orientation"] == "h"
+    assert list(tr["y"]) == ["Kisii", "Siaya", "Busia"] and list(tr["x"]) == [12.0, 30.5, 4.0]
