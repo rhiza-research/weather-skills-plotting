@@ -62,7 +62,7 @@ _LAYOUT_META = {
     "geo.bbox": "[N, W, S, E] or the N/W/S/E string resolve-region prints; map window, subsets every input. Named places: run resolve-region",
     "geo.mask_geojson": "blank every map cell outside this polygon (does not draw it)",
     "geo.point": '{"lat": …, "lon": …} for samples (--mediogram) and wind-rose traces; nearest cell',
-    "overlays": "true, false, or {coastline|borders|lakes|rivers|admin1: false or a scatter "
+    "overlays": "true, false, or {coastline|borders|disputed|lakes|rivers|admin1: false or a scatter "
     'style such as {"line": {"width": 2}}}',
     "export.scale": 'PNG/JPG pixel multiplier (default 1), e.g. {"export": {"scale": 2}}',
     "(dotted names)": 'are nested keys: geo.bbox is {"geo": {"bbox": […]}}',
@@ -296,7 +296,7 @@ def spec_reference(recipes=None) -> str:
         "            spi, wind_speed, diverging, sea_level_pressure, temperature, sequential",
         "  styles    drawn element -> Plotly settings: maps (no-data background), classed_colorbar,",
         "            isobars, map_marks, boundary, arrows, arrow_key_box, members, band_members",
-        "  overlays  coastline / borders / lakes / rivers / admin1 -> Plotly scatter style",
+        "  overlays  coastline / borders / disputed / lakes / rivers / admin1 -> Plotly scatter style",
         "            (admin1 also styles a many-polygon outline layer, e.g. county lines)",
         "  --dump-spec shows your spec before draw-time defaults (palette, limits) are chosen;",
         "  render once to see those.",

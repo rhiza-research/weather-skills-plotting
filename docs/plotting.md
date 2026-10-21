@@ -95,8 +95,8 @@ time step (mm/h from `unit-convert`), which keeps its units.
   as class indices on a stepped colorscale, and the raw values stay in
   `customdata` for hover. User limits turn a class palette into a
   continuous scale.
-- **Overlays.** Natural Earth coastline, borders, lakes, rivers and admin-1,
-  as line traces at a scale chosen from the map span.
+- **Overlays.** Natural Earth coastline, borders (disputed lines dashed),
+  lakes, rivers and admin-1, as line traces at a scale chosen from the map span.
 - **Defaults.** Titles, colorbar labels, sizes and the theme fill only what
   the user leaves unset.
 

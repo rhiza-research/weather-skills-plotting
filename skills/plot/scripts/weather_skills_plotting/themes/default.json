@@ -120,6 +120,7 @@
     "rivers": {"line": {"color": "#708090", "width": 0.6}},
     "lakes": {"line": {"color": "#708090", "width": 0.4}, "fill": "toself", "fillcolor": "#708090"},
     "borders": {"line": {"color": "#262626", "width": 1.2}},
+    "disputed": {"line": {"color": "#404040", "width": 1, "dash": "4px,3px"}},
     "coastline": {"line": {"color": "black", "width": 1.2}}
   }
 }
