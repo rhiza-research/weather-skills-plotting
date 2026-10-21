@@ -38,7 +38,6 @@ from weather_skills_plotting.mediogram import build_mediogram_spec
 from weather_skills_plotting.reference import install_spec_help
 from weather_skills_plotting.series import (
     MAX_INPUTS,
-    inherit_from_first,
     trace_label,
     warn_disjoint_dates,
     warn_mixed_units,
@@ -97,6 +96,23 @@ def _default_trace(uid: str, ds, *, xaxis=None) -> dict:
     if xaxis:
         trace.update(xaxis=xaxis, yaxis="y" + xaxis[1:])
     return trace
+
+
+def _as_drawn(ds, trace):
+    """The input as the spec's own variable / isel / sel / along leave it: the default fits
+    what is drawn (one line per station with ``along``, not a station map)."""
+    meta = (trace or {}).get("meta") or {}
+    source = meta.get("source") or {}
+    if source.get("variable") in ds.data_vars:
+        ds = ds[[source["variable"]]]
+    picks = {**(source.get("isel") or {}), **(source.get("sel") or {})}
+    if meta.get("along"):
+        picks[meta["along"]] = 0
+    for dim, pick in picks.items():
+        # One value drops the dim; which value does not matter for the shape.
+        if dim in ds.dims and not isinstance(pick, (list, dict)):
+            ds = ds.isel({dim: 0})
+    return ds
 
 
 def _layer_traces(layers):
@@ -252,7 +268,9 @@ def plot(
     else:
         cli = dict(zip(input_ids([x.name for x in inputs]), files, strict=True))
         datasets = spec_datasets(spec, cli)
-        data = [_default_trace(key, d) for key, d in datasets.items()]
+        user = {t.get("uid"): t for t in (spec.data.get("data") or [])} if spec else {}
+        drawn = {key: _as_drawn(d, user.get(key)) for key, d in datasets.items()}
+        data = [_default_trace(key, d) for key, d in drawn.items()]
         # 1-D series share one x/y axis, one legend entry per file.
         series = bool(data) and all(
             t["type"] == "scatter" and "bind" not in t["meta"] for t in data
@@ -268,7 +286,7 @@ def plot(
         elif cli:
             data = [
                 _default_trace(key, d, xaxis=None if i == 0 else f"x{i + 1}")
-                for i, (key, d) in enumerate(datasets.items())
+                for i, (key, d) in enumerate(drawn.items())
             ]
         else:
             data = []
@@ -295,7 +313,6 @@ def plot(
         base["layout"]["meta"].update(layout["meta"])
     merged = merge_spec(base, spec.data if spec is not None else {})
     if series:
-        merged = inherit_from_first(merged, datasets)
         warn_mixed_units(merged, datasets)
         warn_disjoint_dates(merged, datasets)
     return run(merged, None, datasets, output, dump_spec, theme_file=theme_file, animate=animate)

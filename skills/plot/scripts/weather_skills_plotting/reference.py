@@ -31,8 +31,9 @@ _META = {
     "facet": "dim to panel (default: step or time when present); false for none",
     "along": "series: dim drawn as one line per value (e.g. number for spaghetti)",
     "along_color": "same (default; one color, one legend entry) or cycle",
-    "band": "series with along: percentile pair such as [10, 90]; also draws the mean as a "
-    "bold line (legend: '… ensemble mean')",
+    "band": "series with along: percentile pair such as [10, 90] ([0, 100] = min–max); draws "
+    "the mean (this uid), the shading (uid-band) and member lines (uid-members), each "
+    "styled by its own data entry",
     "members": "series with band: false hides the member lines (band and mean only)",
     "align": "series: dayofyear overlays years on one seasonal axis",
     "palette": "class palette name (default_precip, default_precip_anom, ppt_week, spi, …), "
@@ -45,7 +46,7 @@ _META = {
 
 _SOURCE = {
     "input": "input id: NAME from -i PATH=NAME, else the position 0, 1, … (obs, forecast1 … for --verify grids; forecast, mclimate for --mediogram)",
-    "variable": "data variable (default: auto-detected)",
+    "variable": "data variable to draw; required when the file holds more than one",
     "isel": '0-based positions, e.g. {"number": 0, "step": [0, 1]}; -1 is the last. One '
     "integer picks one value (one map); a list keeps the dim (one panel each); a range is "
     '{"start": 0, "stop": 12, "step": 3} (stop excluded)',
@@ -74,7 +75,7 @@ _LAYOUT_META = {
 _RECIPES = [
     ("Title and font size", '{"layout": {"title": {"text": "Week 1"}, "font": {"size": 20}}}'),
     (
-        "Two-line title (subtitle, not <br>)",
+        "Two-line title (subtitle, or <br> in text)",
         '{"layout": {"title": {"text": "ECMWF rainfall", "subtitle": {"text": "Week 1: 16–22 Oct"}}}}',
     ),
     ("Contour instead of heatmap", '{"data": [{"uid": "0", "type": "contour"}]}'),
@@ -169,7 +170,7 @@ _RECIPES = [
         '{"data": [{"uid": "1", "coloraxis": "coloraxis2"}]}',
     ),
     (
-        "Rainfall variable of a multi-variable station file",
+        "The variable to draw from a multi-variable file",
         '{"data": [{"uid": "1", "meta": {"source": {"variable": "precip"}}}]}',
     ),
     (
@@ -207,6 +208,13 @@ _RECIPES = [
         '{"data": [{"uid": "0", "meta": {"along": "number", "band": [10, 90]}}]}',
     ),
     (
+        "Band parts styled apart: bold red mean (uid), faint grey members (uid-members), "
+        "named shading (uid-band)",
+        '{"data": [{"uid": "0", "line": {"color": "red", "width": 4}, "meta": {"along": '
+        '"number", "band": [0, 100]}}, {"uid": "0-members", "line": {"color": "grey"}, '
+        '"opacity": 0.3}, {"uid": "0-band", "name": "Ensemble range"}]}',
+    ),
+    (
         "Bars instead of lines; stacked",
         '{"data": [{"uid": "0", "type": "bar"}], "layout": {"barmode": "stack"}}',
     ),
@@ -216,7 +224,8 @@ _RECIPES = [
     ),
     (
         "One stacked panel per series",
-        '{"layout": {"grid": {"rows": 2, "columns": 1, "pattern": "coupled"}}}',
+        '{"data": [{"uid": "1", "xaxis": "x2", "yaxis": "y2"}], '
+        '"layout": {"grid": {"rows": 2, "columns": 1, "pattern": "coupled"}}}',
     ),
     (
         "Text label on panel 1",
@@ -231,7 +240,7 @@ _RECIPES = [
     ),
     (
         "Verification grid (--obs OBS --forecast W1 --forecast W2 --verify V1 --verify V2): title "
-        "(the verifying week is appended when the inputs carry it)",
+        "(replaces the default week title; include the week yourself)",
         '{"layout": {"title": {"text": "IMERG vs ENS, 3–9 Aug"}}}',
     ),
     (
