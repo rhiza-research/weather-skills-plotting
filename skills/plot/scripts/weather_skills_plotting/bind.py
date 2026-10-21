@@ -918,8 +918,18 @@ def seasonal_dates(coord, loc):
 def bind_xy(trace, meta, ctx, loc):
     """One variable against another from the same input: a point per shared position."""
     source = meta.get("source") or {}
-    x_da, _ = select(ctx, source, f"{loc}.source", variable=meta.get("x"))
-    y_da, _ = select(ctx, source, f"{loc}.source", variable=meta.get("y"))
+    ds = _dataset(ctx, source, f"{loc}.source")
+    picked = []
+    for name in (meta.get("x"), meta.get("y")):
+        # isel / sel reach only the side that has the dim: a county coordinate has no
+        # time to pick. A dim the file lacks stays, so its "not in the data" error shows.
+        dims = ds[name].dims if name in ds.variables else ds.dims
+        own = dict(source)
+        for key in ("isel", "sel"):
+            if source.get(key):
+                own[key] = {d: v for d, v in source[key].items() if d in dims or d not in ds.dims}
+        picked.append(select(ctx, own, f"{loc}.source", variable=name)[0])
+    x_da, y_da = picked
     if set(x_da.dims) != set(y_da.dims):
         raise UsageError(
             f"{loc}: x {meta.get('x')!r} has dims {list(x_da.dims)} but y {meta.get('y')!r} has "

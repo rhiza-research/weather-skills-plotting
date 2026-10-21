@@ -1250,3 +1250,17 @@ def test_xy_draws_bars_by_county():
     tr = _data(compile(spec, {"0": ds}))[0]
     assert tr["type"] == "bar" and tr["orientation"] == "h"
     assert list(tr["y"]) == ["Kisii", "Siaya", "Busia"] and list(tr["x"]) == [12.0, 30.5, 4.0]
+
+
+def test_xy_isel_picks_only_where_the_dim_is():
+    # A county total with a one-value time dim against the county names (no time).
+    ds = xr.Dataset(
+        {"precip": (("time", "county"), [[12.0, 30.5, 4.0]])},
+        coords={"time": [np.datetime64("2026-10-13", "ns")], "county": ["Kisii", "Siaya", "Busia"]},
+    )
+    meta = {"x": "precip", "y": "county", "source": {"isel": {"time": 0}}}
+    tr = _data(compile({"data": [{"uid": "0", "type": "bar", "meta": meta}]}, {"0": ds}))[0]
+    assert list(tr["y"]) == ["Kisii", "Siaya", "Busia"]
+    meta["source"] = {"isel": {"step": 0}}
+    with pytest.raises(UsageError, match="isel dimension 'step' is not in the data"):
+        compile({"data": [{"uid": "0", "meta": meta}]}, {"0": ds})
