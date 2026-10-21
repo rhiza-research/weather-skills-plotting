@@ -37,7 +37,9 @@ def split_name(value: str, flag: str) -> tuple[str, str | None]:
         return str(value), None
     if not path or not _NAME.fullmatch(name):
         raise argparse.ArgumentTypeError(
-            f"{flag} expects PATH or PATH=NAME, NAME made of letters, digits and _; got {value!r}"
+            f"{flag} expects PATH or PATH=NAME, NAME made of letters, digits and _; got {value!r}. "
+            "NAME is an id; for panel title text, set layout.annotations "
+            '[{"name": "panel-title-N", "text": ...}], which takes any characters'
         )
     return path, name
 

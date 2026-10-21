@@ -104,7 +104,7 @@ CHIRPS and ECMWF week-1 rainfall side by side over Kenya, each on its own grid, 
 ### Panels and layers
 - A file with several times or steps gets one panel each, titled with its date. `layout.grid.rows` / `columns` set the grid; `xgap` / `ygap` the spacing, as a fraction of a panel.
 - Panels showing the same quantity share one colorbar. To split one off: `{"data": [{"uid": "FC", "coloraxis": "coloraxis2"}]}`.
-- Panel titles are annotations named `panel-title-1`, `panel-title-2`, …; rename one with `{"layout": {"annotations": [{"name": "panel-title-2", "text": "ECMWF"}]}}`. Side-by-side files are titled with their `-i` NAME (else the file name).
+- Panel titles are annotations named `panel-title-1`, `panel-title-2`, …; set one's text with `{"layout": {"annotations": [{"name": "panel-title-2", "text": "GEFS · hit 78% · BER 15%"}]}}`. The text takes any characters, and `<br>` for a second line. Side-by-side files default to their `-i` NAME (else the file name) as the title, but NAME is an id of letters, digits and `_`: put title text in the annotation, not in NAME.
 - Maps use plain x/y axes in degrees (x = longitude). Add points or lines as `scatter` traces with `x` / `y`, and boxes as `layout.shapes` with `xref: "x"`, `yref: "y"`.
 - An `outline` layer frames the map unless `geo.bbox` is set, and hides the built-in admin-1 lines. Use it to draw official boundaries.
 - The canvas fits the maps (up to 760×560 px for one map, 340×340 px per panel in a grid). `layout.width` / `height` fix it.
