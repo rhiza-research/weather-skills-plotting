@@ -68,14 +68,23 @@ def unwrap_geoms(geoms, lon_min):
     return [shapely.transform(g, shift) for g in geoms if g is not None and not g.is_empty]
 
 
-def clip_ne_geoms(resolution, category, name, clip_geom):
-    """Natural Earth geometries intersecting ``clip_geom`` (eager download)."""
+def clip_ne_geoms(resolution, category, name, clip_geom, featurecla=None):
+    """Natural Earth geometries intersecting ``clip_geom`` (eager download).
+
+    ``featurecla`` keeps only records whose class is (True) or is not (False)
+    an agreed international boundary; None keeps every record.
+    """
     import cartopy.io.shapereader as shpreader
 
     path = shpreader.natural_earth(resolution=resolution, category=category, name=name)
     geoms = []
     # The bbox skips shapes outside the view without parsing them.
-    for geom in shpreader.Reader(path, bbox=clip_geom.bounds).geometries():
+    for rec in shpreader.Reader(path, bbox=clip_geom.bounds).records():
+        geom = rec.geometry
+        if featurecla is not None:
+            agreed = str(rec.attributes.get("FEATURECLA", "")).startswith("International boundary")
+            if agreed != featurecla:
+                continue
         if geom is None or geom.is_empty:
             continue
         try:
@@ -115,7 +124,9 @@ def _bundled_country_geoms(clip_geom):
 
 
 # Base-map layers, in draw order (later on top); each is a trace with this uid.
-OVERLAY_NAMES = ("admin1", "rivers", "lakes", "borders", "coastline")
+# ``borders`` is agreed international boundaries; ``disputed`` is every other
+# Natural Earth land line (disputed, indefinite, line of control, lease limit).
+OVERLAY_NAMES = ("admin1", "rivers", "lakes", "borders", "disputed", "coastline")
 
 
 def plain(da):
@@ -249,6 +260,7 @@ _NE_LAYERS = {
     "rivers": ("physical", "rivers_lake_centerlines", None),
     "lakes": ("physical", "lakes", None),
     "borders": ("cultural", "admin_0_boundary_lines_land", None),
+    "disputed": ("cultural", "admin_0_boundary_lines_land", None),
     "coastline": ("physical", "coastline", None),
 }
 _OVERLAY_CACHE: dict = {}
@@ -290,7 +302,8 @@ def overlay_geoms(extent, settings: dict):
             continue
         category, ne_name, res = _NE_LAYERS[name]
         try:
-            geoms = clip_ne_geoms(res or scale["scale"], category, ne_name, clip)
+            featurecla = {"borders": True, "disputed": False}.get(name)
+            geoms = clip_ne_geoms(res or scale["scale"], category, ne_name, clip, featurecla)
         except Exception as exc:  # noqa: BLE001
             print(f"Warning: {name} overlay unavailable ({exc}); skipping.", file=sys.stderr)
             continue
@@ -298,6 +311,17 @@ def overlay_geoms(extent, settings: dict):
             geoms = unwrap_geoms(geoms, extent[0])
         if geoms:
             out.append((name, geoms))
+    layers = dict(out)
+    if "admin1" in layers and "disputed" in layers:
+        # Province lines run along disputed borders and would fill the gaps between its dashes.
+        import shapely
+
+        near = shapely.union_all(layers["disputed"]).buffer(0.02)
+        cut = [shapely.boundary(g).difference(near) for g in layers["admin1"]]
+        out = [
+            (name, [g for g in cut if not g.is_empty] if name == "admin1" else geoms)
+            for name, geoms in out
+        ]
     _OVERLAY_CACHE[key] = out
     return out
 

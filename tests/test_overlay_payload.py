@@ -1,6 +1,7 @@
 """Overlay polylines and animation frame comparison stay compact and exact."""
 
 import numpy as np
+import pytest
 from shapely.geometry import LineString
 
 from weather_skills_plotting.animate import _content
@@ -27,3 +28,28 @@ def test_content_tells_apart_arrays_that_differ_inside():
     b[150, 150] = 5.0
     assert _content({"type": "heatmap", "z": a}) != _content({"type": "heatmap", "z": b})
     assert _content({"type": "heatmap", "z": a}) == _content({"type": "heatmap", "z": a.copy()})
+
+
+@pytest.mark.overlays
+def test_disputed_lines_split_from_borders():
+    from shapely.geometry import box
+
+    from weather_skills_plotting.geodata import overlay_geoms
+
+    names = dict(overlay_geoms((32.5, 43.5, -5.5, 6.5), {"admin1": False}))
+    ilemi = box(34.5, 4.7, 35.5, 5.1)
+    assert any(g.intersects(ilemi) for g in names["disputed"])
+    assert not any(g.intersects(ilemi) for g in names["borders"])
+
+
+@pytest.mark.overlays
+def test_admin1_lines_stop_along_disputed_borders():
+    from shapely.geometry import Point
+
+    from weather_skills_plotting.geodata import overlay_geoms
+
+    names = dict(overlay_geoms((32.5, 43.5, -5.5, 6.5), {"admin1": True}))
+    # A point on the Ilemi edge: the dashed line is there, no province line on top of it.
+    on_edge = Point(35.09, 4.92).buffer(0.01)
+    assert any(g.intersects(on_edge) for g in names["disputed"])
+    assert not any(g.intersects(on_edge) for g in names["admin1"])

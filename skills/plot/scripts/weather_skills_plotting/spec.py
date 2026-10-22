@@ -70,7 +70,7 @@ REMOVED_KEYS = {
     '{"latitude": {"step": 4}, "longitude": {"step": 4}}',
     "geo": "run clip-region to cut the data, and set the view with Plotly xaxis.range / "
     "yaxis.range (x is longitude) on each panel's axes",
-    "overlays": "base-map layers are traces with uids coastline, borders, lakes, rivers "
+    "overlays": "base-map layers are traces with uids coastline, borders, disputed, lakes, rivers "
     'and admin1: {"data": [{"uid": "rivers", "visible": false}]}',
     "export": "pass --scale N",
     "animation": "set the frame duration in Plotly layout.updatemenus / sliders",

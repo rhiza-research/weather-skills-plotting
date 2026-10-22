@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.12,<3.13"
 # dependencies = [
-#   "weather-skills-core>=0.1.1",
+#   "weather-skills-core>=0.2.0",
 #   "cf-xarray>=0.11",
 #   "cftime>=1.6",
 #   "numpy>=2.5",
@@ -196,7 +196,7 @@ def _layer_traces(layers):
     "--animate",
     action="store_true",
     help="Play the map's times or steps as frames of one animated map instead of side-by-side "
-    "panels; takes the same -i / --layer inputs as a still map. -o must end in .html.",
+    "panels; takes the same -i / --layer inputs as a still map. -o must end in .html or .gif.",
 )
 @weather_skill.argument("--spec", type=parse_spec_arg, help=SPEC_ARGUMENT_HELP)
 @weather_skill.argument(

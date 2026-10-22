@@ -5,7 +5,8 @@ default). Animation keeps panel 1 as the visible figure and makes every panel a
 Plotly frame: the frame carries only the traces that differ from panel 1 (the
 field, stations, arrows), not the overlays or plain traces that repeat on every
 panel, plus that panel's title. Play / pause buttons and a slider are added
-unless the user's layout already sets ``updatemenus`` / ``sliders``.
+unless the user's layout already sets ``updatemenus`` / ``sliders``, or the
+figure is bound for a GIF, which plays on its own.
 """
 
 from __future__ import annotations
@@ -66,8 +67,12 @@ def _panel_title_text(annotations: list, p: int):
     return next((a.get("text") for a in annotations if a.get("name") == name), None)
 
 
-def animate_figure(fig, *, user_layout: dict | None = None):
-    """Return a one-panel ``go.Figure`` whose frames are ``fig``'s panels."""
+def animate_figure(fig, *, user_layout: dict | None = None, controls=True):
+    """Return a one-panel ``go.Figure`` whose frames are ``fig``'s panels.
+
+    ``controls=False`` leaves out play / pause and the slider (and the room
+    under the map for them), for a GIF.
+    """
     import plotly.graph_objects as go
 
     user_layout = user_layout or {}
@@ -155,7 +160,7 @@ def animate_figure(fig, *, user_layout: dict | None = None):
         right=bool(bars) and not horizontal,
         below=horizontal,
         # Room under the map for the play button and slider.
-        below_lines=6,
+        below_lines=6 if controls else 0,
         user=user_layout,
     )
     out_layout.update(sized)
@@ -167,7 +172,7 @@ def animate_figure(fig, *, user_layout: dict | None = None):
         "fromcurrent": True,
         "mode": "immediate",
     }
-    if "updatemenus" not in user_layout:
+    if controls and "updatemenus" not in user_layout:
         out_layout["updatemenus"] = [
             {
                 "type": "buttons",
@@ -191,7 +196,7 @@ def animate_figure(fig, *, user_layout: dict | None = None):
                 ],
             }
         ]
-    if "sliders" not in user_layout:
+    if controls and "sliders" not in user_layout:
         # The frame's label is the title above the map, so the slider shows no text.
         out_layout["sliders"] = [
             {
@@ -223,7 +228,7 @@ def animate_figure(fig, *, user_layout: dict | None = None):
             }
         ]
     for key in ("updatemenus", "sliders"):
-        if key in user_layout:
+        if controls and key in user_layout:
             out_layout[key] = copy.deepcopy(user_layout[key])
 
     return go.Figure({"data": base, "layout": out_layout, "frames": frames})
@@ -238,6 +243,44 @@ def _annotation_on_panel_one(item: dict) -> bool:
             continue
         return False
     return True
+
+
+def write_gif(fig, output, *, duration=DEFAULT_DURATION_MS, scale=1):
+    """Write an animated figure's frames as a looping GIF, ``duration`` ms per frame.
+
+    Each frame is drawn as a PNG by kaleido (one browser for all of them),
+    then Pillow joins them.
+    """
+    import tempfile
+    from pathlib import Path
+
+    import plotly.io as pio
+    from PIL import Image
+
+    from weather_skills_plotting import _float32
+
+    Path(output).parent.mkdir(parents=True, exist_ok=True)
+    spec = _float32(fig.to_plotly_json())
+    stills = []
+    for frame in spec["frames"]:
+        # Plotly merges a frame's traces into the base traces it names.
+        data = list(spec["data"])
+        for i, trace in zip(frame["traces"], frame["data"], strict=True):
+            data[i] = {**data[i], **trace}
+        # A still never shows hover, so the heatmaps' customdata stays out (as in export).
+        data = [
+            {k: v for k, v in t.items() if k != "customdata"}
+            if t.get("type") in ("heatmap", "contour")
+            else t
+            for t in data
+        ]
+        stills.append({"data": data, "layout": {**spec["layout"], **frame.get("layout", {})}})
+    with tempfile.TemporaryDirectory() as tmp:
+        paths = [Path(tmp) / f"{i}.png" for i in range(len(stills))]
+        pio.write_images(stills, paths, scale=scale, validate=False)
+        images = [Image.open(p).convert("RGB") for p in paths]
+    images[0].save(output, save_all=True, append_images=images[1:], duration=duration, loop=0)
+    return output
 
 
 def estimate_html_mb(fig) -> float:

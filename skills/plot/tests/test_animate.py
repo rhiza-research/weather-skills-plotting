@@ -106,10 +106,36 @@ def test_sub_daily_titles_show_hour_and_lead(tmp_path, animation_fn):
     assert titles == ["1 Jan '26 00:00 (+0h)", "1 Jan '26 03:00 (+3h)", "1 Jan '26 06:00 (+6h)"]
 
 
-def test_output_must_be_html(grid, animation_fn, capsys):
+def test_output_must_be_html_or_gif(grid, animation_fn, capsys):
     with pytest.raises(SystemExit):
         run_skill(animation_fn, "--animate", "-i", grid, "-o", "v.png")
-    assert "must end in .html" in capsys.readouterr().err
+    assert "must end in .html or .gif" in capsys.readouterr().err
+
+
+def test_gif_one_frame_per_time(grid, animation_fn, tmp_path, capsys):
+    from PIL import Image
+    from weather_skills_core.provenance import load_figure_history
+
+    out = tmp_path / "v.gif"
+    run_skill(animation_fn, "--animate", "-i", grid, "-o", str(out))
+    assert "plot hash:" in capsys.readouterr().out
+    with Image.open(out) as img:
+        assert img.n_frames == 4
+        assert img.info["duration"] == 500
+        assert img.info["loop"] == 0
+        firsts = []
+        for i in range(img.n_frames):
+            img.seek(i)
+            firsts.append(img.convert("RGB").tobytes())
+    # The field changes every frame.
+    assert len(set(firsts)) == 4
+    assert load_figure_history(out)
+
+
+def test_gif_needs_animate(grid, animation_fn, capsys):
+    with pytest.raises(SystemExit):
+        run_skill(animation_fn, "-i", grid, "-o", "v.gif")
+    assert "add --animate" in capsys.readouterr().err
 
 
 def test_single_frame_refused(tmp_path, animation_fn, capsys):

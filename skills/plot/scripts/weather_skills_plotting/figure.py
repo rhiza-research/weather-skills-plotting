@@ -97,7 +97,7 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
     n_colored = 0
     traces = spec.get("data") or []
     # The base-map layers are traces the figure adds; a spec trace with one's uid
-    # (coastline, borders, lakes, rivers, admin1) styles it on every panel.
+    # (coastline, borders, disputed, lakes, rivers, admin1) styles it on every panel.
     overlays = {t["uid"]: t for t in traces if t.get("uid") in OVERLAY_NAMES}
     # UID-DIM-VALUE styles one member of along trace UID; it draws nothing alone.
     along = {t.get("uid"): t["meta"]["along"] for t in traces if (t.get("meta") or {}).get("along")}

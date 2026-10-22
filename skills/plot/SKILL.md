@@ -1,6 +1,6 @@
 ---
 name: plot
-description: "Draw weather-skills Zarrs as maps (heatmap, contour, stations, wind arrows), time series, xy scatter plots, wind roses, forecast verification grids (obs, lead-week forecasts and their hits / bias / MAE maps), ECMWF-style mediograms (forecast vs model-climate ensembles at a point), or animated HTML maps through time, saved as PNG, JPG, or interactive HTML. Titles, colors, panels, and layout are set with a standard Plotly figure JSON."
+description: "Draw weather-skills Zarrs as maps (heatmap, contour, stations, wind arrows), time series, xy scatter plots, wind roses, forecast verification grids (obs, lead-week forecasts and their hits / bias / MAE maps), ECMWF-style mediograms (forecast vs model-climate ensembles at a point), or animated maps through time, saved as PNG, JPG, interactive HTML, or GIF. Titles, colors, panels, and layout are set with a standard Plotly figure JSON."
 license: MIT
 compatibility: Requires Python 3.12 and uv. PNG/JPG export needs Chrome (installed, or `plotly_get_chrome -y`). Self-contained; the plotting library ships in scripts/.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py *)
@@ -38,6 +38,8 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --obs chirps_week.zarr --forecast ecm
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --mediogram -i forecast_nairobi.zarr -i mclimate_nairobi.zarr -o mediogram.png
 # Any map animated through time, as interactive HTML: here rain under isobars, inside an outline
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --animate --layer heatmap:rain_daily.zarr --layer contour:msl_daily.zarr --layer outline:kenya.geojson -o rain.html
+# The same animation as a looping GIF, for slides or chat
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --animate -i rain_daily.zarr -o rain.gif
 ```
 
 The plot type follows the data: a lat/lon grid is a colored map, stations are colored markers, 1-D series are lines on one time axis. `meta.x` / `meta.y` scatter two variables or coordinates; a name coordinate such as `county` becomes a category axis (a dot chart: `"meta": {"x": "precip_7d", "y": "county"}`). `--obs`/`--forecast`/`--verify` and `--mediogram` pick the two special figures (sections below); `--animate` plays any map through time instead of drawing side-by-side panels. Use one of the three at a time.
@@ -47,12 +49,12 @@ The plot type follows the data: a lat/lon grid is a colored map, stations are co
 - `--layer` — `KIND:PATH` or `KIND:PATH=NAME` to stack on one map; repeat. Kinds: `heatmap`, `contour` (over a heatmap: labeled black lines, every 4 hPa for sea-level pressure; `"contours": {"coloring": "fill"}` fills it), `scatter` (stations; `"mode": "markers+text"` labels each with its `name` coordinate, else its id; local-extrema highs / lows print as a blue H / red L over the central value, restyled by a trace with that layer's uid), `quiver` (wind u/v: a speed field NAME and arrows NAME-arrows, each picking its own `isel` / `sel`), `outline` (GeoJSON). `outline` layers also combine with `-i` inputs (`-i grid.zarr --layer outline:counties.geojson`); `-i` itself takes Zarr paths only.
 - `--obs`, `--forecast`, `--verify` — verification grid: the observation for one week, then each lead's forecast (repeat, week-1 first) and its verify-skill output (once per `--forecast`, same order). See **Verification grid**.
 - `--mediogram` — forecast vs model climate at one point; pass `-i` twice (forecast, then m-climate), each a point-value output. See **Mediogram**.
-- `--animate` — the same map, with its times or steps played as frames; takes the same `-i` / `--layer` inputs. `-o` must end in `.html`. See **Animation**.
+- `--animate` — the same map, with its times or steps played as frames; takes the same `-i` / `--layer` inputs. `-o` must end in `.html` or `.gif`. See **Animation**.
 - `--spec` — Plotly figure JSON, inline or a file path.
 - `--theme-file` — house style: Plotly `template`, `palettes`, per-field `defaults`, base-map `overlays` (see Colors); or a shipped theme by name, e.g. `tropical_tidbits`.
 - `--scale` — PNG/JPG pixel multiplier (default 1): `2` doubles the resolution, not the layout.
 - `--dump-spec` — print (`-`) or save (a path) the spec, without drawing.
-- `--output`, `-o` — `.png`, `.jpg`, or `.html`.
+- `--output`, `-o` — `.png`, `.jpg`, `.html`, or `.gif` (`--animate` only).
 
 ### Customizing with `--spec`
 `--spec` changes the defaults. It takes standard [Plotly figure](https://plotly.com/python/reference/) JSON, `{"data": [...], "layout": {...}}`; write only the parts you change. Data bindings go in `meta` (see **Data bindings**).
@@ -131,7 +133,7 @@ Done elsewhere, not in `meta`:
 | Zoom the map | Plotly `xaxis.range` / `yaxis.range` on each panel's axes (x is longitude) |
 | Sample a point (mediogram, wind rose) | point-value before plotting |
 | Percentile band | summarize-dim `--method quantile`, then Plotly `"fill": "tonexty"` (see **Lines over time**) |
-| Hide or restyle base-map layers | a data entry with the layer's uid: `{"uid": "rivers", "visible": false}` (uids `coastline`, `borders`, `lakes`, `rivers`, `admin1`) |
+| Hide or restyle base-map layers | a data entry with the layer's uid: `{"uid": "rivers", "visible": false}` (uids `coastline`, `borders`, `disputed`, `lakes`, `rivers`, `admin1`) |
 | Animation speed | Plotly `layout.updatemenus` / `sliders` (see **Animation**) |
 | Higher-resolution PNG/JPG | `--scale 2` |
 
@@ -159,7 +161,7 @@ CHIRPS and ECMWF week-1 rainfall side by side over Kenya (both cut to Kenya with
 - Panel titles are annotations named `panel-title-1`, `panel-title-2`, …; set one's text with `{"layout": {"annotations": [{"name": "panel-title-2", "text": "GEFS · hit 78% · BER 15%"}]}}`. The text takes any characters, and `<br>` for a second line. Side-by-side files default to their `-i` NAME (else the file name) as the title, but NAME is an id of letters, digits and `_`: put title text in the annotation, not in NAME.
 - Maps use plain x/y axes in degrees (x = longitude). Add points or lines as `scatter` traces with `x` / `y`, and boxes as `layout.shapes` with `xref: "x"`, `yref: "y"`.
 - An `outline` layer frames the map unless the axes' `range` is set, and hides the built-in admin-1 lines (unless a `{"uid": "admin1"}` entry asks for them). Use it to draw official boundaries.
-- The base-map layers are traces with uids `coastline`, `borders`, `lakes`, `rivers` and `admin1`, drawn on every panel: `{"data": [{"uid": "rivers", "visible": false}, {"uid": "borders", "line": {"width": 2}}]}`. Naming `admin1` draws county / province lines on a map too large to show them by default.
+- The base-map layers are traces with uids `coastline`, `borders`, `disputed` (dashed: disputed and indefinite lines), `lakes`, `rivers` and `admin1`, drawn on every panel: `{"data": [{"uid": "rivers", "visible": false}, {"uid": "borders", "line": {"width": 2}}]}`. Naming `admin1` draws county / province lines on a map too large to show them by default.
 - The canvas fits the maps (up to 760×560 px for one map, 340×340 px per panel in a grid). `layout.width` / `height` fix it.
 
 ### Lines over time
@@ -203,13 +205,14 @@ CHIRPS and ECMWF week-1 rainfall side by side over Kenya (both cut to Kenya with
 
 ### Animation
 Add `--animate` to any map command (`-i GRID`, or a `--layer` stack of heatmap, contour, stations, wind arrows and outlines) and write `-o out.html`: a self-contained interactive map (plotly.js embedded, works offline) with one frame per time or step, play / pause and a slider, every frame on one color scale and titled with its time. Each frame is the map `plot` draws for that time, so the spec, theme and layers work as on a still map.
-- The base map (coastlines, borders, lakes, rivers; admin-1 lines on small boxes) is the still map's and stays on every frame. Add boundaries with `--layer outline:region.geojson` (resolve-region writes one); cut the data to the region with clip-region first.
+- The base map (coastlines, borders with disputed lines dashed, lakes, rivers; admin-1 lines on small boxes) is the still map's and stays on every frame. Add boundaries with `--layer outline:region.geojson` (resolve-region writes one); cut the data to the region with clip-region first.
 - Every dim other than the map's own and the animated one must go (`isel` / `sel`, or summarize-dim); `{"data": [{"uid": "0", "meta": {"facet": "number"}}]}` animates another dim. Layers must cover the same times. It plays one map: stack inputs with `--layer`, not several `-i`. Time series and other non-map plots don't animate.
 - Speed: 500 ms per frame by default. Your own Plotly `layout.updatemenus` / `sliders` replace the default controls, frame duration included: `{"layout": {"updatemenus": [{"type": "buttons", "buttons": [{"label": "Play", "method": "animate", "args": [null, {"frame": {"duration": 300}}]}]}]}}`.
+- GIF: `-o out.gif` writes the frames as a looping GIF at 500 ms per frame, with no play / pause or slider. Each frame is drawn like a PNG (`--scale` sets pixel density); GIFs hold 256 colors per frame, so smooth color scales band slightly. Repeat `-o` for both (`-o rain.html -o rain.gif`).
 - Size grows with frames × cells; stderr gives the frame count and data size and warns above 50 MB. Pick fewer frames (`{"step": {"start": 0, "stop": 12}}`) or clip-region the input to a smaller area.
 
 ### Provenance
-The file's history (`weather_skills_history`) is embedded in the PNG metadata or HTML `<meta>` tag; read it with the `provenance` skill. A PNG/JPG with a complete history carries a small red seal in the bottom-right corner.
+The file's history (`weather_skills_history`) is embedded in the PNG / GIF metadata or HTML `<meta>` tag; read it with the `provenance` skill. A PNG/JPG/GIF with a complete history carries a small red seal in the bottom-right corner.
 
 ### More examples
 ```bash

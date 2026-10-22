@@ -19,7 +19,7 @@ Every skill's `--spec` is a standard Plotly figure, `{"data": [...], "layout": {
 `meta` binds data and never changes it: clipping (clip-region), point sampling
 (point-value) and percentiles (summarize-dim) happen upstream. The map window is
 Plotly's own `xaxis.range` / `yaxis.range`, and the base-map layers are traces
-with uids `coastline`, `borders`, `lakes`, `rivers` and `admin1`.
+with uids `coastline`, `borders`, `disputed`, `lakes`, `rivers` and `admin1`.
 
 `spec.check_meta` checks the `meta` blocks and lists the allowed keys on any
 error.
@@ -33,7 +33,7 @@ flowchart LR
   Validate --> Dump["--dump-spec"]
   Validate --> Bind[bind.py: fill arrays from Zarrs]
   Bind --> Assemble[figure.py: panels, color axes, overlays]
-  Assemble --> Out["PNG / JPG (kaleido) or HTML"]
+  Assemble --> Out["PNG / JPG / GIF (kaleido) or HTML"]
 ```
 
 ## Plotting computes as little as possible
@@ -103,17 +103,18 @@ time step (mm/h from `unit-convert`), which keeps its units.
   as class indices on a stepped colorscale, and the raw values stay in
   `customdata` for hover. User limits turn a class palette into a
   continuous scale.
-- **Overlays.** Natural Earth coastline, borders, lakes, rivers and admin-1,
-  as line traces at a scale chosen from the map span.
+- **Overlays.** Natural Earth coastline, borders (disputed lines dashed),
+  lakes, rivers and admin-1, as line traces at a scale chosen from the map span.
 - **Defaults.** Titles, colorbar labels, sizes and the theme fill only what
   the user leaves unset.
 
 ## Output
 
 The `-o` suffix picks the format: `.png` or `.jpg` (kaleido, needs Chrome) or
-`.html` (self-contained, interactive). Images print a pixel `plot hash` and a
-`data: not null | NULL` line. Provenance is embedded in PNG `tEXt` chunks or
-an HTML `<meta>` tag.
+`.html` (self-contained, interactive), or `.gif` for `--animate` (each frame
+drawn by kaleido, joined by Pillow). Images print a pixel `plot hash` and a
+`data: not null | NULL` line. Provenance is embedded in PNG `tEXt` chunks, the
+GIF comment block, or an HTML `<meta>` tag.
 
 ```python
 from weather_skills_plotting import compile, export

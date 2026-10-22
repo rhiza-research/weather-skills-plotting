@@ -113,7 +113,11 @@ merges into the standard one.
 ## `overlays`
 
 Plotly scatter line styles for the base-map layers: `admin1`, `rivers`,
-`lakes`, `borders`, `coastline`, drawn in that order (later on top). A theme's
+`lakes`, `borders`, `disputed`, `coastline`, drawn in that order (later on top).
+`borders` holds agreed international boundaries; `disputed` holds every other
+Natural Earth land line (disputed, indefinite, line of control, lease limit),
+grey, slightly thinner and dashed by default so an official boundary drawn on top
+(`meta.bind` `geojson`) reads first. A theme's
 style merges into the standard one, so `{"borders": {"line": {"color":
 "#333333"}}}` keeps the standard width. In a spec each layer is a trace with
 that uid: `{"data": [{"uid": "rivers", "visible": false}]}` hides it, other keys
