@@ -52,7 +52,7 @@ The plot type follows the data: a lat/lon grid is a colored map, stations are co
 
 Each input file is one entry in `data`. Name it on the command line (`-i ecmwf.zarr=FC`) and put that name in `"uid"`. Unnamed files are `"0"`, `"1"`, … in order.
 
-A trace's `uid` is its file's NAME when the file is named, else its position: `-i a.zarr=West` is `"uid": "West"`, and `"0"` then matches nothing (plot stops). Copy uids from the `-i` line, or run `--dump-spec -` to see them.
+A trace's `uid` is its file's NAME when the file is named, else its position: `-i a.zarr=West` is `"uid": "West"`, and `"0"` then matches nothing (plot stops). Copy uids from the `-i` line, or run `--dump-spec -` to see them. NAME is only an id (letters, digits, `_`) and is never drawn; legend text such as `"TAHMO (automatic)"` goes in the trace's `"name"`.
 
 ```bash
 # Two named files, restyled by name: bars per county, one panel each
