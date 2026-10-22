@@ -27,7 +27,7 @@ flowchart LR
   Validate --> Dump["--dump-spec"]
   Validate --> Bind[bind.py: fill arrays from Zarrs]
   Bind --> Assemble[figure.py: panels, color axes, overlays]
-  Assemble --> Out["PNG / JPG (kaleido) or HTML"]
+  Assemble --> Out["PNG / JPG / GIF (kaleido) or HTML"]
 ```
 
 ## Plotting computes as little as possible
@@ -66,7 +66,7 @@ file flags.
 | `points` | scatter | station markers colored by value |
 | `geojson` | scatter | boundary lines from a GeoJSON file, on every panel |
 | `series` | scatter, bar | one line along time, or an `along` fan / `band` |
-| `xy` | scatter | one variable against another (`meta.x` / `meta.y`) |
+| `xy` | scatter, bar | one variable against another (`meta.x` / `meta.y`) |
 | `samples` | box, scatter | all samples per step (box) or their mean (scatter) |
 | `windrose` | barpolar | one trace per speed class, frequency in percent |
 
@@ -75,8 +75,8 @@ The trace type picks the default bind (`heatmap` → `field`, `barpolar` →
 `sel` / `facet` / `along` is an error that names the fix. The only means the
 plotter draws are a band's mean line and the `samples` scatter. Every other
 average is made upstream with `summarize-dim` or `aggregate-temporal`.
-Units go through `to_standard_units`, except a precip rate already in mm per some
-time step (mm/h from `unit-convert`), which keeps its units.
+Values are drawn in the file's own units (K stays K, Pa stays Pa); run
+`unit-convert` first for °C or hPa.
 
 ## Assembly (`figure.py`, `layout.py`)
 
@@ -95,17 +95,18 @@ time step (mm/h from `unit-convert`), which keeps its units.
   as class indices on a stepped colorscale, and the raw values stay in
   `customdata` for hover. User limits turn a class palette into a
   continuous scale.
-- **Overlays.** Natural Earth coastline, borders, lakes, rivers and admin-1,
-  as line traces at a scale chosen from the map span.
+- **Overlays.** Natural Earth coastline, borders (disputed lines dashed),
+  lakes, rivers and admin-1, as line traces at a scale chosen from the map span.
 - **Defaults.** Titles, colorbar labels, sizes and the theme fill only what
   the user leaves unset.
 
 ## Output
 
 The `-o` suffix picks the format: `.png` or `.jpg` (kaleido, needs Chrome) or
-`.html` (self-contained, interactive). Images print a pixel `plot hash` and a
-`data: not null | NULL` line. Provenance is embedded in PNG `tEXt` chunks or
-an HTML `<meta>` tag.
+`.html` (self-contained, interactive), or `.gif` for `--animate` (each frame
+drawn by kaleido, joined by Pillow). Images print a pixel `plot hash` and a
+`data: not null | NULL` line. Provenance is embedded in PNG `tEXt` chunks, the
+GIF comment block, or an HTML `<meta>` tag.
 
 ```python
 from weather_skills_plotting import compile, export

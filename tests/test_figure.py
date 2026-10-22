@@ -53,7 +53,15 @@ def test_heatmap_panels_each_time_with_one_discrete_colorbar():
     assert titles == ["1 Jan '26", "2 Jan '26", "3 Jan '26"]
     # z holds class slots; the raw mm stay in customdata for hover.
     assert np.allclose(np.asarray(heat[0]["customdata"], dtype=float), 1.0)
+    assert "%{customdata" in heat[0]["hovertemplate"]
     assert layout["yaxis"]["scaleanchor"] == "x"
+
+
+def test_continuous_map_hovers_z_without_a_customdata_copy():
+    ds = make_gridded(n_time=1, name="t2m", units="K")
+    heat = _data(compile({"data": [_trace("a")]}, {"a": ds}), "heatmap")[0]
+    assert heat["customdata"] is None
+    assert "%{z:.4g}" in heat["hovertemplate"]
 
 
 def test_user_trace_keys_lift_to_coloraxis_and_win():
@@ -78,8 +86,8 @@ def test_layout_coloraxis_override_wins():
 def test_side_by_side_inputs_get_their_own_grid_and_one_scale_per_quantity():
     a = make_gridded(n_time=1)
     b = make_gridded(n_time=1, name="tp", lats=(1.5, 2.5), lons=(10.5, 12.5), fill=3.0)
-    spec = {"data": [_trace("a"), _trace("b", xaxis="x2", yaxis="y2", name="ECMWF")]}
-    fig = compile(spec, {"a": a, "b": b})
+    spec = {"data": [_trace("a"), _trace("ECMWF", xaxis="x2", yaxis="y2", name="hover only")]}
+    fig = compile(spec, {"a": a, "ECMWF": b})
     heat = _data(fig, "heatmap")
     # Two rainfall rates under different variable names are one quantity: one bar.
     assert [t["coloraxis"] for t in heat] == ["coloraxis", "coloraxis"]
@@ -100,6 +108,40 @@ def test_shared_coloraxis_on_request():
     fig = compile(spec, {"a": a, "b": b})
     assert {t["coloraxis"] for t in _data(fig, "heatmap")} == {"coloraxis"}
     assert "coloraxis2" not in _layout(fig)
+
+
+def test_one_trace_showscale_true_shows_its_shared_bar():
+    # Rain on four panels shares one bar; the trace asking for it wins over the
+    # others' showscale false, wherever it sits in the list.
+    rain = [
+        _trace(f"r{i}", input="r", showscale=(i == 0), **({"xaxis": f"x{i + 1}"} if i else {}))
+        for i in range(4)
+    ]
+    prob = make_gridded(n_time=1, name="prob", units="1", fill=0.3)
+    spec = {"data": [*rain, _trace("p", xaxis="x5", showscale=True)]}
+    layout = _layout(compile(spec, {"r": make_gridded(n_time=1), "p": prob}))
+    assert layout["coloraxis"]["showscale"] is True
+    assert layout["coloraxis2"]["showscale"] is True
+
+
+def test_spec_placed_colorbars_keep_their_position():
+    # A bar given x / y is not turned into an automatic horizontal bar under its column.
+    prob = make_gridded(n_time=1, name="prob", units="1", fill=0.3)
+    spec = {
+        "data": [
+            _trace("a", colorbar={"x": 1.01, "y": 0.75, "len": 0.45}),
+            _trace("p", xaxis="x2", colorbar={"x": 1.01, "y": 0.25, "len": 0.45}),
+        ]
+    }
+    layout = _layout(compile(spec, {"a": make_gridded(n_time=1), "p": prob}))
+    for name, y in (("coloraxis", 0.75), ("coloraxis2", 0.25)):
+        bar = layout[name]["colorbar"]
+        assert (bar["x"], bar["y"]) == (1.01, y)
+        assert "orientation" not in bar and "yref" not in bar and "xanchor" not in bar
+        assert layout[name].get("showscale") is not False
+    # Room on the right for the bars, none reserved below.
+    assert layout["margin"]["r"] > layout["margin"]["l"]
+    assert layout["margin"]["b"] < 60
 
 
 def test_faceted_side_by_side_is_an_error():
@@ -266,6 +308,22 @@ def test_text_only_points_skip_nan_but_markers_keep_them():
     assert list(trace["marker"]["symbol"]) == ["circle", "x", "circle"]
 
 
+def test_local_extrema_points_print_h_or_l_unless_the_spec_restyles_them():
+    # --layer heatmap:msl.zarr --layer scatter:lows.zarr with no spec.
+    lows = make_station(n_station=3, n_time=1).isel(time=0)
+    lows["precip"].attrs["extremum_kind"] = "low"
+    lows["precip"].values[1] = np.nan
+    spec = {"data": [_trace("a"), _trace("c", type="scatter", meta={"bind": "points"})]}
+    fig = compile(spec, {"a": _pressure(), "c": lows})
+    text = next(t for t in fig.data if t["uid"] == "c")
+    assert text["mode"] == "text" and text["texttemplate"].startswith("<b>L</b>")
+    assert len(text["x"]) == 2 and text["marker"]["coloraxis"] is None
+    assert "coloraxis2" not in _layout(fig)
+    spec["data"][1]["mode"] = "markers"
+    marks = next(t for t in compile(spec, {"a": _pressure(), "c": lows}).data if t["uid"] == "c")
+    assert marks["mode"] == "markers" and len(marks["x"]) == 3
+
+
 def test_non_precip_gets_continuous_scale_symmetric_when_diverging():
     ds = make_gridded(n_time=1, name="t2m", units="degree_Celsius")
     ds["t2m"].values[:] = np.linspace(-2, 4, 12).reshape(1, 3, 4)
@@ -275,14 +333,14 @@ def test_non_precip_gets_continuous_scale_symmetric_when_diverging():
 
 
 def test_sea_level_pressure_is_red_blue_with_white_at_standard_atmosphere():
-    # Pa is drawn in hPa, so white sits at 1013.25 hPa either way.
+    # Drawn in the file's units: white sits at 1013.25 hPa, or 101325 Pa.
     for units, scale in (("hPa", 1.0), ("Pa", 100.0)):
         ds = make_gridded(n_time=1, name="msl", units=units)
         ds["msl"].values[:] = np.linspace(1008, 1036, 12).reshape(1, 3, 4) * scale
         ds["msl"].attrs["standard_name"] = "air_pressure_at_mean_sea_level"
         axis = _layout(compile({"data": [_trace("a")]}, {"a": ds}))["coloraxis"]
         assert axis["colorscale"][0][1] == "rgb(5,48,97)"  # RdBu_r: blue lows
-        assert (axis["cmin"], axis["cmax"]) == pytest.approx((990.5, 1036))
+        assert (axis["cmin"], axis["cmax"]) == pytest.approx((990.5 * scale, 1036 * scale))
 
 
 def test_points_layer_over_field_and_static_outline(tmp_path):
@@ -402,6 +460,19 @@ def test_series_needs_select_or_along():
         )
 
 
+def test_several_variables_need_one_chosen():
+    t = np.arange("2026-10-17", "2026-10-20", dtype="datetime64[D]")
+    ds = xr.Dataset(
+        {"east": (("time",), [1.0, 2, 3]), "dmi": (("time",), [0.1, 0.2, 0.3])}, {"time": t}
+    )
+    with pytest.raises(UsageError, match=r"variable is not set.*east, dmi"):
+        compile({"data": [_trace("a", type="scatter", meta={"bind": "series"})]}, {"a": ds})
+    spec = {
+        "data": [_trace("a", type="scatter", source={"variable": "dmi"}, meta={"bind": "series"})]
+    }
+    assert list(_data(compile(spec, {"a": ds}))[0]["y"]) == [0.1, 0.2, 0.3]
+
+
 def test_series_forecast_plots_valid_time():
     ds = make_forecast(n_number=0, n_step=3).mean(["latitude", "longitude"], keep_attrs=True)
     fig = compile({"data": [_trace("a", type="scatter", meta={"bind": "series"})]}, {"a": ds})
@@ -419,6 +490,92 @@ def test_xy_scatter_of_two_variables():
     tr = _data(compile(spec, {"0": ds}))[0]
     assert list(tr["text"]) == ["2019", "2020", "2022"]
     assert list(tr["x"]) == [1.9, -0.2, -1.0] and list(tr["y"]) == [210, 60, 30]
+
+
+def _counties():
+    names = ["Turkana", "Kisumu", "Nairobi", "Mombasa"]
+    ds = xr.Dataset(
+        {"precip_7d": (("county",), [12.0, np.nan, 40.5, 3.25], {"units": "mm"})},
+        coords={"county": np.array(names, dtype=object)},
+    )
+    return ds, names
+
+
+def test_xy_names_on_y_are_a_category_axis():
+    ds, names = _counties()
+    spec = {
+        "data": [
+            {
+                "uid": "0",
+                "type": "scatter",
+                "mode": "markers+text",
+                "texttemplate": "%{x:.1f}",
+                "meta": {"x": "precip_7d", "y": "county"},
+            }
+        ],
+        "layout": {"yaxis": {"categoryorder": "total ascending"}},
+    }
+    tr = _data(compile(spec, {"0": ds}))[0]
+    # The county with no value is dropped, not drawn at 0.
+    assert list(tr["y"]) == ["Turkana", "Nairobi", "Mombasa"]
+    assert list(tr["x"]) == [12.0, 40.5, 3.25]
+    # The user's labels win; none are generated, and edge labels are not clipped.
+    assert tr["text"] is None and tr["texttemplate"] == "%{x:.1f}"
+    assert tr["cliponaxis"] is False
+
+
+def test_xy_names_on_x_and_missing_names():
+    ds, names = _counties()
+    ds = ds.assign(county=np.array(["Turkana", None, "Nairobi", np.nan], dtype=object))
+    ds["precip_7d"].values[1] = 5.0
+    spec = {"data": [{"uid": "0", "type": "scatter", "meta": {"x": "county", "y": "precip_7d"}}]}
+    tr = _data(compile(spec, {"0": ds}))[0]
+    assert list(tr["x"]) == ["Turkana", "Nairobi"] and list(tr["y"]) == [12.0, 40.5]
+    assert tr["text"] is None  # names already on the axis
+
+
+def test_xy_numbers_along_named_dim_keep_point_labels():
+    ds = xr.Dataset(
+        {"bias": (("model",), [0.5, -1.0, 2.0]), "mae": (("model",), [3.0, 4.0, 2.5])},
+        coords={"model": ["ecmwf", "gefs", "cumulus"]},
+    )
+    spec = {"data": [{"uid": "0", "type": "scatter", "meta": {"x": "bias", "y": "mae"}}]}
+    tr = _data(compile(spec, {"0": ds}))[0]
+    assert list(tr["text"]) == ["ecmwf", "gefs", "cumulus"]
+
+
+def test_xy_dates_and_leads_on_an_axis():
+    import cftime
+
+    times = np.array(["2026-10-13", "NaT", "2026-10-15"], dtype="datetime64[ns]")
+    ds = xr.Dataset(
+        {
+            "precip": (("i",), [1.0, 2.0, 3.0]),
+            "when": (("i",), times),
+            "lead": (("i",), np.array([1, 2, 3], dtype="timedelta64[D]")),
+            "model_day": (
+                ("i",),
+                np.array([cftime.DatetimeNoLeap(2026, 10, d) for d in (13, 14, 15)], dtype=object),
+            ),
+        }
+    )
+
+    def xy(x):
+        spec = {"data": [{"uid": "0", "type": "scatter", "meta": {"x": x, "y": "precip"}}]}
+        return _data(compile(spec, {"0": ds}))[0]
+
+    tr = xy("when")
+    assert len(tr["x"]) == 2 and list(tr["y"]) == [1.0, 3.0]
+    assert list(xy("lead")["x"]) == [1.0, 2.0, 3.0]  # leads in days
+    assert list(xy("model_day")["x"])[0].startswith("2026-10-13")
+
+
+def test_xy_counts_values_when_names_are_on_y():
+    from weather_skills_plotting.qa import figure_counts
+
+    ds, _ = _counties()
+    spec = {"data": [{"uid": "0", "type": "scatter", "meta": {"x": "precip_7d", "y": "county"}}]}
+    assert figure_counts(compile(spec, {"0": ds})) == [("0", 3, 3)]
 
 
 def test_xy_scatter_of_a_grid_is_one_point_per_cell():
@@ -643,6 +800,20 @@ def test_member_panels_titled_and_bad_panel_title_named():
         )
 
 
+def test_user_annotations_add_to_panel_titles():
+    ds = make_gridded(n_time=2)
+    ann = {"text": "Mine", "xref": "x2 domain", "yref": "y2 domain", "x": 0.5, "y": 1.04}
+    fig = compile({"data": [_trace("a")], "layout": {"annotations": [ann]}}, {"a": ds})
+    assert [a["text"] for a in _layout(fig)["annotations"]] == ["1 Jan '26", "2 Jan '26", "Mine"]
+    # A chart has no panel titles; an annotation above it is just an annotation.
+    series = ds.mean(["latitude", "longitude"])
+    spec = {
+        "data": [_trace("s", type="scatter")],
+        "layout": {"annotations": [dict(ann, yref="y domain")]},
+    }
+    assert [a["text"] for a in _layout(compile(spec, {"s": series}))["annotations"]] == ["Mine"]
+
+
 def test_string_bbox_and_horizontal_colorbar_below():
     ds = make_gridded(n_time=2)
     fig = compile(
@@ -743,11 +914,12 @@ def test_precip_rate_keeps_its_mm_units_for_a_spec_palette():
     one["precip"].attrs["aggregation_period"] = "6 hour"
     heat = _data(compile({"data": [_trace("a", meta={"palette": palette})]}, {"a": one}), "heatmap")
     assert np.allclose(np.asarray(heat[0]["customdata"], dtype=float), 2.0)
-    # A flux that is not in mm still reads in mm/day.
+    # A flux not in mm is drawn as stored, with a note to unit-convert.
     ds = make_gridded(n_time=1, fill=1 / 86400, units="kg m-2 s-1")
     ds["precip"].attrs["standard_name"] = "lwe_precipitation_rate"
     heat = _data(compile({"data": [_trace("a")]}, {"a": ds}), "heatmap")[0]
-    assert np.allclose(np.asarray(heat["customdata"], dtype=float), 1.0)
+    raw = heat["customdata"] if heat["customdata"] is not None else heat["z"]
+    assert np.allclose(np.asarray(raw, dtype=float), 1 / 86400)
 
 
 def test_dateline_grid_and_points_draw_on_one_continuous_window():
@@ -918,3 +1090,177 @@ def test_a_subtitle_moves_the_maps_down_and_survives_the_merge():
     with_sub = _layout(compile({"data": data, "layout": {"title": sub}}, {"0": ds}))
     assert with_sub["margin"]["t"] > plain["margin"]["t"]
     assert with_sub["title"]["subtitle"]["text"] == "Week 1: 16–22 Oct"
+
+
+# ------------------------------------------------- plain Plotly, no hidden rules
+
+
+def test_br_title_lines_get_room():
+    from weather_skills_plotting.layout import title_lines
+
+    assert title_lines({"text": "One<br>Two<BR/>Three"}) == 3
+    assert title_lines({"text": "One<br>Two", "subtitle": {"text": "x"}}) == 3
+
+
+def test_fixed_marker_color_draws_without_a_scale():
+    spec = {
+        "data": [
+            _trace("s", type="scatter", marker={"color": "black"}, source={"isel": {"time": 0}})
+        ]
+    }
+    fig = compile(spec, {"s": make_station()})
+    assert _data(fig)[0]["marker"]["color"] == "black"
+    assert "coloraxis" not in _layout(fig)
+
+
+def test_zmid_centres_the_scale():
+    ds = make_gridded(n_time=1, units="degC")
+    ds["precip"][:] = np.arange(12.0).reshape(1, 3, 4)  # 0 … 11
+    axis = _layout(compile({"data": [_trace("a", zmid=2)]}, {"a": ds}))["coloraxis"]
+    assert (axis["cmin"], axis["cmax"]) == (-7, 11)
+
+
+def test_limits_on_one_map_stay_on_that_map():
+    a, b = make_gridded(n_time=1), make_gridded(n_time=1)
+    spec = {"data": [_trace("a"), _trace("b", xaxis="x2", yaxis="y2", zmin=0, zmax=50)]}
+    layout = _layout(compile(spec, {"a": a, "b": b}))
+    assert layout["coloraxis2"]["cmax"] == 50 and layout["coloraxis"]["cmax"] != 50
+
+
+def test_layers_at_different_times_are_an_error():
+    rain, msl = make_gridded(n_time=3), make_gridded(n_time=3, name="msl", units="hPa")
+    spec = {"data": [_trace("r", source={"isel": {"time": 0}}), _trace("m", type="contour")]}
+    with pytest.raises(UsageError, match="'r' is one map.*3 panels"):
+        compile(spec, {"r": rain, "m": msl})
+    later = msl.isel(time=[1, 2])
+    with pytest.raises(UsageError, match="different times"):
+        compile({"data": [_trace("r"), _trace("m", type="contour")]}, {"r": rain, "m": later})
+
+
+def test_chart_traces_stay_on_their_own_axes():
+    s = make_gridded(n_time=3).mean(["latitude", "longitude"], keep_attrs=True)
+    spec = {
+        "data": [_trace(u, type="scatter", name=u) for u in "abc"],
+        "layout": {"grid": {"rows": 2, "columns": 1}, "showlegend": True},
+    }
+    fig = compile(spec, {u: s for u in "abc"})
+    assert {(t["xaxis"], t["yaxis"]) for t in _data(fig)} == {("x", "y")}
+    one = {"data": [_trace("a", type="scatter", name="a", showlegend=True)]}
+    assert _layout(compile(one, {"a": s})).get("showlegend") is not False
+
+
+def test_several_wind_pairs_need_one_chosen():
+    ds = make_gridded(n_time=1, name="u10", units="m s-1")
+    for v in ("v10", "u100", "v100"):
+        ds[v] = ds["u10"]
+    with pytest.raises(UsageError, match="several wind components.*u10/v10.*u100/v100"):
+        compile({"data": [_trace("w", meta={"bind": "speed"})]}, {"w": ds})
+
+
+def test_station_labels_read_the_name_coordinate():
+    ds = make_station().assign_coords(name=("station_id", ["Kibera", "", "Nyeri"]))
+    spec = {
+        "data": [
+            _trace(
+                "s",
+                type="scatter",
+                mode="markers+text",
+                source={"isel": {"time": 0}},
+                meta={"bind": "points"},
+            )
+        ]
+    }
+    tr = next(t for t in _data(compile(spec, {"s": ds})) if t["uid"] == "s")
+    assert list(tr["text"]) == ["Kibera", "TA0001", "Nyeri"]
+    assert list(tr["hovertext"]) == ["TA0000 Kibera", "TA0001", "TA0002 Nyeri"]
+
+
+def test_chart_title_sits_above_the_legend_rows():
+    s = make_gridded(n_time=3).mean(["latitude", "longitude"], keep_attrs=True)
+    spec = {
+        "data": [_trace(u, type="scatter", name=f"series {u}") for u in "abc"],
+        "layout": {"title": {"text": "T", "subtitle": {"text": "S"}}},
+    }
+    title = _layout(compile(spec, {u: s for u in "abc"}))["title"]
+    assert (title["yref"], title["y"], title["yanchor"], title["text"]) == (
+        "container",
+        1,
+        "top",
+        "T",
+    )
+
+
+def test_temperature_is_drawn_in_the_files_units(capsys):
+    ds = make_gridded(n_time=1, name="t2m", units="K", fill=290.0)
+    spec = {"data": [_trace("a", zmin=280, zmax=300)]}
+    axis = _layout(compile(spec, {"a": ds}))["coloraxis"]
+    assert (axis["cmin"], axis["cmax"]) == (280, 300)
+    assert "K" in axis["colorbar"]["title"]["text"]
+
+
+def test_band_parts_are_styled_by_their_own_uids():
+    ds = make_forecast(n_number=5, n_step=4).mean(["latitude", "longitude"], keep_attrs=True)
+    ds["tp"][:] = np.arange(20.0).reshape(5, 4)
+    meta = {"bind": "series", "along": "number", "band": [0, 100]}
+    spec = {
+        "data": [
+            _trace("f", type="scatter", name="Mean", line={"color": "red", "width": 4}, meta=meta),
+            {"uid": "f-members", "line": {"color": "grey"}, "opacity": 0.3},
+            {"uid": "f-band", "name": "Range", "fillcolor": "pink"},
+        ]
+    }
+    by_uid = {t["uid"]: t for t in _data(compile(spec, {"f": ds}))}
+    assert by_uid["f"]["name"] == "Mean" and by_uid["f"]["line"]["width"] == 4
+    members = by_uid["f-members"]
+    assert members["line"]["color"] == "grey" and members["opacity"] == 0.3
+    assert members["line"]["width"] != 4 and members["name"] != "Mean"
+    assert not members["showlegend"]
+    spec["data"][1]["name"] = "Members"
+    named = next(t for t in _data(compile(spec, {"f": ds})) if t["uid"] == "f-members")
+    assert named["showlegend"] and named["name"] == "Members"
+    band = by_uid["f-band"]
+    assert (band["name"], band["fillcolor"]) == ("Range", "pink")
+    # Without a style of its own, [0, 100] reads min–max.
+    spec["data"] = spec["data"][:1]
+    names = [t["name"] for t in _data(compile(spec, {"f": ds})) if t["uid"] == "f-band"]
+    assert names == ["min–max"]
+
+
+def test_band_part_without_a_band_is_an_error():
+    from weather_skills_plotting.spec import merge_traces
+
+    with pytest.raises(
+        UsageError, match="'f-band' styles part of a trace only when 'f' has meta.band"
+    ):
+        merge_traces(
+            [{"uid": "f", "meta": {"source": {"input": "f"}}}], [{"uid": "f-band", "name": "x"}]
+        )
+
+
+def test_xy_draws_bars_by_county():
+    ds = xr.Dataset(
+        {"precip": (("county",), [12.0, 30.5, 4.0])},
+        coords={"county": ["Kisii", "Siaya", "Busia"]},
+    )
+    spec = {
+        "data": [
+            {"uid": "0", "type": "bar", "orientation": "h", "meta": {"x": "precip", "y": "county"}}
+        ]
+    }
+    tr = _data(compile(spec, {"0": ds}))[0]
+    assert tr["type"] == "bar" and tr["orientation"] == "h"
+    assert list(tr["y"]) == ["Kisii", "Siaya", "Busia"] and list(tr["x"]) == [12.0, 30.5, 4.0]
+
+
+def test_xy_isel_picks_only_where_the_dim_is():
+    # A county total with a one-value time dim against the county names (no time).
+    ds = xr.Dataset(
+        {"precip": (("time", "county"), [[12.0, 30.5, 4.0]])},
+        coords={"time": [np.datetime64("2026-10-13", "ns")], "county": ["Kisii", "Siaya", "Busia"]},
+    )
+    meta = {"x": "precip", "y": "county", "source": {"isel": {"time": 0}}}
+    tr = _data(compile({"data": [{"uid": "0", "type": "bar", "meta": meta}]}, {"0": ds}))[0]
+    assert list(tr["y"]) == ["Kisii", "Siaya", "Busia"]
+    meta["source"] = {"isel": {"step": 0}}
+    with pytest.raises(UsageError, match="isel dimension 'step' is not in the data"):
+        compile({"data": [{"uid": "0", "meta": meta}]}, {"0": ds})

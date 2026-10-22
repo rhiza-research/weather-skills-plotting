@@ -85,6 +85,14 @@ def test_export_html_has_no_hash_line(tmp_path, capsys):
     assert "plot hash" not in capsys.readouterr().out
 
 
+def test_export_html_zooms_on_scroll(tmp_path):
+    from weather_skills_plotting import compile, export
+
+    ds = make_gridded(n_time=1)
+    out = export(compile(HEATMAP, {"a": ds}), tmp_path / "map.html", datasets={"a": ds})
+    assert '"scrollZoom": true' in out.read_text()
+
+
 def test_export_rejects_other_suffixes(tmp_path):
     from weather_skills_core.errors import UsageError
 
