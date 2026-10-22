@@ -13,6 +13,10 @@ metadata:
 
 Draws one or more Zarrs as a figure. Name the files on the command line; set titles, colors, and layout in `--spec`.
 
+**A plot is a standard Plotly figure spec, plus one custom piece: data bindings that put real data from your files into it.** `plot` builds a default spec from your inputs, one trace per file, then merges your `--spec` on top: keys you set replace the default, keys you leave out keep it. `--dump-spec -` prints that merged spec without the data arrays, so you can see exactly what will be drawn, edit it, and pass it back as `--spec`.
+
+Always write standard Plotly: every key means what the [Plotly reference](https://plotly.com/python/reference/) says. Use the `meta` key, Plotly's own slot for custom data, to control how real data goes into the plot. A trace's `meta` holds its data binding: which variable to draw (`source.variable`), which slice (`source.isel` / `source.sel`), which variables go on each axis (`x`, `y`), and how to split or summarize members (`along`, `band`). `layout.meta.geo` sets the map window. See **Data bindings** for every `meta` key.
+
 ## Usage
 
 ```bash
@@ -50,7 +54,7 @@ The plot type follows the data: a lat/lon grid is a colored map, stations are co
 - `--output`, `-o` — `.png`, `.jpg`, `.html`, or `.gif` (`--animate` only).
 
 ### Customizing with `--spec`
-`--spec` changes the defaults. It takes [Plotly figure](https://plotly.com/python/reference/) JSON, `{"data": [...], "layout": {...}}`; write only the parts you change.
+`--spec` changes the defaults. It takes standard [Plotly figure](https://plotly.com/python/reference/) JSON, `{"data": [...], "layout": {...}}`; write only the parts you change. Data bindings go in `meta` (see **Data bindings**).
 
 Each input file is one entry in `data`. Name it on the command line (`-i ecmwf.zarr=FC`) and put that name in `"uid"`. Unnamed files are `"0"`, `"1"`, … in order.
 
@@ -85,6 +89,42 @@ Every row below assumes `-i ecmwf.zarr=FC`.
 
 `isel` counts from 0 (`-1` is the last); `sel` picks by label. `bbox` is `[N, W, S, E]`. `--help` lists every option; `--dump-spec -` shows the spec for your files.
 
+### Data bindings
+`meta` is the only part of the spec that is not plain Plotly. On a trace it says which data fills that trace and how; on the layout it sets the map window and other figure-wide options. Every key it takes is below; `--help` prints the same list with each key's full options. Plot stops on a `meta` key it does not know.
+
+Trace `meta` (`{"data": [{"uid": "FC", "meta": {…}}]}`):
+
+| Key | What it does |
+| --- | --- |
+| `source.variable` | Data variable to draw; required when the file holds more than one. |
+| `source.isel` | Pick by position, from 0 (`-1` is the last): `{"step": 0}`. One integer draws one value; a list keeps the dim, one panel each; a range is `{"start": 0, "stop": 12, "step": 3}`. |
+| `source.sel` | Pick by label, nearest for numbers and dates: `{"time": "2026-09-21"}`. |
+| `source.input` | Which input fills the trace (its NAME, else its position). `plot` sets it from your `-i` / `--layer`; change it only to draw another input. |
+| `source.u` / `source.v` | Wind component variables, when they are not found by name. |
+| `source.mask_geojson` | Blank cells outside this polygon, for this trace only. |
+| `x` / `y` | Variables (or a name coordinate such as `county`) to draw one against the other. |
+| `facet` | Dim to panel (default `step` or `time`); `false` for none. |
+| `along` | Dim drawn as one line (or bar series) per value, e.g. `number`. |
+| `along_color` | `same` (default: one color, one legend entry) or `cycle`. |
+| `band` | With `along`: a percentile pair such as `[10, 90]` to shade, with the mean drawn bold. See **Lines over time**. |
+| `members` | With `band`: `false` hides the member lines. |
+| `align` | `dayofyear` puts every year on one seasonal axis. |
+| `palette` | Color classes for the field. See **Colors**. |
+| `arrows` | Wind arrows: `{"step": N}` an arrow every N cells, `{"scale": …}` arrow length. |
+| `bind` | How the data fills the trace (`field`, `points`, `series`, `xy`, …). `plot` picks it from the data and trace type; `--help` BINDS lists them. |
+
+Layout `meta` (`{"layout": {"meta": {…}}}`):
+
+| Key | What it does |
+| --- | --- |
+| `geo.bbox` | Map window `[N, W, S, E]`; subsets every input. |
+| `geo.mask_geojson` | Blank every map cell outside this polygon. |
+| `geo.point` | `{"lat": …, "lon": …}` for `--mediogram` and wind roses; nearest cell. |
+| `overlays` | Base-map layers: `false` for none, or `{"borders": {"line": {"width": 2}}, "rivers": false}`. |
+| `export.scale` | PNG/JPG pixel multiplier, e.g. `2`. |
+| `animation` | `--animate` only: `{"duration": 300, "transition": 0}` in ms. |
+| `inputs`, `version`, `skill` | Written by `--dump-spec`; leave as dumped. |
+
 ### Output
 The figure at `-o`. PNG/JPG also print `data: NULL` when every value drawn is NaN.
 
@@ -114,7 +154,7 @@ CHIRPS and ECMWF week-1 rainfall side by side over Kenya, each on its own grid, 
 ### Lines over time
 - A series runs along `time`, or for a forecast along its valid date (init time + `step`). Every other dim must go: pick one value with `isel` / `sel`, draw one line per value with `"along": "number"` (or `"station_id"`: a station file is a map until you pick or `along` its stations), or average it first with summarize-dim (for an area mean, `--dim latitude --dim longitude --method mean --lat-weighted`).
 - Each 1-D file is one line on one shared axis (up to 26 files). The legend names it after its file, or its station id; `"name"` renames it. With two or more lines the legend sits in rows above the plot; one line has none.
-- Each line uses only its own settings, as in Plotly: set `along`, `band`, `align` or `source.variable` on every line that needs it.
+- Each line uses only its own settings, as in Plotly: set `along`, `band`, `align` or `source.variable` (see **Data bindings**) on every line that needs it.
 - `"along": "number"` draws one line per member under one legend entry; `"along_color": "cycle"` gives each its own color and entry. `"band": [10, 90]` shades that percentile range (`[0, 100]` is min–max) and draws the mean bold; `"members": false` hides the members. A band trace draws three parts, each styled as its own trace: its uid is the mean line (`name`, `line`), `UID-members` the member lines and `UID-band` the shading (`name`, `fillcolor`): `{"data": [{"uid": "FC", "name": "Mean", "line": {"color": "red", "width": 4}, "meta": {"along": "number", "band": [0, 100]}}, {"uid": "FC-members", "line": {"color": "grey"}, "opacity": 0.3}, {"uid": "FC-band", "name": "Range"}]}`. With `"type": "bar"`, `along` gives one bar series per value.
 - Two variables of one file are two `-i` of the same path, each with its own `"meta": {"source": {"variable": …}}`.
 - One panel per line, as in Plotly: put each line on its own axes and lay them out with a grid: `{"data": [{"uid": "1", "xaxis": "x2", "yaxis": "y2"}], "layout": {"grid": {"rows": 2, "columns": 1, "pattern": "coupled"}}}`. A right-hand axis: `{"data": [{"uid": "1", "yaxis": "y2"}], "layout": {"yaxis2": {"overlaying": "y", "side": "right"}}}`.
