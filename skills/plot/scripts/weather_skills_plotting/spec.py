@@ -2,8 +2,8 @@
 
 Plotly validates every key except ``meta``, which Plotly accepts on any trace
 and on ``layout`` without looking inside. The weather-skills bindings live
-there: which Zarr and variable a trace reads (``trace.meta``), and figure-wide
-map settings (``layout.meta``). This module checks those two blocks, merges a
+there: which Zarr, variable and slice fills a trace (``trace.meta``), and the
+inputs a dumped spec replays (``layout.meta``). This module checks those two blocks, merges a
 ``--spec`` onto the spec a skill builds from its files, and dumps it.
 """
 
@@ -16,11 +16,10 @@ import sys
 from pathlib import Path
 
 from weather_skills_core.errors import UsageError
-from weather_skills_core.standard_utils import parse_bbox
 
 from weather_skills_plotting.geodata import OVERLAY_NAMES
 
-SPEC_VERSION = 3
+SPEC_VERSION = 4
 
 TOP_KEYS = frozenset({"data", "layout"})
 
@@ -48,28 +47,36 @@ TRACE_META_KEYS = frozenset(
         "y",
         "facet",
         "along",
-        "along_color",
-        "band",
-        "members",
         "align",
         "palette",
         "arrows",
     }
 )
-SOURCE_KEYS = frozenset(
-    {"input", "variable", "isel", "sel", "u", "v", "geojson", "mask_geojson", "point"}
-)
-ARROW_KEYS = frozenset({"step", "scale"})
-LAYOUT_META_KEYS = frozenset(
-    {"version", "skill", "inputs", "geo", "overlays", "export", "animation"}
-)
-GEO_KEYS = frozenset({"bbox", "mask_geojson", "point"})
-EXPORT_KEYS = frozenset({"scale"})
-ANIMATION_KEYS = frozenset({"duration", "transition"})
+SOURCE_KEYS = frozenset({"input", "variable", "isel", "sel", "u", "v", "geojson"})
+ARROW_KEYS = frozenset({"scale"})
+LAYOUT_META_KEYS = frozenset({"version", "skill", "inputs"})
+# Keys meta no longer takes, and what does the job now. meta is data binding only:
+# cutting, sampling and styling belong to data skills, Plotly keys or CLI flags.
+REMOVED_KEYS = {
+    "along_color": "each member is its own trace, UID-DIM-VALUE: style one by its uid, "
+    'e.g. {"uid": "FC-number-3", "line": {"color": "red"}}',
+    "band": "run summarize-dim --method quantile -q 0.1 -q 0.9, pass that file twice "
+    '(-i q.zarr=LOW -i q.zarr=HIGH) with meta.source.sel {"quantile": 0.1} / '
+    '{"quantile": 0.9}, and set "fill": "tonexty" on HIGH',
+    "members": 'set Plotly "visible": false on the trace',
+    "mask_geojson": "run clip-region with the polygon first",
+    "point": "run point-value at the point first and plot its output",
+    "step": "thin the grid with meta.source.isel range steps: "
+    '{"latitude": {"step": 4}, "longitude": {"step": 4}}',
+    "geo": "run clip-region to cut the data, and set the view with Plotly xaxis.range / "
+    "yaxis.range (x is longitude) on each panel's axes",
+    "overlays": "base-map layers are traces with uids coastline, borders, disputed, lakes, rivers "
+    'and admin1: {"data": [{"uid": "rivers", "visible": false}]}',
+    "export": "pass --scale N",
+    "animation": "set the frame duration in Plotly layout.updatemenus / sliders",
+}
 # Layout lists that merge by ``name`` (Plotly's own item identity).
 NAMED_LAYOUT_LISTS = ("annotations", "shapes", "images")
-
-_PLACE_NAME_KEYS = frozenset({"region", "country", "place", "name", "county", "admin"})
 
 SPEC_HELP_HINT = (
     "Run with --help for the meta keys and recipes; every other key is standard Plotly "
@@ -206,14 +213,14 @@ def merge_traces(base: list, overlay: list) -> list:
         uid = trace.get("uid")
         if uid is not None:
             idx = next((j for j, t in enumerate(out) if t.get("uid") == uid), None)
-            base, _, part = str(uid).rpartition("-")
-            band_part = part in ("members", "band") and base in {
-                t.get("uid")
+            # Styles a trace the figure adds: a base-map layer, or one member
+            # (UID-DIM-VALUE) of an along trace.
+            part = uid in OVERLAY_NAMES or any(
+                str(uid).startswith(f"{t.get('uid')}-{t['meta']['along']}-")
                 for t in [*out, *overlay]
-                if (t.get("meta") or {}).get("band") is not None
-            }
-            if idx is None and band_part:
-                # Styles one part (member lines, shading) of band trace ``base``.
+                if (t.get("meta") or {}).get("along")
+            )
+            if idx is None and part:
                 out.append(copy.deepcopy(trace))
                 continue
             if idx is None:
@@ -226,11 +233,6 @@ def merge_traces(base: list, overlay: list) -> list:
                         f"{', '.join(have) or 'none'})"
                         + (f"; did you mean {near[0]!r}?" if near else "")
                         + "; a new trace needs data of its own (x / y, or meta.source)"
-                        + (
-                            f"; {uid!r} styles part of a trace only when {base!r} has meta.band"
-                            if part in ("members", "band")
-                            else ""
-                        )
                     )
                 meta = trace.get("meta") or {}
                 source = meta.get("source") or {}
@@ -299,10 +301,10 @@ def _check_keys(obj, allowed, loc: str) -> None:
             hint = f'; a dotted name is a nested path: write {{"{head}": {{"{rest}": …}}}}'
         elif key == "theme":
             hint = _THEME_HINT
-        elif loc.endswith("geo") and key in _PLACE_NAME_KEYS:
-            hint = (
-                "; geo takes coordinates only — run resolve-region for a named place and "
-                "pass its bbox as layout.meta.geo.bbox or its polygon as mask_geojson"
+        elif key in REMOVED_KEYS:
+            raise UsageError(
+                f"plot spec {loc}.{key} was removed: meta holds data bindings only. "
+                f"Instead, {REMOVED_KEYS[key]}"
             )
         raise UsageError(
             f"plot spec {loc}.{key} is not a known key; allowed here: "
@@ -315,10 +317,6 @@ def _check_source(source, loc: str) -> None:
     for key in ("isel", "sel"):
         if source.get(key) is not None and not isinstance(source[key], dict):
             raise UsageError(f"plot spec {loc}.{key} must be an object of dim: value")
-    point = source.get("point")
-    if point is not None:
-        if not isinstance(point, dict) or set(point) != {"lat", "lon"}:
-            raise UsageError(f'plot spec {loc}.point must be {{"lat": …, "lon": …}}')
 
 
 def check_trace_meta(meta, loc: str, palettes: dict) -> None:
@@ -340,19 +338,6 @@ def check_trace_meta(meta, loc: str, palettes: dict) -> None:
         raise UsageError(f"plot spec {loc}: a scatter of two variables needs both x and y")
     if meta.get("arrows") is not None:
         _check_keys(meta["arrows"], ARROW_KEYS, f"{loc}.arrows")
-    if meta.get("along_color") not in (None, "same", "cycle"):
-        raise UsageError(f"plot spec {loc}.along_color must be 'same' or 'cycle'")
-    band = meta.get("band")
-    if band is not None and not (
-        isinstance(band, list) and len(band) == 2 and all(isinstance(b, (int, float)) for b in band)
-    ):
-        raise UsageError(f"plot spec {loc}.band must be a percentile pair such as [10, 90]")
-    if band is not None and not meta.get("along"):
-        raise UsageError(
-            f"plot spec {loc}.band needs {loc}.along (the dim to take percentiles over)"
-        )
-    if meta.get("members") not in (None, True, False):
-        raise UsageError(f"plot spec {loc}.members must be true or false")
     if meta.get("align") not in (None, "dayofyear"):
         raise UsageError(f"plot spec {loc}.align must be 'dayofyear'")
     palette = meta.get("palette")
@@ -375,53 +360,6 @@ def check_layout_meta(meta) -> None:
         raise UsageError(
             'plot spec layout.meta.inputs must map input ids to paths: {"0": "x.zarr"}'
         )
-    geo = meta.get("geo")
-    if geo is not None:
-        _check_keys(geo, GEO_KEYS, "layout.meta.geo")
-        bbox = geo.get("bbox")
-        if isinstance(bbox, str):
-            # resolve-region prints "N/W/S/E"; take it as printed.
-            parse_bbox(bbox)
-        elif bbox is not None and not (isinstance(bbox, list) and len(bbox) == 4):
-            raise UsageError('plot spec layout.meta.geo.bbox must be [N, W, S, E] or "N/W/S/E"')
-        point = geo.get("point")
-        if point is not None and (not isinstance(point, dict) or set(point) != {"lat", "lon"}):
-            raise UsageError('plot spec layout.meta.geo.point must be {"lat": …, "lon": …}')
-        if geo.get("mask_geojson") is not None and not isinstance(geo["mask_geojson"], str):
-            raise UsageError(
-                "plot spec layout.meta.geo.mask_geojson must be a GeoJSON file path; it only "
-                "blanks cells outside the polygon. To draw the boundary add a trace with "
-                'meta.bind "geojson"'
-            )
-    overlays = meta.get("overlays")
-    if overlays is not None and not isinstance(overlays, bool):
-        if not isinstance(overlays, dict):
-            raise UsageError(
-                "plot spec layout.meta.overlays must be true, false, or an object such as "
-                '{"rivers": false, "borders": {"line": {"width": 2}}}'
-            )
-        for key, value in overlays.items():
-            if key not in OVERLAY_NAMES:
-                raise UsageError(
-                    f"plot spec layout.meta.overlays.{key} is not a known overlay; "
-                    f"allowed: {', '.join(OVERLAY_NAMES)}"
-                )
-            if not isinstance(value, (bool, dict)):
-                raise UsageError(
-                    f"plot spec layout.meta.overlays.{key} must be true, false, or a "
-                    "Plotly scatter style object"
-                )
-    if meta.get("export") is not None:
-        _check_keys(meta["export"], EXPORT_KEYS, "layout.meta.export")
-    animation = meta.get("animation")
-    if animation is not None:
-        _check_keys(animation, ANIMATION_KEYS, "layout.meta.animation")
-        for key, value in animation.items():
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
-                raise UsageError(
-                    f"plot spec layout.meta.animation.{key} must be milliseconds >= 0; "
-                    f"got {value!r}"
-                )
 
 
 def check_meta(spec: dict, palettes: dict) -> None:
@@ -469,7 +407,10 @@ def plotly_error(exc: Exception, loc: str = "") -> UsageError:
             "(coloraxis2, … for a second bar)"
         )
     if "'bbox'" in head and "Geo" in head:
-        msg += '\nThe map window is layout.meta.geo.bbox: {"layout": {"meta": {"geo": {"bbox": [N, W, S, E]}}}}'
+        msg += (
+            "\nMaps here are plain x/y axes: set the window with xaxis.range / yaxis.range "
+            "(x is longitude), and cut the data with clip-region"
+        )
     prefix = f"plot spec {loc}: " if loc else "plot spec: "
     return UsageError(
         prefix + msg + "\nKeys are standard Plotly: https://plotly.com/python/reference/"

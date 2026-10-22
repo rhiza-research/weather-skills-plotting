@@ -16,36 +16,35 @@ from weather_skills_plotting.themes import DEFAULT_THEME_FILE
 _BINDS = {
     "field": "lat/lon grid → z of a heatmap or contour (default for those types); panels the time/step dim",
     "speed": "wind speed from u/v → heatmap or contour (pair with an arrows trace for a quiver map)",
-    "arrows": "u/v wind arrows on a map → scatter lines; meta.arrows.step / .scale",
+    "arrows": "u/v wind arrows on a map → scatter lines; meta.arrows.scale sets their length",
     "points": "station_id / point_id values → colored scatter markers on a map",
     "geojson": "GeoJSON boundary → scatter lines (meta.source.geojson); repeats on every panel",
     "series": "1-D along time or step → scatter / bar (default for those types)",
     "xy": "one variable against another from the same input → scatter markers, or bars with "
     'type "bar" (set by meta.x / meta.y)',
-    "samples": "values at a point per step → box (all samples) or scatter (the mean)",
+    "samples": "values at one point (a point-value output) per step → box (all samples) or "
+    "scatter (the mean)",
     "windrose": "u/v pooled into a polar wind rose → barpolar (default for that type)",
 }
 
 _META = {
     "bind": "how the trace's arrays are filled; see BINDS",
-    "source": "the data: {input, variable, isel, sel, u, v, geojson, mask_geojson, point}",
+    "source": "the data: {input, variable, isel, sel, u, v, geojson}",
     "x / y": "variable names for a scatter of one against the other, a point per shared "
     "position (merge puts variables from two files in one)",
     "facet": "dim to panel (default: step or time when present); false for none",
-    "along": "series: dim drawn as one line per value (e.g. number for spaghetti)",
-    "along_color": "same (default; one color, one legend entry) or cycle",
-    "band": "series with along: percentile pair such as [10, 90] ([0, 100] = min–max); draws "
-    "the mean (this uid), the shading (uid-band) and member lines (uid-members), each "
-    "styled by its own data entry",
-    "members": "series with band: false hides the member lines (band and mean only)",
+    "along": "series: dim drawn as one trace per value, uid UID-DIM-VALUE (e.g. UID-number-3); "
+    "lines share one color and legend entry, bars get a color each; a data entry with a "
+    "member's uid styles that member",
     "align": "series: dayofyear overlays years on one seasonal axis",
     "palette": "class palette name (default_precip, default_precip_anom, ppt_week, spi, …, or "
     "one a theme adds: see THEMES), "
     "color list, or {colors, bounds, under, over}: bounds are class edges, one color per "
     "class (len(bounds) - 1), under / over color values outside the edges (or pack them "
     "first and last in colors); replaces the automatic precipitation palette",
-    "arrows": "arrows only: {step: an arrow on every Nth cell, scale: arrow length in map "
-    "degrees per unit of speed (default: the 95th-percentile speed spans ~one arrow spacing)}",
+    "arrows": "arrows only: {scale: arrow length in map degrees per unit of speed (default: "
+    "the 95th-percentile speed spans ~one arrow spacing)}; fewer arrows: source.isel range "
+    'steps, {"latitude": {"step": 4}, "longitude": {"step": 4}}',
 }
 
 _SOURCE = {
@@ -58,21 +57,10 @@ _SOURCE = {
     "u / v": "wind component variables (default: found by CF standard_name eastward_wind / "
     "northward_wind, or names such as u10/v10, u/v)",
     "geojson": "geojson bind: path to the boundary file",
-    "mask_geojson": "blank cells outside this polygon for this trace only",
-    "point": 'samples and windrose binds: {"lat": …, "lon": …}, nearest grid cell',
 }
 
 _LAYOUT_META = {
     "inputs": "{id: path} — opened when no file flag is passed (written by --dump-spec)",
-    "geo.bbox": "[N, W, S, E] or the N/W/S/E string resolve-region prints; map window, subsets every input. Named places: run resolve-region",
-    "geo.mask_geojson": "blank every map cell outside this polygon (does not draw it)",
-    "geo.point": '{"lat": …, "lon": …} for samples (--mediogram) and wind-rose traces; nearest cell',
-    "overlays": "true, false, or {coastline|borders|disputed|lakes|rivers|admin1: false or a scatter "
-    'style such as {"line": {"width": 2}}}',
-    "export.scale": 'PNG/JPG pixel multiplier (default 1), e.g. {"export": {"scale": 2}}',
-    "(dotted names)": 'are nested keys: geo.bbox is {"geo": {"bbox": […]}}',
-    "animation": "--animate only: {duration: ms per frame (500), transition: ms between "
-    "frames (0)}",
     "version / skill": "leave as dumped",
 }
 
@@ -102,7 +90,8 @@ _RECIPES = [
     (
         "Tropical Tidbits MSLP & 10 m wind (--theme-file tropical_tidbits colors the speed): "
         "--layer quiver:uv.zarr=WIND (speed WIND, arrows WIND-arrows) --layer contour:msl.zarr=MSLP",
-        '{"data": [{"uid": "WIND-arrows", "meta": {"arrows": {"step": 12}}}, '
+        '{"data": [{"uid": "WIND-arrows", "meta": {"source": {"isel": {"latitude": {"step": '
+        '12}, "longitude": {"step": 12}}}}}, '
         '{"uid": "MSLP", "contours": {"coloring": "none", '
         '"showlabels": true, "start": 900, "end": 1080, "size": 2}}]}',
     ),
@@ -166,9 +155,15 @@ _RECIPES = [
         "Rename panel 2 (panel titles are numbered from 1)",
         '{"layout": {"annotations": [{"name": "panel-title-2", "text": "ECMWF"}]}}',
     ),
-    ("Map window", '{"layout": {"meta": {"geo": {"bbox": [5, 33.5, -5, 42]}}}}'),
-    ("2x pixels in PNG/JPG", '{"layout": {"meta": {"export": {"scale": 2}}}}'),
-    ("Base-map layers", '{"layout": {"meta": {"overlays": {"rivers": false, "admin1": true}}}}'),
+    (
+        "Map window (x is longitude; cut the data itself with clip-region)",
+        '{"layout": {"xaxis": {"range": [33.5, 42]}, "yaxis": {"range": [-5, 5]}}}',
+    ),
+    (
+        "Base-map layers: hide rivers, draw admin-1 lines on a large map, restyle borders",
+        '{"data": [{"uid": "rivers", "visible": false}, {"uid": "admin1"}, '
+        '{"uid": "borders", "line": {"width": 2}}]}',
+    ),
     (
         "Separate colorbars for side-by-side maps (same quantity shares one by default)",
         '{"data": [{"uid": "1", "coloraxis": "coloraxis2"}]}',
@@ -193,11 +188,12 @@ _RECIPES = [
         '"y": [-5, -5, 5, 5, -5], "line": {"color": "red"}}]}',
     ),
     (
-        "Wind quiver map (or --layer quiver:PATH), an arrow every 3rd cell",
+        "Wind quiver map (or --layer quiver:PATH), arrows from every 3rd cell",
         '{"data": [{"uid": "0", "meta": {"bind": "speed"}}, {"uid": "arrows", "type": "scatter", '
-        '"meta": {"bind": "arrows", "source": {"input": "0"}, "arrows": {"step": 3}}}]}',
+        '"meta": {"bind": "arrows", "source": {"input": "0", "isel": {"latitude": {"step": 3}, '
+        '"longitude": {"step": 3}}}}}]}',
     ),
-    ("Wind rose", '{"data": [{"uid": "0", "type": "barpolar"}]}'),
+    ("Wind rose at one place (point-value first)", '{"data": [{"uid": "0", "type": "barpolar"}]}'),
     (
         "Area-mean time series of a grid (summarize-dim --dim latitude --dim longitude "
         "--method mean --lat-weighted first)",
@@ -208,15 +204,16 @@ _RECIPES = [
         '{"data": [{"uid": "0", "meta": {"x": "dmi", "y": "precip"}}]}',
     ),
     (
-        "Ensemble spaghetti with a 10–90% band",
-        '{"data": [{"uid": "0", "meta": {"along": "number", "band": [10, 90]}}]}',
+        "Ensemble spaghetti, member 0 in red with its own legend entry",
+        '{"data": [{"uid": "0", "meta": {"along": "number"}}, {"uid": "0-number-0", '
+        '"name": "Control", "showlegend": true, "line": {"color": "red"}}]}',
     ),
     (
-        "Band parts styled apart: bold red mean (uid), faint grey members (uid-members), "
-        "named shading (uid-band)",
-        '{"data": [{"uid": "0", "line": {"color": "red", "width": 4}, "meta": {"along": '
-        '"number", "band": [0, 100]}}, {"uid": "0-members", "line": {"color": "grey"}, '
-        '"opacity": 0.3}, {"uid": "0-band", "name": "Ensemble range"}]}',
+        "10–90% band (summarize-dim --method quantile -q 0.1 -q 0.9, then -i q.zarr=LOW "
+        "-i q.zarr=HIGH): Plotly fills HIGH down to LOW",
+        '{"data": [{"uid": "LOW", "mode": "lines", "line": {"width": 0}, "showlegend": false, "meta": {"source": '
+        '{"sel": {"quantile": 0.1}}}}, {"uid": "HIGH", "name": "10–90%", "mode": "lines", "fill": "tonexty", '
+        '"line": {"width": 0}, "meta": {"source": {"sel": {"quantile": 0.9}}}}]}',
     ),
     (
         "Bars instead of lines; stacked",
@@ -253,16 +250,21 @@ _RECIPES = [
         '"coloraxis2": {"cmin": -20, "cmax": 20}}}',
     ),
     (
-        "Mediogram (--mediogram -i FORECAST -i MCLIMATE) at a point, leads 0, 2, 4",
-        '{"layout": {"meta": {"geo": {"point": {"lat": -1.29, "lon": 36.82}}}}, "data": ['
-        '{"uid": "forecast", "meta": {"source": {"isel": {"step": [0, 2, 4]}}}}, '
+        "Mediogram (--mediogram -i FORECAST -i MCLIMATE, each point-value --point LAT,LON "
+        "output), leads 0, 2, 4",
+        '{"data": [{"uid": "forecast", "meta": {"source": {"isel": {"step": [0, 2, 4]}}}}, '
         '{"uid": "mclimate", "meta": {"source": {"isel": {"step": [0, 2, 4]}}}}, '
         '{"uid": "forecast-mean", "meta": {"source": {"isel": {"step": [0, 2, 4]}}}}]}',
     ),
     (
-        "Animation (--animate -i GRID -o out.html): slower frames, first 12 steps",
-        '{"layout": {"meta": {"animation": {"duration": 900}}}, "data": [{"uid": "0", '
-        '"meta": {"source": {"isel": {"step": {"start": 0, "stop": 12}}}}}]}',
+        "Animation (--animate -i GRID -o out.html or out.gif): first 12 steps",
+        '{"data": [{"uid": "0", "meta": {"source": {"isel": {"step": {"start": 0, "stop": 12}}}}}]}',
+    ),
+    (
+        "Animation speed, HTML and GIF alike: 900 ms per frame (a Play button replaces the "
+        "default controls)",
+        '{"layout": {"updatemenus": [{"type": "buttons", "buttons": [{"label": "Play", '
+        '"method": "animate", "args": [null, {"frame": {"duration": 900}}]}]}]}}',
     ),
 ]
 
@@ -290,7 +292,11 @@ def spec_reference(recipes=None) -> str:
     parts = [
         "PLOT SPEC (--spec)",
         '  A standard Plotly figure: {"data": [traces], "layout": {…}}. Every key is Plotly\'s',
-        "  (https://plotly.com/python/reference/) except meta, which holds the dataset bindings.",
+        "  (https://plotly.com/python/reference/) except meta, which holds the data bindings:",
+        "  which file, variable and slice fills each trace. Cutting (clip-region), point",
+        "  sampling (point-value) and percentiles (summarize-dim) happen before plot.",
+        "  Base-map layers are traces with uids coastline, borders, disputed,",
+        "  lakes, rivers, admin1.",
         "  --spec is merged onto the figure the command builds from its files: data[] by uid",
         "  (else position; a new uid adds a trace), layout.annotations / shapes by name, and",
         "  everything else deep-merged. Run with --dump-spec - to see that figure, edit, pass back.",
@@ -321,7 +327,7 @@ def spec_reference(recipes=None) -> str:
         "  defaults  field kind -> palette or Plotly colorscale: precip, precip_anomaly, precip_poa,",
         "            spi, wind_speed, diverging, sea_level_pressure, temperature, sequential",
         "  styles    drawn element -> Plotly settings: maps (no-data background), classed_colorbar,",
-        "            isobars, map_marks, boundary, arrows, arrow_key_box, members, band_members",
+        "            isobars, map_marks, boundary, arrows, arrow_key_box, members",
         "  overlays  coastline / borders / disputed / lakes / rivers / admin1 -> Plotly scatter style",
         "            (admin1 also styles a many-polygon outline layer, e.g. county lines)",
         "  --dump-spec shows your spec before draw-time defaults (palette, limits) are chosen;",

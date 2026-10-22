@@ -111,8 +111,12 @@ def test_deep_merge_and_fill_defaults():
         ({"bind": "grid"}, "bind 'grid' must be one of"),
         ({"source": {"inptu": "a"}}, "meta.source.inptu is not a known key"),
         ({"source": {"reduce": ["latitude"]}}, "meta.source.reduce is not a known key"),
-        ({"band": [10, 90]}, "band needs .*along"),
-        ({"along_color": "rainbow"}, "along_color must be"),
+        ({"band": [10, 90]}, "band was removed.*summarize-dim --method quantile"),
+        ({"along_color": "cycle"}, "along_color was removed.*style one by its uid"),
+        ({"members": False}, "members was removed.*visible"),
+        ({"source": {"point": {"lat": 0, "lon": 0}}}, "point was removed.*point-value"),
+        ({"source": {"mask_geojson": "k.geojson"}}, "mask_geojson was removed.*clip-region"),
+        ({"arrows": {"step": 2}}, "step was removed.*isel range steps"),
         ({"x": "dmi"}, "needs both x and y"),
         ({"x": {"input": "a"}, "y": "precip"}, "x must be a variable name"),
         ({"palette": "no_such"}, "not a known palette"),
@@ -124,17 +128,19 @@ def test_trace_meta_errors(meta, match):
         check_meta({"data": [{"type": "heatmap", "meta": meta}]}, PALETTES)
 
 
-def test_layout_meta_errors():
-    with pytest.raises(UsageError, match="resolve-region"):
-        check_meta({"layout": {"meta": {"geo": {"country": "KEN"}}}}, PALETTES)
-    with pytest.raises(UsageError, match="bbox must be"):
-        check_meta({"layout": {"meta": {"geo": {"bbox": [1, 2]}}}}, PALETTES)
-    with pytest.raises(UsageError, match="not a known overlay"):
-        check_meta({"layout": {"meta": {"overlays": {"roads": False}}}}, PALETTES)
-    with pytest.raises(UsageError, match="version 2 is not supported"):
-        check_meta({"layout": {"meta": {"version": 2}}}, PALETTES)
-    with pytest.raises(UsageError, match="geojson"):
-        check_meta({"layout": {"meta": {"geo": {"mask_geojson": {"line": 1}}}}}, PALETTES)
+@pytest.mark.parametrize(
+    "meta, match",
+    [
+        ({"geo": {"bbox": [1, 2, 3, 4]}}, "geo was removed.*clip-region.*xaxis.range"),
+        ({"overlays": False}, "overlays was removed.*uids coastline"),
+        ({"export": {"scale": 2}}, "export was removed.*--scale"),
+        ({"animation": {"duration": 300}}, "animation was removed.*updatemenus"),
+        ({"version": 3}, "version 3 is not supported"),
+    ],
+)
+def test_layout_meta_errors(meta, match):
+    with pytest.raises(UsageError, match=match):
+        check_meta({"layout": {"meta": meta}}, PALETTES)
 
 
 def test_duplicate_uid():
@@ -149,7 +155,7 @@ def test_plotly_validates_everything_else():
         validate({"layout": {"xaxis": {"rnage": [0, 1]}}})
     good = {
         "data": [{"type": "heatmap", "uid": "a", "meta": {"source": {"input": "a"}}}],
-        "layout": {"meta": {"version": 3}, "title": {"text": "ok"}},
+        "layout": {"meta": {"version": 4}, "title": {"text": "ok"}},
     }
     assert validate(good) is good
 
@@ -160,10 +166,9 @@ def test_named_templates_validate(name):
 
 
 def test_hints_for_common_misplaced_keys():
-    with pytest.raises(UsageError, match='nested path: write {"export": {"scale"'):
-        check_meta({"layout": {"meta": {"export.scale": 2}}}, PALETTES)
+    with pytest.raises(UsageError, match='nested path: write {"source": {"variable"'):
+        check_meta({"data": [{"meta": {"source.variable": "tp"}}]}, PALETTES)
     with pytest.raises(UsageError, match="plain x/y axes"):
         check_meta({"data": [{"type": "scattermap"}]}, PALETTES)
     with pytest.raises(UsageError, match="coloraxis"):
         validate({"layout": {"colorbar": {}}})
-    check_meta({"layout": {"meta": {"geo": {"bbox": "5/33/-5/42"}}}}, PALETTES)

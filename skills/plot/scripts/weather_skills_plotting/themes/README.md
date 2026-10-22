@@ -109,7 +109,6 @@ merges into the standard one.
 | `arrows` | Wind arrows and the reference arrow |
 | `arrow_key_box` | The box behind the reference arrow |
 | `members` | Ensemble members drawn as spaghetti |
-| `band_members` | Members drawn under a percentile band |
 
 ## `overlays`
 
@@ -120,8 +119,9 @@ Natural Earth land line (disputed, indefinite, line of control, lease limit),
 grey, slightly thinner and dashed by default so an official boundary drawn on top
 (`meta.bind` `geojson`) reads first. A theme's
 style merges into the standard one, so `{"borders": {"line": {"color":
-"#333333"}}}` keeps the standard width. A spec's `layout.meta.overlays` turns
-layers on or off. `admin1` also styles an outline layer with many polygons (county
+"#333333"}}}` keeps the standard width. In a spec each layer is a trace with
+that uid: `{"data": [{"uid": "rivers", "visible": false}]}` hides it, other keys
+restyle it on that one figure. `admin1` also styles an outline layer with many polygons (county
 boundaries from a GeoJSON), so a theme's county-line color applies to official
 boundary files too.
 

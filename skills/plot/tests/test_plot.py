@@ -35,7 +35,7 @@ def test_dump_spec_defaults_by_data_shape(tmp_path, plot_fn, capsys):
     assert a == {"uid": "0", "type": "heatmap", "meta": {"source": {"input": "0"}}}
     assert b["meta"]["bind"] == "points" and b["xaxis"] == "x2"
     meta = spec["layout"]["meta"]
-    assert meta["version"] == 3 and meta["skill"] == "plot"
+    assert meta["version"] == 4 and meta["skill"] == "plot"
     assert meta["inputs"] == {"0": str(grid), "1": str(pts)}
 
 
@@ -136,11 +136,7 @@ def test_series_of_a_forecast(tmp_path, plot_fn):
                     {
                         "uid": "0",
                         "type": "scatter",
-                        "meta": {
-                            "bind": "series",
-                            "along": "number",
-                            "band": [10, 90],
-                        },
+                        "meta": {"bind": "series", "along": "number"},
                     }
                 ]
             }
@@ -178,12 +174,10 @@ def test_layers(tmp_path, plot_fn, capsys):
         f"scatter:{pts}",
         "--layer",
         f"outline:{edge}",
-        "--layer",
-        f"mask:{edge}",
     ]
     spec = _dump(plot_fn, capsys, *argv)
     assert [t["uid"] for t in spec["data"]] == ["0", "1", "2"]
-    assert spec["layout"]["meta"]["geo"]["mask_geojson"] == str(edge)
+    assert set(spec["layout"]["meta"]) == {"version", "skill", "inputs"}
     run_skill(plot_fn, *argv, "-o", str(tmp_path / "layers.png"))
 
 
@@ -205,7 +199,7 @@ def test_errors_are_actionable(tmp_path, plot_fn, capsys):
     bad = [
         ('{"inputs": [{"variable": "tp"}]}', "are not allowed"),
         ('{"data": [{"uid": "0", "colorscal": "Blues"}]}', "Did you mean"),
-        ('{"layout": {"meta": {"geo": {"region": "Kenya"}}}}', "resolve-region"),
+        ('{"layout": {"meta": {"geo": {"region": "Kenya"}}}}', "run clip-region"),
     ]
     for spec, match in bad:
         with pytest.raises(SystemExit):
@@ -219,25 +213,6 @@ def test_help_lists_meta_reference(plot_fn, capsys):
     out = capsys.readouterr().out
     for needle in ("BINDS", "data[].meta.source", "layout.meta", "RECIPES", "plotly.com"):
         assert needle in out
-
-
-def test_mask_removing_every_station(tmp_path, plot_fn, capsys):
-    pts = write_zarr(make_point_obs(n_time=1), tmp_path / "pts.zarr")
-    far = tmp_path / "far.geojson"
-    far.write_text(
-        json.dumps({"type": "Polygon", "coordinates": [[[50, 50], [51, 50], [51, 51], [50, 50]]]})
-    )
-    with pytest.raises(SystemExit):
-        run_skill(
-            plot_fn,
-            "--layer",
-            f"scatter:{pts}",
-            "--layer",
-            f"mask:{far}",
-            "-o",
-            str(tmp_path / "x.png"),
-        )
-    assert "no stations remain" in capsys.readouterr().err
 
 
 def test_provenance_records_spec_and_layers(tmp_path, plot_fn):
@@ -291,9 +266,9 @@ def test_each_series_keeps_only_its_own_settings(tmp_path, plot_fn, capsys):
 def test_along_passes_only_to_series_with_that_dim(tmp_path, plot_fn, capsys):
     fc = write_zarr(_area(make_forecast(members=4)), tmp_path / "fc.zarr")
     clim = write_zarr(_area(make_forecast(members=4)).isel(number=0), tmp_path / "clim.zarr")
-    user = {"data": [{"uid": "0", "meta": {"along": "number", "band": [10, 90]}}]}
+    user = {"data": [{"uid": "0", "meta": {"along": "number"}}]}
     spec = _dump(plot_fn, capsys, "-i", str(fc), "-i", str(clim), "--spec", json.dumps(user))
-    assert "along" not in spec["data"][1]["meta"] and "band" not in spec["data"][1]["meta"]
+    assert "along" not in spec["data"][1]["meta"]
     out = tmp_path / "ens.html"
     run_skill(plot_fn, "-i", str(fc), "-i", str(clim), "-o", str(out), "--spec", json.dumps(user))
     assert "Plotly.newPlot" in out.read_text()
@@ -419,3 +394,15 @@ def test_one_figure_to_several_outputs(tmp_path, plot_fn):
     png, html = tmp_path / "a.png", tmp_path / "a.html"
     run_skill(plot_fn, "-i", str(grid), "-o", str(png), "-o", str(html))
     assert png.is_file() and "Plotly.newPlot" in html.read_text()
+
+
+def test_scale_multiplies_pixels(tmp_path, plot_fn):
+    from PIL import Image
+
+    grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
+    sizes = []
+    for scale in ("1", "2"):
+        out = tmp_path / f"s{scale}.png"
+        run_skill(plot_fn, "-i", str(grid), "-o", str(out), "--scale", scale)
+        sizes.append(Image.open(out).size)
+    assert sizes[1] == (2 * sizes[0][0], 2 * sizes[0][1])
