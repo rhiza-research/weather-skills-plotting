@@ -69,7 +69,7 @@ _LAYOUT_META = {
     "geo.point": '{"lat": …, "lon": …} for samples (--mediogram) and wind-rose traces; nearest cell',
     "overlays": "true, false, or {coastline|borders|disputed|lakes|rivers|admin1: false or a scatter "
     'style such as {"line": {"width": 2}}}',
-    "export.scale": 'PNG/JPG pixel multiplier (default 1), e.g. {"export": {"scale": 2}}',
+    "export.scale": 'PNG/JPG/GIF pixel multiplier (default 1), e.g. {"export": {"scale": 2}}',
     "(dotted names)": 'are nested keys: geo.bbox is {"geo": {"bbox": […]}}',
     "animation": "--animate only: {duration: ms per frame (500), transition: ms between "
     "frames (0)}",
@@ -294,7 +294,8 @@ def spec_reference(recipes=None) -> str:
         "  --spec is merged onto the figure the command builds from its files: data[] by uid",
         "  (else position; a new uid adds a trace), layout.annotations / shapes by name, and",
         "  everything else deep-merged. Run with --dump-spec - to see that figure, edit, pass back.",
-        "  Output by -o suffix: .png, .jpg, or .html (interactive, works offline).",
+        "  Output by -o suffix: .png, .jpg, .html (interactive, works offline), or .gif",
+        "  (--animate only).",
         "",
         "  Panels: map traces on the same xaxis stack as layers; traces on x, x2, … sit side by",
         "  side, each on its own lat/lon grid (do not coarsen to plot). One trace with a time or",
@@ -321,7 +322,8 @@ def spec_reference(recipes=None) -> str:
         "  defaults  field kind -> palette or Plotly colorscale: precip, precip_anomaly, precip_poa,",
         "            spi, wind_speed, diverging, sea_level_pressure, temperature, sequential",
         "  styles    drawn element -> Plotly settings: maps (no-data background), classed_colorbar,",
-        "            isobars, map_marks, boundary, arrows, arrow_key_box, members, band_members",
+        "            isobars, highs, lows, map_marks, boundary, arrows, arrow_key_box, members,",
+        "            band_members",
         "  overlays  coastline / borders / disputed / lakes / rivers / admin1 -> Plotly scatter style",
         "            (admin1 also styles a many-polygon outline layer, e.g. county lines)",
         "  --dump-spec shows your spec before draw-time defaults (palette, limits) are chosen;",

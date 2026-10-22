@@ -24,16 +24,17 @@ and transforms when those are available (for example a fetch skill,
    `--spec`, a standard Plotly figure JSON (`data` + `layout`). Use normal
    Plotly keys for titles, axes, colorbars, annotations and shapes; the
    dataset bindings go in each trace's `meta` (see `plot --help`).
-4. Run the script and report the output path (`.png`, `.jpg`, or an
-   interactive `.html`).
+4. Run the script and report the output path (`.png`, `.jpg`, an
+   interactive `.html`, or an animated `.gif`).
 5. On failure, report the actual error — do not paper over it.
 
 ## Plotting-specific notes
 
 - **`plot`** is the general-purpose renderer: heatmap, contour, timeseries,
   xy scatter, wind-rose, quiver, or layered map, one dataset or several side
-  by side. Several 1-D series (one `-i` each) share one time axis; stack
-  them in panels with `layout.grid`, or draw spaghetti/band plots across an
+  by side. Several 1-D series (one `-i` each) share one time axis; for one
+  panel per line give each trace its own `xaxis` / `yaxis` and lay them out
+  with `layout.grid`, or draw spaghetti/band plots across an
   ensemble dim with `meta.along`. Run `--dump-spec -` on your actual inputs
   to get the Plotly figure it builds, then edit that; `--help` lists the
   `meta` keys.
@@ -43,9 +44,10 @@ and transforms when those are available (for example a fetch skill,
   around.
 - **`plot --mediogram`** compares a forecast ensemble against an m-climate
   ensemble at a single lat/lon as an ECMWF-style two-layer boxplot.
-- **`plot --animate`** animates one gridded Zarr through its `time` or `step`
-  dim as an interactive HTML map (play/pause, slider, one shared color
-  scale), with the same `--spec`. The HTML embeds every frame,
+- **`plot --animate`** plays a map (one `-i`, or a `--layer` stack with
+  outlines and contours) through its `time` or `step` dim, as an interactive
+  HTML map (play/pause, slider, one shared color scale) or an animated GIF,
+  with the same `--spec`. The HTML embeds every frame,
   so select fewer frames or a smaller bbox for long or fine-grid series.
 - Side-by-side maps are traces on separate axes (`x`, `x2`, …), each on its
   own grid; traces on the same axes are layers. Panels of the same quantity

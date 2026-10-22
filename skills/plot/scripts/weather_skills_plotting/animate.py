@@ -269,7 +269,8 @@ def write_gif(fig, output, *, duration=DEFAULT_DURATION_MS, scale=1):
     for frame in spec["frames"]:
         # Plotly merges a frame's traces into the base traces it names.
         data = list(spec["data"])
-        for i, trace in zip(frame["traces"], frame["data"], strict=True):
+        # A frame that changes no trace (a constant field) has neither key.
+        for i, trace in zip(frame.get("traces", []), frame.get("data", []), strict=True):
             data[i] = {**data[i], **trace}
         # A still never shows hover, so the heatmaps' customdata stays out (as in export).
         data = [

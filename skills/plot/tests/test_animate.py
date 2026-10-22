@@ -131,6 +131,21 @@ def test_gif_one_frame_per_time(grid, animation_fn, tmp_path, capsys):
     assert load_figure_history(out)
 
 
+def test_gif_of_constant_field(tmp_path, animation_fn):
+    from PIL import Image
+
+    ds = make_gridded(n_time=4, name="t2m")
+    ds["t2m"].values = np.ones(ds["t2m"].shape)
+    ds["t2m"].attrs.update(units="degree_Celsius", standard_name="air_temperature")
+    out = tmp_path / "v.gif"
+    run_skill(
+        animation_fn, "--animate", "-i", str(write_zarr(ds, tmp_path / "c.zarr")), "-o", str(out)
+    )
+    # Only the titles change, so the frames carry no trace data.
+    with Image.open(out) as img:
+        assert img.n_frames == 4
+
+
 def test_gif_needs_animate(grid, animation_fn, capsys):
     with pytest.raises(SystemExit):
         run_skill(animation_fn, "-i", grid, "-o", "v.gif")

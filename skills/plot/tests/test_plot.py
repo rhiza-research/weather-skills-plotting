@@ -164,6 +164,23 @@ def test_scatter_of_two_variables(tmp_path, plot_fn, capsys):
     assert "data: not null (0 3/3 finite)" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize("kind", ["scatter", "bar"])
+def test_xy_of_stations_is_not_a_station_map(tmp_path, plot_fn, capsys, kind):
+    pts = write_zarr(make_point_obs(n_time=1), tmp_path / "pts.zarr")
+    user = {
+        "data": [
+            {
+                "uid": "0",
+                "type": kind,
+                "meta": {"x": "point_id", "y": "precip", "source": {"isel": {"time": 0}}},
+            }
+        ]
+    }
+    spec = _dump(plot_fn, capsys, "-i", str(pts), "--spec", json.dumps(user))
+    assert "bind" not in spec["data"][0]["meta"]
+    run_skill(plot_fn, "-i", str(pts), "-o", str(tmp_path / "xy.png"), "--spec", json.dumps(user))
+
+
 def test_layers(tmp_path, plot_fn, capsys):
     grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
     pts = write_zarr(make_point_obs(n_time=1), tmp_path / "pts.zarr")

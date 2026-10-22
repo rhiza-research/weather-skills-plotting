@@ -45,7 +45,7 @@ The plot type follows the data: a lat/lon grid is a colored map, stations are co
 - `--mediogram` — forecast vs model climate at one point; pass `-i` twice (forecast, then m-climate). See **Mediogram**.
 - `--animate` — the same map, with its times or steps played as frames; takes the same `-i` / `--layer` inputs. `-o` must end in `.html` or `.gif`. See **Animation**.
 - `--spec` — Plotly figure JSON, inline or a file path.
-- `--theme-file` — house style: Plotly `template`, `palettes`, per-field `defaults`, base-map `overlays` (see Colors); or a shipped theme by name, e.g. `tropical_tidbits`.
+- `--theme-file` — house style: Plotly `template`, `palettes`, per-field `defaults`, element `styles`, base-map `overlays` (see Colors); or a shipped theme by name, e.g. `tropical_tidbits`.
 - `--dump-spec` — print (`-`) or save (a path) the spec, without drawing.
 - `--output`, `-o` — `.png`, `.jpg`, `.html`, or `.gif` (`--animate` only).
 
@@ -54,7 +54,7 @@ The plot type follows the data: a lat/lon grid is a colored map, stations are co
 
 Each input file is one entry in `data`. Name it on the command line (`-i ecmwf.zarr=FC`) and put that name in `"uid"`. Unnamed files are `"0"`, `"1"`, … in order.
 
-A trace's `uid` is its file's NAME when the file is named, else its position: `-i a.zarr=West` is `"uid": "West"`, and `"0"` then matches nothing (plot stops). Copy uids from the `-i` line, or run `--dump-spec -` to see them. NAME is only an id (letters, digits, `_`) and is never drawn; legend text such as `"TAHMO (automatic)"` goes in the trace's `"name"`.
+A trace's `uid` is its file's NAME when the file is named, else its position: `-i a.zarr=West` is `"uid": "West"`, and `"0"` then matches nothing (plot stops). Copy uids from the `-i` line, or run `--dump-spec -` to see them. NAME is an id (letters, digits, `_`); it is also the default legend and panel text until the trace sets `"name"` (legend text such as `"TAHMO (automatic)"`) or a `panel-title-N` annotation its title.
 
 ```bash
 # Two named files, restyled by name: bars per county, one panel each
@@ -129,10 +129,11 @@ CHIRPS and ECMWF week-1 rainfall side by side over Kenya, each on its own grid, 
   - `tropical_tidbits`: Tropical Tidbits model-chart colors. `tt_wind` (wind speed, m/s), `tt_precip_total` (mm), `tt_precip_rate` (mm/h), `tt_pwat` (mm), `tt_z500` (dam). With this theme, wind speed gets `tt_wind` and precip gets `tt_precip_total` without naming a palette.
 - Temperatures use `RdYlBu_r`; fields spanning zero use `RdBu_r`; flag fields (verify hits) get one color per flag.
 - `{"layout": {"coloraxis": {"colorbar": {"orientation": "h"}}}}` puts the colorbar under the maps.
-- The standard look is one theme file, `scripts/weather_skills_plotting/themes/default.json` in this skill; `themes/README.md` beside it explains each key. A `--theme-file` is JSON/TOML with any of its four keys, layered on top of it — copy `default.json` to start one:
+- The standard look is one theme file, `scripts/weather_skills_plotting/themes/default.json` in this skill; `themes/README.md` beside it explains each key. A `--theme-file` is JSON/TOML with any of its five keys, layered on top of it — copy `default.json` to start one:
   - `template`: a Plotly template (fonts, colorway, backgrounds).
   - `palettes`: `{name: {colors, bounds}}` for `meta.palette`; a name like a built-in one replaces it.
-  - `defaults`: what a field gets when the spec names no palette, per kind: `precip`, `precip_anomaly`, `precip_poa`, `spi`, `wind_speed`, `diverging`, `temperature`, `sequential`. A value is a palette (name, color list or `{colors, bounds}`) or a Plotly colorscale name.
+  - `defaults`: what a field gets when the spec names no palette, per kind: `precip`, `precip_anomaly`, `precip_poa`, `spi`, `wind_speed`, `diverging`, `sea_level_pressure`, `temperature`, `sequential`. A value is a palette (name, color list or `{colors, bounds}`) or a Plotly colorscale name.
+  - `styles`: Plotly settings per drawn element, e.g. `isobars`, `highs` / `lows` (H / L text), `arrows`; anything the spec sets on a trace wins.
   - `overlays`: line styles per base-map layer, e.g. `{"borders": {"line": {"color": "#333333"}}}`.
 - Without `--theme-file`, `$WEATHER_SKILLS_PLOT_THEME` or `~/.config/weather-skills/plot.json|toml` is used if present.
 
@@ -190,5 +191,5 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i obs_area.zarr=OBS -i clim_area.zar
   --spec '{"data": [{"uid": "OBS", "name": "CHIRPS", "type": "bar"}, {"uid": "CLIM", "name": "Climatology", "line": {"dash": "dash"}}]}'
 # Three OND seasons on one calendar
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i chirps_ond_2023.zarr -i chirps_ond_2024.zarr -i chirps_ond_2025.zarr -o ond.png \
-  --spec '{"data": [{"uid": "0", "meta": {"align": "dayofyear"}}]}'
+  --spec '{"data": [{"uid": "0", "meta": {"align": "dayofyear"}}, {"uid": "1", "meta": {"align": "dayofyear"}}, {"uid": "2", "meta": {"align": "dayofyear"}}]}'
 ```

@@ -38,7 +38,8 @@ def split_name(value: str, flag: str) -> tuple[str, str | None]:
     if not path or not _NAME.fullmatch(name):
         raise argparse.ArgumentTypeError(
             f"{flag} expects PATH or PATH=NAME, NAME made of letters, digits and _; got {value!r}. "
-            "NAME is the trace's uid, never shown. Text that is shown takes any characters: "
+            "NAME is the trace's uid and its default legend / panel text. Other text takes any "
+            "characters: "
             'legend text is the trace\'s "name" in --spec data (matched by uid), '
             'panel title text is layout.annotations [{"name": "panel-title-N", "text": ...}]'
         )

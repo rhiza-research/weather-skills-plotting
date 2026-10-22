@@ -77,16 +77,18 @@ def parse_layer(value):
     return LayerArg(kind, *split_name(path.strip(), "--layer"))
 
 
-def _default_trace(uid: str, ds, *, xaxis=None) -> dict:
-    """Heatmap for a lat/lon grid, station markers for points, else a line."""
+def _default_trace(uid: str, ds, user=None, *, xaxis=None) -> dict:
+    """Heatmap for a lat/lon grid, station markers for points, else a line. A ``user`` trace
+    naming ``meta.x`` / ``meta.y`` is an xy plot, so its stations are not a map."""
     source = {"input": uid}
+    xy = bool({"x", "y"} & set((user or {}).get("meta") or {}))
     lat, lon = cf_dim(ds, "latitude"), cf_dim(ds, "longitude")
     pdim = point_dim(ds)
     tdim = next((d for d in ("time", "step") if d in ds.dims and ds.sizes[d] > 1), None)
     if pdim is not None and ds.sizes[pdim] == 1 and tdim:
         # One station over time is a time series, not one dot on a map.
         trace = {"type": "scatter", "meta": {"source": {**source, "isel": {pdim: 0}}}}
-    elif pdim is not None:
+    elif pdim is not None and not xy:
         trace = {"type": "scatter", "meta": {"bind": "points", "source": source}}
     elif lat in ds.dims and lon in ds.dims:
         trace = {"type": "heatmap", "meta": {"source": source}}
@@ -270,7 +272,7 @@ def plot(
         datasets = spec_datasets(spec, cli)
         user = {t.get("uid"): t for t in (spec.data.get("data") or [])} if spec else {}
         drawn = {key: _as_drawn(d, user.get(key)) for key, d in datasets.items()}
-        data = [_default_trace(key, d) for key, d in drawn.items()]
+        data = [_default_trace(key, d, user.get(key)) for key, d in drawn.items()]
         # 1-D series share one x/y axis, one legend entry per file.
         series = bool(data) and all(
             t["type"] == "scatter" and "bind" not in t["meta"] for t in data
@@ -285,7 +287,7 @@ def plot(
                 data[i]["name"] = trace_label(d, i, key)
         elif cli:
             data = [
-                _default_trace(key, d, xaxis=None if i == 0 else f"x{i + 1}")
+                _default_trace(key, d, user.get(key), xaxis=None if i == 0 else f"x{i + 1}")
                 for i, (key, d) in enumerate(drawn.items())
             ]
         else:
