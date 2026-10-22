@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 from weather_skills_core.cf import auto_variable, cf_dim
 from weather_skills_core.errors import UsageError
-from weather_skills_core.standard_utils import ensure_normalized_longitude, polygon_from_geojson
+from weather_skills_core.standard_utils import ensure_normalized_longitude
 from weather_skills_core.units import (
     STANDARD,
     classify_variable,
@@ -113,9 +113,8 @@ class Context:
     datasets: dict
     palettes: dict
     theme: dict
+    # Set only for a grid that crosses the dateline: one continuous 0..360 window.
     bbox: tuple | None = None
-    polygon: object = None
-    point: dict | None = None
 
 
 def bind_of(trace: dict) -> str | None:
@@ -284,13 +283,8 @@ def _sel(da, source: dict, loc: str):
     return da.squeeze(single) if single else da
 
 
-def _polygon(ctx: Context, source: dict):
-    path = source.get("mask_geojson")
-    return polygon_from_geojson(path) if path else ctx.polygon
-
-
 def select(ctx: Context, source: dict, loc: str, *, variable=None):
-    """The source's variable after units, ``isel``/``sel`` and the geo subset."""
+    """The source's variable after units and ``isel``/``sel``."""
     ds = _dataset(ctx, source, loc)
     name = pick_variable(ds, variable or source.get("variable"), loc)
     ds = _display(ds, name)
@@ -299,8 +293,7 @@ def select(ctx: Context, source: dict, loc: str, *, variable=None):
 
 
 def _subset(ctx: Context, source: dict, da):
-    polygon = _polygon(ctx, source)
-    if ctx.bbox is None and polygon is None:
+    if ctx.bbox is None:
         return da
     lat, lon = cf_dim(da, "latitude"), cf_dim(da, "longitude")
     if lat in da.dims and lon in da.dims:
@@ -312,13 +305,9 @@ def _subset(ctx: Context, source: dict, da):
             north, west, south, east = bbox
             half = spacing / 2
             bbox = (north + half, west - half, south - half, east + half)
-        da, _ = subset_spatial(da, lat, lon, bbox, polygon, None)
-        if da.sizes[lat] == 0 or da.sizes[lon] == 0:
-            raise UsageError(
-                "no grid cells remain after layout.meta.geo.bbox / mask_geojson; nothing to plot"
-            )
+        da = subset_spatial(da, lat, lon, bbox)
     elif lat and lon:
-        da = subset_points(da, ctx.bbox, polygon)
+        da = subset_points(da, ctx.bbox)
     return da
 
 
@@ -474,9 +463,10 @@ def bind_arrows(trace, meta, ctx, loc):
     v_da = _subset(ctx, source, _sel(plain(ds[v_name]), source, f"{loc}.source"))
     u_da, lat, lon, fdim = _map_field(ctx, u_da, meta, loc, "wind arrows")
     v_da, *_ = _map_field(ctx, v_da, meta, loc, "wind arrows")
-    step = opts.get("step")
+    # Fewer arrows: thin the grid with meta.source.isel range steps first.
+    step = None
     native = native_spacing_deg(u_da[lat].values, u_da[lon].values)
-    if step is None and native:
+    if native:
         lons = np.asarray(u_da[lon].values, float)
         step = max(1, round((np.nanmax(lons) - np.nanmin(lons)) / ARROWS_ACROSS / native))
     step = quiver_step(u_da[lat].values, u_da[lon].values, step)
@@ -567,9 +557,7 @@ def bind_points(trace, meta, ctx, loc):
             f"(dims: {list(da.dims)})"
         )
     if da.sizes[pdim] == 0:
-        raise UsageError(
-            f"{loc}: no stations remain after layout.meta.geo.bbox / mask_geojson; nothing to plot"
-        )
+        raise UsageError(f"{loc}: the file has no stations; nothing to plot")
     fdim = _facet_dim(meta, da, (pdim,), loc)
     _leftover_error(da, {pdim, fdim}, "station points", loc)
     if da.attrs.get("extremum_kind") in ("high", "low"):
@@ -697,23 +685,6 @@ def _color_name(trace, color):
     )
 
 
-def _rgba(color, alpha):
-    from PIL import ImageColor
-    from plotly.colors import unlabel_rgb
-
-    if not isinstance(color, str):
-        return color
-    try:
-        if color.startswith("rgb"):
-            r, g, b = unlabel_rgb(color)[:3]
-        else:
-            # Hex and CSS names (royalblue) alike.
-            r, g, b = ImageColor.getrgb(color)[:3]
-    except ValueError:
-        return color
-    return f"rgba({int(r)}, {int(g)}, {int(b)}, {alpha})"
-
-
 def bind_series(trace, meta, ctx, loc, *, color=None):
     source = meta.get("source") or {}
     da, _ = select(ctx, source, f"{loc}.source")
@@ -773,113 +744,29 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
                 f"{m} {n}" if str(n).strip() and str(n) != m else m
                 for m, n in zip(members, da["name"].values, strict=True)
             ]
-        band = meta.get("band")
-        if band is not None:
-            col = _color_name(trace, color)
-            # Members stay visible under the band unless meta.members is false.
-            if ttype == "scatter" and meta.get("members", True):
-                gx, gy = [], []
-                for j in range(y.shape[1]):
-                    gx += xs + [None]
-                    gy += list(y[:, j]) + [None]
-                traces.append(
-                    fill_defaults(
-                        {
-                            "type": "scatter",
-                            "x": gx,
-                            "y": gy,
-                            "mode": "lines",
-                            "line": {"color": col},
-                            "showlegend": False,
-                            "hoverinfo": "skip",
-                            "legendgroup": label,
-                            "uid_suffix": "members",
-                        },
-                        ctx.theme["styles"]["band_members"],
-                    )
-                )
-            lo, hi = np.nanpercentile(y, band[0], axis=1), np.nanpercentile(y, band[1], axis=1)
-            common = {
-                "type": "scatter",
+        # One trace per member, uid UID-DIM-VALUE. Lines share one color and one legend
+        # entry (an ensemble reads as one series), on the last member so restyling the
+        # first (a control run) keeps it; bars need a color each to tell apart.
+        for j, member in enumerate(members):
+            tr = {
+                **base,
                 "x": xs,
-                "mode": "lines",
-                "line": {"width": 0},
-                "showlegend": False,
-                "hoverinfo": "skip",
-                "legendgroup": label,
+                "y": y[:, j],
+                "name": member,
+                "uid_suffix": f"{along}={member}",
             }
-            traces += [
-                {**common, "y": lo, "uid_suffix": "band-low"},
-                {
-                    **common,
-                    "y": hi,
-                    "fill": "tonexty",
-                    # The series color, translucent (trace opacity does not reach a fill).
-                    "fillcolor": _rgba(col, 0.25),
-                    "uid_suffix": "band",
-                    # The legend says what the shading is.
-                    "showlegend": True,
-                    "name": "min–max" if list(band) == [0, 100] else f"{band[0]:g}–{band[1]:g}%",
-                },
-                {
-                    **base,
-                    # The mean is the trace's own uid: its spec style is the mean's.
-                    "uid_suffix": "",
-                    # The legend says the bold line is the mean, not one member.
-                    "name": trace.get("name")
-                    or f"{label} {'ensemble mean' if along == 'number' else 'mean'}",
-                    "x": xs,
-                    "y": np.nanmean(y, axis=1),
-                    "mode": "lines",
-                    "line": {"color": col},
-                },
-            ]
-        elif meta.get("along_color") == "cycle":
-            if (trace.get("line") or {}).get("color"):
-                raise UsageError(
-                    f"{loc}: along_color cycle gives each member its own color; drop line.color"
+            if ttype == "scatter":
+                tr.update(
+                    mode="lines",
+                    line={"color": _color_name(trace, color)},
+                    name=label,
+                    legendgroup=label,
+                    showlegend=j == len(members) - 1,
+                    hovertext=member,
                 )
-            for j, member in enumerate(members):
-                traces.append(
-                    {
-                        **base,
-                        "x": xs,
-                        "y": y[:, j],
-                        "name": member,
-                        **({"mode": "lines"} if ttype == "scatter" else {}),
-                        "uid_suffix": f"{along}={member}",
-                    }
-                )
-        elif ttype != "scatter":
-            # Bars cannot share one gapped trace: one bar series per member.
-            for j, member in enumerate(members):
-                traces.append(
-                    {
-                        **base,
-                        "x": xs,
-                        "y": y[:, j],
-                        "name": member,
-                        "uid_suffix": f"{along}={member}",
-                    }
-                )
-        else:
-            gx, gy = [], []
-            for j in range(y.shape[1]):
-                gx += xs + [None]
-                gy += list(y[:, j]) + [None]
-            # Translucent (the theme's members style) so overlapping members read as density.
-            traces.append(
-                fill_defaults(
-                    {
-                        **base,
-                        "x": gx,
-                        "y": gy,
-                        "mode": "lines",
-                        "line": {"color": _color_name(trace, color)},
-                    },
-                    ctx.theme["styles"]["members"],
-                )
-            )
+                # Translucent (the theme's members style) so overlapping members read as density.
+                fill_defaults(tr, ctx.theme["styles"]["members"])
+            traces.append(tr)
     # Dates need no axis title, except to say a date starts a multi-day total.
     period = is_date and xname.endswith(("starting", "Month"))
     titles = {
@@ -1029,19 +916,19 @@ def bind_samples(trace, meta, ctx, loc):
     """Box of every sample per category (box), or the category mean (scatter)."""
     source = meta.get("source") or {}
     da, _ = select(ctx, source, f"{loc}.source")
-    point = source.get("point") or ctx.point
     lat, lon = cf_dim(da, "latitude"), cf_dim(da, "longitude")
-    if point is not None:
-        if lat not in da.dims or lon not in da.dims:
-            raise UsageError(
-                f"{loc}.source.point needs latitude/longitude dims; got {list(da.dims)}"
-            )
-        da = da.sel({lat: point["lat"], lon: point["lon"]}, method="nearest")
-    elif lat in da.dims or lon in da.dims:
+    if lat in da.dims or lon in da.dims:
         raise UsageError(
-            f'{loc}.source.point or layout.meta.geo.point ({{"lat": …, "lon": …}}) is '
-            "required to take samples at a point"
+            f"{loc}: samples are taken at one point; run point-value at the point first and "
+            "plot its output"
         )
+    pdim = point_dim(da)
+    if pdim in da.dims:
+        if da.sizes[pdim] != 1:
+            raise UsageError(
+                f'{loc}: {da.sizes[pdim]} points; pick one with {loc}.source.isel {{"{pdim}": 0}}'
+            )
+        da = da.isel({pdim: 0})
     cat = "step" if "step" in da.dims else cf_dim(da, "time")
     if cat is None or cat not in da.dims:
         raise UsageError(f"{loc}: samples need a step or time axis for the categories")
@@ -1062,24 +949,14 @@ def bind_windrose(trace, meta, ctx, loc):
     u_name, v_name = resolve_uv(ds, source.get("u"), source.get("v"))
     u_da = _subset(ctx, source, _sel(plain(ds[u_name]), source, f"{loc}.source"))
     v_da = _subset(ctx, source, _sel(plain(ds[v_name]), source, f"{loc}.source"))
-    point = source.get("point") or ctx.point
-    if point is not None:
-        # One place's winds, not the whole domain pooled.
-        lat, lon = cf_dim(u_da, "latitude"), cf_dim(u_da, "longitude")
-        if lat not in u_da.dims or lon not in u_da.dims:
-            raise UsageError(f"{loc}.source.point needs latitude/longitude dims")
-        where = {lat: point["lat"], lon: point["lon"]}
-        u_da = u_da.sel(where, method="nearest")
-        v_da = v_da.sel(where, method="nearest")
-    else:
-        lat, lon = cf_dim(u_da, "latitude"), cf_dim(u_da, "longitude")
-        cells = (u_da.sizes.get(lat, 1) if lat else 1) * (u_da.sizes.get(lon, 1) if lon else 1)
-        if cells > 1:
-            print(
-                f"Note: {loc}: the rose pools {cells} grid cells; for one place set "
-                'layout.meta.geo.point {"lat": …, "lon": …}',
-                file=sys.stderr,
-            )
+    lat, lon = cf_dim(u_da, "latitude"), cf_dim(u_da, "longitude")
+    cells = (u_da.sizes.get(lat, 1) if lat else 1) * (u_da.sizes.get(lon, 1) if lon else 1)
+    if cells > 1:
+        print(
+            f"Note: {loc}: the rose pools {cells} grid cells; for one place run point-value "
+            "at it first and plot its output",
+            file=sys.stderr,
+        )
     extra = [d for d in u_da.dims if not is_sample_dim(u_da, d)]
     if extra:
         raise UsageError(

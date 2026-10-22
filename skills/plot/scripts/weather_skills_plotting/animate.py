@@ -66,12 +66,11 @@ def _panel_title_text(annotations: list, p: int):
     return next((a.get("text") for a in annotations if a.get("name") == name), None)
 
 
-def animate_figure(fig, *, user_layout: dict | None = None, animation: dict | None = None):
+def animate_figure(fig, *, user_layout: dict | None = None):
     """Return a one-panel ``go.Figure`` whose frames are ``fig``'s panels."""
     import plotly.graph_objects as go
 
     user_layout = user_layout or {}
-    animation = animation or {}
     spec = fig.to_plotly_json()
     data, layout = spec["data"], spec["layout"]
     n = 1 + max((_panel_of(t) for t in data), default=0)
@@ -161,8 +160,7 @@ def animate_figure(fig, *, user_layout: dict | None = None, animation: dict | No
     )
     out_layout.update(sized)
 
-    duration = animation.get("duration", DEFAULT_DURATION_MS)
-    transition = animation.get("transition", DEFAULT_TRANSITION_MS)
+    duration, transition = DEFAULT_DURATION_MS, DEFAULT_TRANSITION_MS
     play_args = {
         "frame": {"duration": duration, "redraw": True},
         "transition": {"duration": transition},

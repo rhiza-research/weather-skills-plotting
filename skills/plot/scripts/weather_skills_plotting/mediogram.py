@@ -1,6 +1,7 @@
 """ECMWF-style mediogram: forecast and model-climate ensembles at one place, per lead.
 
-Used by ``plot --mediogram -i FORECAST -i MCLIMATE``.
+Used by ``plot --mediogram -i FORECAST -i MCLIMATE``, each a point-value output
+at one point.
 """
 
 import numpy as np
@@ -9,6 +10,7 @@ from weather_skills_core.cf import cf_dim
 
 from weather_skills_plotting.bind import pick_variable
 from weather_skills_plotting.cli import skeleton
+from weather_skills_plotting.geodata import point_dim
 from weather_skills_plotting.kinds import is_precip
 from weather_skills_plotting.labels import (
     _TRAILING,
@@ -45,6 +47,14 @@ def _variable(ds, user, uid):
     return pick_variable(ds, name, f"the {uid!r} trace's meta.source")
 
 
+def _where(da):
+    """``lat=…, lon=…`` of the grid cell point-value used, else of the point."""
+    for lat, lon in (("grid_latitude", "grid_longitude"), ("latitude", "longitude")):
+        if lat in da.coords and lon in da.coords:
+            return f"lat={float(da[lat]):g}, lon={float(da[lon]):g}"
+    return "the point"
+
+
 def build_mediogram_spec(ds, spec):
     """The merged mediogram spec and its datasets (forecast, mclimate), for ``cli.run``."""
     files = [d for d in (ds or []) if d is not None]
@@ -58,17 +68,25 @@ def build_mediogram_spec(ds, spec):
         )
     datasets = {"forecast": files[0], "mclimate": files[1]}
     user = spec.data if spec is not None else {}
-    point = (((user.get("layout") or {}).get("meta") or {}).get("geo") or {}).get("point")
-    if point is None:
-        raise UsageError(
-            'set the point in --spec: {"layout": {"meta": {"geo": {"point": {"lat": -1.3, "lon": 36.8}}}}}'
-        )
     das = {}
     for key, d in datasets.items():
         var = _variable(d, user, key)
         if var not in d:
             raise UsageError(f"{key} has no variable {var!r}; available: {', '.join(d.data_vars)}")
         da = d[var]
+        lat, lon = cf_dim(da, "latitude"), cf_dim(da, "longitude")
+        if lat in da.dims or lon in da.dims:
+            raise UsageError(
+                f"{key} is a grid; run point-value at the point first (--point LAT,LON) and "
+                "pass its output"
+            )
+        pdim = point_dim(da)
+        if pdim in da.dims:
+            if da.sizes[pdim] != 1:
+                raise UsageError(
+                    f"{key} holds {da.sizes[pdim]} points; run point-value at one point"
+                )
+            da = da.isel({pdim: 0})
         if "number" not in da.dims or "step" not in da.dims:
             raise UsageError(f"{key} input needs 'number' and 'step' dims; got {list(da.dims)}")
         das[key] = da
@@ -89,14 +107,8 @@ def build_mediogram_spec(ds, spec):
         },
     ]
     da = das["forecast"]
-    lat, lon = cf_dim(da, "latitude"), cf_dim(da, "longitude")
-    snapped = da.sel({lat: point["lat"], lon: point["lon"]}, method="nearest")
     qty = variable_label_for_display(da, include_units=False)
-    where = f"lat={float(snapped[lat]):g}, lon={float(snapped[lon]):g}"
-    mc = das["mclimate"]
-    mlat, mlon = cf_dim(mc, "latitude"), cf_dim(mc, "longitude")
-    msnap = mc.sel({mlat: point["lat"], mlon: point["lon"]}, method="nearest")
-    mwhere = f"lat={float(msnap[mlat]):g}, lon={float(msnap[mlon]):g}"
+    where, mwhere = _where(da), _where(das["mclimate"])
     if mwhere != where:
         # The m-climate sits on its own grid; say which cell it is.
         where += f" (m-climate {mwhere})"

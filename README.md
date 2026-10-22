@@ -46,10 +46,9 @@ uv run skills/plot/scripts/plot.py --obs /tmp/obs.zarr \
   --forecast /tmp/wk1.zarr --verify /tmp/v1.zarr --forecast /tmp/wk2.zarr --verify /tmp/v2.zarr \
   -o /tmp/verify.png
 
-# A mediogram
+# A mediogram (each input a point-value output at one point)
 uv run skills/plot/scripts/plot.py --mediogram \
-  -i /tmp/forecast.zarr -i /tmp/mclimate.zarr -o /tmp/medio.png \
-  --spec '{"layout": {"meta": {"geo": {"point": {"lat": -1.3, "lon": 36.8}}}}}' 
+  -i /tmp/forecast_point.zarr -i /tmp/mclimate_point.zarr -o /tmp/medio.png
 
 # An animated map (HTML only)
 uv run skills/plot/scripts/plot.py --animate \

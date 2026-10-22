@@ -9,11 +9,17 @@ Every skill's `--spec` is a standard Plotly figure, `{"data": [...], "layout": {
 (<https://plotly.com/python/reference/>). Plotly validates every key except
 `meta`, where the weather-skills bindings live:
 
-- `data[].meta` says what a trace draws: its input and variable (`source`),
-  how its arrays are filled (`bind`), which dim makes panels (`facet`), how a
-  series fans out (`along`, `band`), and its class palette (`palette`).
-- `layout.meta` holds figure-wide settings: `inputs`, `geo` (bbox, mask,
-  point), `overlays` and `export`.
+- `data[].meta` binds a trace to its data: its input, variable and slice
+  (`source`), how its arrays are filled (`bind`), which dim makes panels
+  (`facet`) or one trace per value (`along`), and `x` / `y`, `align`, `arrows`.
+  `palette` is the one styling key.
+- `layout.meta` holds only what `--dump-spec` writes to replay a spec:
+  `inputs`, `version` and `skill`.
+
+`meta` binds data and never changes it: clipping (clip-region), point sampling
+(point-value) and percentiles (summarize-dim) happen upstream. The map window is
+Plotly's own `xaxis.range` / `yaxis.range`, and the base-map layers are traces
+with uids `coastline`, `borders`, `lakes`, `rivers` and `admin1`.
 
 `spec.check_meta` checks the `meta` blocks and lists the allowed keys on any
 error.
@@ -34,10 +40,12 @@ flowchart LR
 
 The plotter selects and draws. Derived fields come from data skills upstream.
 
-- In the plotter: selection (`isel` / `sel`, bbox, mask), display units and
+- In the plotter: selection (`isel` / `sel`), display units and
   labels, color classes, panel layout, and drawing geometry (arrow segments,
   overlay simplification).
-- In a data skill: averages, rate-to-total conversion (`convert-to-totals`),
+- In a data skill: clipping and masking (`clip-region`), point sampling
+  (`point-value`), averages and percentiles (`summarize-dim`), rate-to-total
+  conversion (`convert-to-totals`),
   smoothing, thresholds, anomalies, feature detection (highs and lows, fronts,
   tracks), and other statistics.
 - Use standard Plotly keys before adding a `meta` key or bind.
@@ -65,15 +73,15 @@ file flags.
 | `arrows` | scatter | arrow polylines from u/v plus a 10 m/s key |
 | `points` | scatter | station markers colored by value |
 | `geojson` | scatter | boundary lines from a GeoJSON file, on every panel |
-| `series` | scatter, bar | one line along time, or an `along` fan / `band` |
+| `series` | scatter, bar | one line along time, or one per `along` value |
 | `xy` | scatter | one variable against another (`meta.x` / `meta.y`) |
 | `samples` | box, scatter | all samples per step (box) or their mean (scatter) |
 | `windrose` | barpolar | one trace per speed class, frequency in percent |
 
 The trace type picks the default bind (`heatmap` → `field`, `barpolar` →
 `windrose`, …). A size-1 dim is squeezed; any other dim left after `isel` /
-`sel` / `facet` / `along` is an error that names the fix. The only means the
-plotter draws are a band's mean line and the `samples` scatter. Every other
+`sel` / `facet` / `along` is an error that names the fix. The only mean the
+plotter draws is the `samples` scatter. Every other
 average is made upstream with `summarize-dim` or `aggregate-temporal`.
 Units go through `to_standard_units`, except a precip rate already in mm per some
 time step (mm/h from `unit-convert`), which keeps its units.

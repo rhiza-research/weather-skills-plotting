@@ -33,8 +33,10 @@ and transforms when those are available (for example a fetch skill,
 - **`plot`** is the general-purpose renderer: heatmap, contour, timeseries,
   xy scatter, wind-rose, quiver, or layered map, one dataset or several side
   by side. Several 1-D series (one `-i` each) share one time axis; stack
-  them in panels with `layout.grid`, or draw spaghetti/band plots across an
-  ensemble dim with `meta.along`. Run `--dump-spec -` on your actual inputs
+  them in panels with `layout.grid`, or draw spaghetti across an ensemble dim
+  with `meta.along` (a percentile band is summarize-dim `--method quantile`
+  plus Plotly `fill`). `meta` only binds data: clip-region, point-value and
+  summarize-dim prepare it first. Run `--dump-spec -` on your actual inputs
   to get the Plotly figure it builds, then edit that; `--help` lists the
   `meta` keys.
 - **`plot --obs … --forecast … --verify …`** builds a lead-week verification grid (week-4
@@ -42,11 +44,12 @@ and transforms when those are available (for example a fetch skill,
   Coarsen observations onto the forecast grid first, not the other way
   around.
 - **`plot --mediogram`** compares a forecast ensemble against an m-climate
-  ensemble at a single lat/lon as an ECMWF-style two-layer boxplot.
+  ensemble at a single lat/lon as an ECMWF-style two-layer boxplot; run
+  point-value at the point on both first.
 - **`plot --animate`** animates one gridded Zarr through its `time` or `step`
   dim as an interactive HTML map (play/pause, slider, one shared color
   scale), with the same `--spec`. The HTML embeds every frame,
-  so select fewer frames or a smaller bbox for long or fine-grid series.
+  so select fewer frames or clip-region a smaller area for long or fine-grid series.
 - Side-by-side maps are traces on separate axes (`x`, `x2`, …), each on its
   own grid; traces on the same axes are layers. Panels of the same quantity
   share one colorbar and, over the same region, one map window; give a trace

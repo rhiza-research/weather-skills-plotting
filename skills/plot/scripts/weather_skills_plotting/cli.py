@@ -115,16 +115,6 @@ def run(
     validate(merged, theme)
     dest = dump_spec_dest(dump)
     if dest is not None:
-        # A band trace's other parts are traces of their own: list their uids to style.
-        have = {t.get("uid") for t in merged.get("data") or []}
-        for trace in list(merged.get("data") or []):
-            if (trace.get("meta") or {}).get("band") is not None:
-                parts = ["band"] + ([] if trace["meta"].get("members") is False else ["members"])
-                merged["data"] += [
-                    {"uid": f"{trace.get('uid')}-{p}"}
-                    for p in parts
-                    if f"{trace.get('uid')}-{p}" not in have
-                ]
         dump_spec(merged, dest)
         return None
     if output is None:
@@ -137,14 +127,11 @@ def run(
                 "browser. For a still image of one time, drop --animate"
             )
     fig = compile(merged, datasets, theme=theme)
-    layout_meta = (merged.get("layout") or {}).get("meta") or {}
     if animate:
         from weather_skills_plotting.animate import animate_figure, estimate_html_mb
 
         # The skeleton adds only layout.meta, so the merged layout is the user's own.
-        fig = animate_figure(
-            fig, user_layout=merged.get("layout") or {}, animation=layout_meta.get("animation")
-        )
+        fig = animate_figure(fig, user_layout=merged.get("layout") or {})
         size = estimate_html_mb(fig)
         print(
             f"animation: {len(fig.frames)} frames, {size:.1f} MB of figure data",
@@ -153,21 +140,20 @@ def run(
         if size > LARGE_HTML_MB:
             warn(
                 f"the HTML will be large (~{size:.0f} MB) and slow to open; select fewer frames "
-                "(meta.source.isel / sel) or a smaller layout.meta.geo.bbox"
+                "(meta.source.isel / sel) or clip-region the input to a smaller area"
             )
-    export_meta = layout_meta.get("export") or {}
-    scale = scale or export_meta.get("scale") or 1
+    scale = scale or 1
     width, height = fig.layout.width or 700, fig.layout.height or 500
     if any(path.suffix.lower() not in (".html", ".htm") for path in outputs):
         if min(width, height) < 300:
             warn(
                 f"a {width:.0f}x{height:.0f} px canvas is too small for titles, ticks and the "
                 "colorbar to fit; leave layout width/height unset or use 300 px or more "
-                "(layout.meta.export.scale changes pixel density, not the layout)"
+                "(--scale changes pixel density, not the layout)"
             )
         if width * height * scale**2 > LARGE_PNG_MP * 1e6:
             warn(
-                f"export.scale {scale:g} writes a {width * scale:.0f}x{height * scale:.0f} px "
+                f"--scale {scale:g} writes a {width * scale:.0f}x{height * scale:.0f} px "
                 f"image ({width * height * scale**2 / 1e6:.0f} MP); 2-4 is plenty for print"
             )
     written = [export(fig, path, datasets=datasets, scale=scale) for path in outputs]

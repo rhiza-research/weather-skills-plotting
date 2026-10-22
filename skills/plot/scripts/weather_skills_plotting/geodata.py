@@ -8,7 +8,6 @@ from importlib.resources import files
 
 import numpy as np
 from weather_skills_core.cf import cf_dim
-from weather_skills_core.errors import UsageError
 from weather_skills_core.standard_utils import ensure_normalized_longitude, lat_slice
 
 # Natural Earth scale vs map span (max of the lon/lat extent in degrees).
@@ -115,7 +114,7 @@ def _bundled_country_geoms(clip_geom):
     return [shapely.boundary(g) for g in geoms if g is not None and not g.is_empty]
 
 
-# Base-map layers ``layout.meta.overlays`` can switch on or off, in draw order (later on top).
+# Base-map layers, in draw order (later on top); each is a trace with this uid.
 OVERLAY_NAMES = ("admin1", "rivers", "lakes", "borders", "coastline")
 
 
@@ -177,58 +176,17 @@ def dateline_bbox(datasets):
     return None
 
 
-def subset_spatial(da, lat_dim, lon_dim, bbox_nwse, region_polygon, extent_vals):
-    if bbox_nwse is None and region_polygon is None:
-        return da, extent_vals
-    import xarray as xr
-
+def subset_spatial(da, lat_dim, lon_dim, bbox_nwse):
+    """Cut a grid to ``bbox_nwse``; ``W > E`` (across the dateline) shifts it onto one window."""
     da = ensure_normalized_longitude(da, lon_dim)
-    if bbox_nwse is not None:
-        r_n, r_w, r_s, r_e = bbox_nwse
-        da = da.sel({lat_dim: lat_slice(da[lat_dim].values, r_n, r_s)})
-        if r_w > r_e:
-            da = da.where((da[lon_dim] >= r_w) | (da[lon_dim] <= r_e), drop=True)
-        else:
-            da = da.sel({lon_dim: slice(r_w, r_e)})
-    if region_polygon is not None:
-        import shapely
-
-        lon_grid, lat_grid = np.meshgrid(da[lon_dim].values, da[lat_dim].values)
-        mask = shapely.contains_xy(region_polygon, lon_grid, lat_grid)
-        da = da.where(xr.DataArray(mask, dims=(lat_dim, lon_dim)))
-    if bbox_nwse is not None:
-        r_n, r_w, r_s, r_e = bbox_nwse
-        if r_w > r_e:
-            shifted = ((da[lon_dim] - r_w) % 360.0) + r_w
-            da = da.assign_coords({lon_dim: shifted}).sortby(lon_dim)
-        if extent_vals is None:
-            if r_w > r_e:
-                extent_vals = [float(r_w), float(r_e) + 360.0, float(r_s), float(r_n)]
-            else:
-                extent_vals = [float(r_w), float(r_e), float(r_s), float(r_n)]
-    return da, extent_vals
-
-
-def slice_bbox_mask(da, lat_dim, lon_dim, bbox, polygon, label):
-    """Slice a lat/lon field to ``bbox`` / polygon; error if the grid is empty."""
-    if bbox is None and polygon is None:
-        return da
-    da, _ = subset_spatial(da, lat_dim, lon_dim, bbox, polygon, None)
-    if polygon is not None:
-        import shapely
-
-        lon_grid, lat_grid = np.meshgrid(da[lon_dim].values, da[lat_dim].values)
-        if not bool(shapely.contains_xy(polygon, lon_grid, lat_grid).any()):
-            print(
-                f"Warning: geo.mask_geojson polygon does not intersect {label}; "
-                "its panels will be entirely empty.",
-                file=sys.stderr,
-            )
-    if da.sizes.get(lat_dim, 0) == 0 or da.sizes.get(lon_dim, 0) == 0:
-        raise UsageError(
-            f"selection produced an empty grid on {label} "
-            "(no cells remain after geo.bbox / geo.mask_geojson); nothing to plot."
-        )
+    r_n, r_w, r_s, r_e = bbox_nwse
+    da = da.sel({lat_dim: lat_slice(da[lat_dim].values, r_n, r_s)})
+    if r_w > r_e:
+        da = da.where((da[lon_dim] >= r_w) | (da[lon_dim] <= r_e), drop=True)
+        shifted = ((da[lon_dim] - r_w) % 360.0) + r_w
+        da = da.assign_coords({lon_dim: shifted}).sortby(lon_dim)
+    else:
+        da = da.sel({lon_dim: slice(r_w, r_e)})
     return da
 
 
@@ -262,40 +220,21 @@ def axis_kind(values):
     return None
 
 
-def subset_points(da, bbox_nwse, region_polygon):
-    """Filter station / point samples to ``--bbox`` / ``--mask-geojson``."""
-    import numpy as np
+def subset_points(da, bbox_nwse):
+    """Station / point samples inside ``bbox_nwse``."""
     import xarray as xr
 
-    lat_name = cf_dim(da, "latitude")
-    lon_name = cf_dim(da, "longitude")
-    if lat_name is None or lon_name is None:
-        raise UsageError(
-            f"geo.bbox / geo.mask_geojson need latitude/longitude coordinates; got dims {list(da.dims)}"
-        )
-    lat = np.asarray(da[lat_name].values)
-    lon = np.asarray(da[lon_name].values)
-    keep = np.ones(np.broadcast(lat, lon).shape, dtype=bool)
-    lat_b, lon_b = np.broadcast_arrays(lat, lon)
-    if bbox_nwse is not None:
-        r_n, r_w, r_s, r_e = bbox_nwse
-        keep &= (lat_b >= r_s) & (lat_b <= r_n)
-        if r_w > r_e:
-            keep &= (lon_b >= r_w) | (lon_b <= r_e)
-        else:
-            keep &= (lon_b >= r_w) & (lon_b <= r_e)
-    if region_polygon is not None:
-        import shapely
-
-        keep &= shapely.contains_xy(region_polygon, lon_b, lat_b)
-        if not bool(keep.any()):
-            print(
-                "Warning: geo.mask_geojson polygon does not intersect the points; "
-                "the rose will be empty.",
-                file=sys.stderr,
-            )
-    keep_da = xr.DataArray(keep, dims=da[lat_name].dims)
-    return da.where(keep_da, drop=True)
+    lat_name, lon_name = cf_dim(da, "latitude"), cf_dim(da, "longitude")
+    lat_b, lon_b = np.broadcast_arrays(
+        np.asarray(da[lat_name].values), np.asarray(da[lon_name].values)
+    )
+    r_n, r_w, r_s, r_e = bbox_nwse
+    keep = (lat_b >= r_s) & (lat_b <= r_n)
+    if r_w > r_e:
+        keep &= (lon_b >= r_w) | (lon_b <= r_e)
+    else:
+        keep &= (lon_b >= r_w) & (lon_b <= r_e)
+    return da.where(xr.DataArray(keep, dims=da[lat_name].dims), drop=True)
 
 
 def point_dim(ds):
@@ -313,19 +252,6 @@ _NE_LAYERS = {
     "coastline": ("physical", "coastline", None),
 }
 _OVERLAY_CACHE: dict = {}
-
-
-def overlay_settings(value) -> dict:
-    """``layout.meta.overlays`` → ``{name: False | style dict}`` (True means default style)."""
-    if value is None or value is True:
-        value = {}
-    if value is False:
-        return dict.fromkeys(OVERLAY_NAMES, False)
-    out = {}
-    for name in OVERLAY_NAMES:
-        choice = value.get(name)
-        out[name] = choice if choice is not None else None
-    return out
 
 
 def overlay_geoms(extent, settings: dict):
