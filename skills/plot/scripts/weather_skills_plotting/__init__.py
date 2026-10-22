@@ -110,7 +110,13 @@ def export(fig, output, *, datasets=None, scale=None):
             include_plotlyjs=True,
             full_html=True,
             auto_play=False,
-            config={"responsive": True, "scrollZoom": True},
+            # No Plotly Cloud upload or Plotly logo link.
+            config={
+                "responsive": True,
+                "scrollZoom": True,
+                "showSendToCloud": False,
+                "displaylogo": False,
+            },
         )
         return output
     import plotly.io as pio
