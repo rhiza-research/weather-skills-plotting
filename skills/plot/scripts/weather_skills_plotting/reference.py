@@ -257,8 +257,14 @@ _RECIPES = [
         '{"uid": "forecast-mean", "meta": {"source": {"isel": {"step": [0, 2, 4]}}}}]}',
     ),
     (
-        "Animation (--animate -i GRID -o out.html): first 12 steps",
+        "Animation (--animate -i GRID -o out.html or out.gif): first 12 steps",
         '{"data": [{"uid": "0", "meta": {"source": {"isel": {"step": {"start": 0, "stop": 12}}}}}]}',
+    ),
+    (
+        "Animation speed, HTML and GIF alike: 900 ms per frame (a Play button replaces the "
+        "default controls)",
+        '{"layout": {"updatemenus": [{"type": "buttons", "buttons": [{"label": "Play", '
+        '"method": "animate", "args": [null, {"frame": {"duration": 900}}]}]}]}}',
     ),
 ]
 

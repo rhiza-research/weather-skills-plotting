@@ -135,10 +135,24 @@ def run(
     fig = panels = compile(merged, datasets, theme=theme)
     gif = None
     if animate:
-        from weather_skills_plotting.animate import animate_figure, estimate_html_mb
+        from weather_skills_plotting.animate import (
+            DEFAULT_DURATION_MS,
+            animate_figure,
+            estimate_html_mb,
+        )
 
         # The skeleton adds only layout.meta, so the merged layout is the user's own.
         user_layout = merged.get("layout") or {}
+        # A GIF plays at the spec's Play button speed, as the HTML does: the first
+        # animate button in layout.updatemenus with a frame duration.
+        gif_ms = DEFAULT_DURATION_MS
+        buttons = [b for m in user_layout.get("updatemenus") or [] for b in m.get("buttons") or []]
+        for button in buttons:
+            args = button.get("args") or []
+            frame = (args[1] or {}).get("frame") or {} if len(args) > 1 else {}
+            if button.get("method") == "animate" and frame.get("duration") is not None:
+                gif_ms = frame["duration"]
+                break
         if ".gif" in suffixes:
             # A GIF plays by itself: no play / pause or slider.
             gif = animate_figure(fig, user_layout=user_layout, controls=False)
@@ -170,10 +184,10 @@ def run(
     written = []
     for path in outputs:
         if path.suffix.lower() == ".gif":
-            from weather_skills_plotting.animate import DEFAULT_DURATION_MS, write_gif
+            from weather_skills_plotting.animate import write_gif
             from weather_skills_plotting.qa import report_figure
 
-            written.append(write_gif(gif, path, duration=DEFAULT_DURATION_MS, scale=scale))
+            written.append(write_gif(gif, path, duration=gif_ms, scale=scale))
             # The panel figure holds every frame's data for the finite counts.
             report_figure(path, datasets, fig=panels)
         else:
