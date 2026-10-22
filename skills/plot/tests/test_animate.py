@@ -74,11 +74,13 @@ def test_frames_share_one_color_axis(grid, animation_fn, tmp_path):
     assert {f["data"][0].get("coloraxis") for f in frames} == {"coloraxis"}
 
 
-def test_animation_speed_and_user_slider(grid, animation_fn, tmp_path):
+def test_user_controls_set_the_speed(grid, animation_fn, tmp_path):
+    # Plotly's own updatemenus / sliders replace the default controls, frame duration too.
     out = tmp_path / "v.html"
+    play = {"label": "Play", "method": "animate", "args": [None, {"frame": {"duration": 120}}]}
     spec = {
         "layout": {
-            "meta": {"animation": {"duration": 120}},
+            "updatemenus": [{"type": "buttons", "buttons": [play]}],
             "sliders": [{"steps": [{"label": "mine", "method": "animate", "args": [["0"]]}]}],
         }
     }
@@ -115,12 +117,11 @@ def test_gif_one_frame_per_time(grid, animation_fn, tmp_path, capsys):
     from weather_skills_core.provenance import load_figure_history
 
     out = tmp_path / "v.gif"
-    spec = {"layout": {"meta": {"animation": {"duration": 120}}}}
-    run_skill(animation_fn, "--animate", "-i", grid, "--spec", json.dumps(spec), "-o", str(out))
+    run_skill(animation_fn, "--animate", "-i", grid, "-o", str(out))
     assert "plot hash:" in capsys.readouterr().out
     with Image.open(out) as img:
         assert img.n_frames == 4
-        assert img.info["duration"] == 120
+        assert img.info["duration"] == 500
         assert img.info["loop"] == 0
         firsts = []
         for i in range(img.n_frames):
@@ -194,10 +195,12 @@ def test_outline_layer_on_every_frame(grid, edge, animation_fn, tmp_path, capsys
     assert all(outline not in f["traces"] for f in frames)
 
 
-def test_mask_layer(grid, edge, animation_fn, capsys):
-    run_skill(animation_fn, "--animate", "-i", grid, "--layer", f"mask:{edge}", "--dump-spec", "-")
-    spec = json.loads(capsys.readouterr().out)
-    assert spec["layout"]["meta"]["geo"]["mask_geojson"] == edge
+def test_mask_layer_is_gone(grid, edge, animation_fn, capsys):
+    # Masking is clip-region's job.
+    with pytest.raises(SystemExit) as exc:
+        run_skill(animation_fn, "--animate", "-i", grid, "--layer", f"mask:{edge}", "-o", "x.html")
+    assert exc.value.code == 2
+    assert "KIND one of" in capsys.readouterr().err
 
 
 def test_layers_animate_like_a_still_map(grid, edge, animation_fn, tmp_path):

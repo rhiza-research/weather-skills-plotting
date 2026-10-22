@@ -122,33 +122,6 @@ def along_dim(da, along: str | None) -> str | None:
     return next((name for name in names_for(preferred) if name in da.dims), None)
 
 
-ALONG_COLOR_SAME = "same"
-
-
-ALONG_COLOR_CYCLE = "cycle"
-
-
-_ALONG_COLOR_ALIASES = {
-    "same": ALONG_COLOR_SAME,
-    "shared": ALONG_COLOR_SAME,
-    "cycle": ALONG_COLOR_CYCLE,
-    "distinct": ALONG_COLOR_CYCLE,
-}
-
-
-def parse_along_color(value) -> str:
-    """``traces[].along_color``: ``same`` (default) or ``cycle``."""
-    if value is None or value is False or value == "":
-        return ALONG_COLOR_SAME
-    raw = str(value).strip().lower().replace("_", "-")
-    if raw in _ALONG_COLOR_ALIASES:
-        return _ALONG_COLOR_ALIASES[raw]
-    raise UsageError(
-        "traces[].along_color must be 'same' (one color for every along member) "
-        f"or 'cycle' (a distinct color per value); got {value!r}."
-    )
-
-
 def along_member_label(value) -> str:
     """Short legend label for one coordinate along ``traces[].along``."""
 
@@ -168,37 +141,6 @@ def along_member_label(value) -> str:
         num = float(item)
         return str(int(num)) if num.is_integer() else str(num)
     return str(item).strip()
-
-
-def parse_band(value) -> tuple[float, float] | None:
-    """Parse ``--band`` / spec ``band`` as two percentiles, default ``10,90``."""
-    if value is None or value is False or value == "":
-        return None
-    if value is True:
-        return (10.0, 90.0)
-    if isinstance(value, dict):
-        q = value.get("q") or value.get("percentiles")
-        if q is None:
-            lo = value.get("low", 10)
-            hi = value.get("high", 90)
-            value = (lo, hi)
-        else:
-            value = q
-    if isinstance(value, (list, tuple)):
-        if len(value) != 2:
-            raise UsageError("traces[].band must be two percentiles, e.g. [10, 90]")
-        lo, hi = float(value[0]), float(value[1])
-    else:
-        raw = str(value).strip().lower().replace("q", "")
-        parts = [p.strip() for p in raw.split(",") if p.strip()]
-        if len(parts) != 2:
-            raise UsageError("traces[].band must be two percentiles, e.g. [10, 90]")
-        lo, hi = float(parts[0]), float(parts[1])
-    if not 0 <= lo < hi <= 100:
-        raise UsageError(
-            f"traces[].band percentiles must satisfy 0 ≤ low < high ≤ 100; got {lo},{hi}"
-        )
-    return (lo, hi)
 
 
 def check_color_bound_counts(colors, bounds, under=None, over=None, *, loc="palette"):

@@ -6,7 +6,19 @@ import pytest
 from skill_conftest import load_skill, make_forecast, run_skill, write_zarr
 
 mod = load_skill("plot", "plot")
-POINT = {"layout": {"meta": {"geo": {"point": {"lat": 1.2, "lon": 10.9}}}}}
+
+
+def at_point(ds, lat=1.2, lon=10.9):
+    """The nearest cell as point-value writes it: one station_id, lat/lon coords."""
+    cell = ds.sel(latitude=lat, longitude=lon, method="nearest")
+    glat, glon = float(cell["latitude"]), float(cell["longitude"])
+    cell = cell.drop_vars(["latitude", "longitude"]).expand_dims(station_id=["P0"])
+    return cell.assign_coords(
+        latitude=("station_id", [lat]),
+        longitude=("station_id", [lon]),
+        grid_latitude=("station_id", [glat]),
+        grid_longitude=("station_id", [glon]),
+    )
 
 
 @pytest.fixture(scope="module")
@@ -16,8 +28,8 @@ def med_fn():
 
 @pytest.fixture
 def inputs(tmp_path):
-    fc = write_zarr(make_forecast(n_step=8, members=5, fill=3.0), tmp_path / "fc.zarr")
-    mc = write_zarr(make_forecast(n_step=8, members=9, fill=1.0), tmp_path / "mc.zarr")
+    fc = write_zarr(at_point(make_forecast(n_step=8, members=5, fill=3.0)), tmp_path / "fc.zarr")
+    mc = write_zarr(at_point(make_forecast(n_step=8, members=9, fill=1.0)), tmp_path / "mc.zarr")
     return str(fc), str(mc)
 
 
@@ -29,8 +41,6 @@ def test_spec_has_two_boxes_and_a_mean_line(inputs, med_fn, capsys):
         inputs[0],
         "-i",
         inputs[1],
-        "--spec",
-        json.dumps(POINT),
         "--dump-spec",
         "-",
     )
@@ -55,22 +65,21 @@ def test_renders(inputs, med_fn, tmp_path):
         inputs[0],
         "-i",
         inputs[1],
-        "--spec",
-        json.dumps(POINT),
         "-o",
         str(out),
     )
     assert out.is_file()
 
 
-def test_point_required(inputs, med_fn, capsys):
+def test_grid_needs_point_value(tmp_path, med_fn, capsys):
+    grid = str(write_zarr(make_forecast(n_step=3, members=3), tmp_path / "grid.zarr"))
     with pytest.raises(SystemExit):
-        run_skill(med_fn, "--mediogram", "-i", inputs[0], "-i", inputs[1], "-o", "x.png")
-    assert "geo" in capsys.readouterr().err
+        run_skill(med_fn, "--mediogram", "-i", grid, "-i", grid, "-o", "x.png")
+    assert "run point-value" in capsys.readouterr().err
 
 
 def test_needs_number_and_step(tmp_path, med_fn, capsys):
-    fc = write_zarr(make_forecast(n_step=3), tmp_path / "fc.zarr")
+    fc = write_zarr(at_point(make_forecast(n_step=3)), tmp_path / "fc.zarr")
     with pytest.raises(SystemExit):
         run_skill(
             med_fn,
@@ -79,8 +88,6 @@ def test_needs_number_and_step(tmp_path, med_fn, capsys):
             str(fc),
             "-i",
             str(fc),
-            "--spec",
-            json.dumps(POINT),
             "-o",
             "x.png",
         )
