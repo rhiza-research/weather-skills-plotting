@@ -247,3 +247,16 @@ def test_slider_starts_right_of_play_pause(grid, animation_fn, tmp_path):
     # Both sit on one row under the map; the slider's left pad clears the two buttons.
     assert menu["x"] == slider["x"] == 0 and menu["y"] == slider["y"] == 0
     assert slider["len"] == 1 and slider["pad"]["l"] >= 150
+
+
+def test_filled_contour_frames_share_levels(grid, animation_fn, tmp_path):
+    # Plotly's automatic levels follow each frame's values; the colorbar must not.
+    out = tmp_path / "v.html"
+    spec = {"data": [{"uid": "0", "type": "contour"}]}
+    run_skill(animation_fn, "--animate", "-i", grid, "-o", str(out), "--spec", json.dumps(spec))
+    _, frames = figure_of(out)
+    levels = {json.dumps(f["data"][0]["contours"], sort_keys=True) for f in frames}
+    assert len(levels) == 1
+    contours = json.loads(levels.pop())
+    assert contours["start"] <= 0 and contours["end"] >= 3
+    assert all(f["data"][0]["autocontour"] is False for f in frames)
