@@ -117,11 +117,14 @@ def test_gif_one_frame_per_time(grid, animation_fn, tmp_path, capsys):
     from weather_skills_core.provenance import load_figure_history
 
     out = tmp_path / "v.gif"
-    run_skill(animation_fn, "--animate", "-i", grid, "-o", str(out))
+    # The Play button's frame duration sets the GIF speed too.
+    play = {"label": "Play", "method": "animate", "args": [None, {"frame": {"duration": 120}}]}
+    spec = {"layout": {"updatemenus": [{"type": "buttons", "buttons": [play]}]}}
+    run_skill(animation_fn, "--animate", "-i", grid, "--spec", json.dumps(spec), "-o", str(out))
     assert "plot hash:" in capsys.readouterr().out
     with Image.open(out) as img:
         assert img.n_frames == 4
-        assert img.info["duration"] == 500
+        assert img.info["duration"] == 120
         assert img.info["loop"] == 0
         firsts = []
         for i in range(img.n_frames):
