@@ -104,7 +104,7 @@ def run(
     ``output`` is one path, or a list (repeated ``-o``): the same figure is written to each.
 
     ``animate`` turns the figure's map panels into frames of one animated map
-    (``plot --animate``); the output must then be HTML.
+    (``plot --animate``); the output must then be HTML or GIF.
     """
     from weather_skills_plotting import SpecArg, compile, export
     from weather_skills_plotting.themes import load_theme
@@ -130,27 +130,37 @@ def run(
     if output is None:
         raise UsageError("--output is required unless --dump-spec is set")
     outputs = [Path(p) for p in (output if isinstance(output, list) else [output])]
+    suffixes = {path.suffix.lower() for path in outputs}
     for path in outputs:
-        if animate and path.suffix.lower() not in (".html", ".htm"):
+        if animate and path.suffix.lower() not in (".html", ".htm", ".gif"):
             raise UsageError(
-                f"output {path.name!r} must end in .html: an animation plays only in a "
-                "browser. For a still image of one time, drop --animate"
+                f"output {path.name!r} must end in .html or .gif: an animation plays in a "
+                "browser or as a GIF. For a still image of one time, drop --animate"
             )
-    fig = compile(merged, datasets, theme=theme)
+        if not animate and path.suffix.lower() == ".gif":
+            raise UsageError(
+                f"output {path.name!r}: a GIF plays an animation; add --animate, or write a "
+                "still map to .png"
+            )
+    fig = panels = compile(merged, datasets, theme=theme)
     layout_meta = (merged.get("layout") or {}).get("meta") or {}
+    animation = layout_meta.get("animation") or {}
+    gif = None
     if animate:
         from weather_skills_plotting.animate import animate_figure, estimate_html_mb
 
         # The skeleton adds only layout.meta, so the merged layout is the user's own.
-        fig = animate_figure(
-            fig, user_layout=merged.get("layout") or {}, animation=layout_meta.get("animation")
-        )
+        user_layout = merged.get("layout") or {}
+        if ".gif" in suffixes:
+            # A GIF plays by itself: no play / pause or slider.
+            gif = animate_figure(fig, user_layout=user_layout, animation=animation, controls=False)
+        fig = animate_figure(fig, user_layout=user_layout, animation=animation)
         size = estimate_html_mb(fig)
         print(
             f"animation: {len(fig.frames)} frames, {size:.1f} MB of figure data",
             file=sys.stderr,
         )
-        if size > LARGE_HTML_MB:
+        if size > LARGE_HTML_MB and suffixes & {".html", ".htm"}:
             warn(
                 f"the HTML will be large (~{size:.0f} MB) and slow to open; select fewer frames "
                 "(meta.source.isel / sel) or a smaller layout.meta.geo.bbox"
@@ -170,7 +180,18 @@ def run(
                 f"export.scale {scale:g} writes a {width * scale:.0f}x{height * scale:.0f} px "
                 f"image ({width * height * scale**2 / 1e6:.0f} MP); 2-4 is plenty for print"
             )
-    written = [export(fig, path, datasets=datasets, scale=scale) for path in outputs]
+    written = []
+    for path in outputs:
+        if path.suffix.lower() == ".gif":
+            from weather_skills_plotting.animate import DEFAULT_DURATION_MS, write_gif
+            from weather_skills_plotting.qa import report_figure
+
+            duration = animation.get("duration", DEFAULT_DURATION_MS)
+            written.append(write_gif(gif, path, duration=duration, scale=scale))
+            # The panel figure holds every frame's data for the finite counts.
+            report_figure(path, datasets, fig=panels)
+        else:
+            written.append(export(fig, path, datasets=datasets, scale=scale))
     return written if isinstance(output, list) else written[0]
 
 

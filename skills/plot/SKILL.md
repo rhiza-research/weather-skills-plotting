@@ -1,6 +1,6 @@
 ---
 name: plot
-description: "Draw weather-skills Zarrs as maps (heatmap, contour, stations, wind arrows), time series, xy scatter plots, wind roses, forecast verification grids (obs, lead-week forecasts and their hits / bias / MAE maps), ECMWF-style mediograms (forecast vs model-climate ensembles at a point), or animated HTML maps through time, saved as PNG, JPG, or interactive HTML. Titles, colors, panels, and layout are set with a standard Plotly figure JSON."
+description: "Draw weather-skills Zarrs as maps (heatmap, contour, stations, wind arrows), time series, xy scatter plots, wind roses, forecast verification grids (obs, lead-week forecasts and their hits / bias / MAE maps), ECMWF-style mediograms (forecast vs model-climate ensembles at a point), or animated maps through time, saved as PNG, JPG, interactive HTML, or GIF. Titles, colors, panels, and layout are set with a standard Plotly figure JSON."
 license: MIT
 compatibility: Requires Python 3.12 and uv. PNG/JPG export needs Chrome (installed, or `plotly_get_chrome -y`). Self-contained; the plotting library ships in scripts/.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py *)
@@ -32,6 +32,8 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --obs chirps_week.zarr --forecast ecm
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --mediogram -i forecast.zarr -i mclimate.zarr -o mediogram.png --spec '{"layout": {"meta": {"geo": {"point": {"lat": -1.3, "lon": 36.8}}}}}'
 # Any map animated through time, as interactive HTML: here rain under isobars, inside an outline
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --animate --layer heatmap:rain_daily.zarr --layer contour:msl_daily.zarr --layer outline:kenya.geojson -o rain.html
+# The same animation as a looping GIF, for slides or chat
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --animate -i rain_daily.zarr -o rain.gif
 ```
 
 The plot type follows the data: a lat/lon grid is a colored map, stations are colored markers, 1-D series are lines on one time axis. `meta.x` / `meta.y` scatter two variables or coordinates; a name coordinate such as `county` becomes a category axis (a dot chart: `"meta": {"x": "precip_7d", "y": "county"}`). `--obs`/`--forecast`/`--verify` and `--mediogram` pick the two special figures (sections below); `--animate` plays any map through time instead of drawing side-by-side panels. Use one of the three at a time.
@@ -41,11 +43,11 @@ The plot type follows the data: a lat/lon grid is a colored map, stations are co
 - `--layer` — `KIND:PATH` or `KIND:PATH=NAME` to stack on one map; repeat. Kinds: `heatmap`, `contour` (over a heatmap: labeled black lines, every 4 hPa for sea-level pressure; `"contours": {"coloring": "fill"}` fills it), `scatter` (stations; `"mode": "markers+text"` labels each with its `name` coordinate, else its id; local-extrema highs / lows print as a blue H / red L over the central value, restyled by a trace with that layer's uid), `quiver` (wind u/v: a speed field NAME and arrows NAME-arrows, each picking its own `isel` / `sel`), `outline` and `mask` (GeoJSON). `outline` and `mask` layers also combine with `-i` inputs (`-i grid.zarr --layer outline:counties.geojson`); `-i` itself takes Zarr paths only.
 - `--obs`, `--forecast`, `--verify` — verification grid: the observation for one week, then each lead's forecast (repeat, week-1 first) and its verify-skill output (once per `--forecast`, same order). See **Verification grid**.
 - `--mediogram` — forecast vs model climate at one point; pass `-i` twice (forecast, then m-climate). See **Mediogram**.
-- `--animate` — the same map, with its times or steps played as frames; takes the same `-i` / `--layer` inputs. `-o` must end in `.html`. See **Animation**.
+- `--animate` — the same map, with its times or steps played as frames; takes the same `-i` / `--layer` inputs. `-o` must end in `.html` or `.gif`. See **Animation**.
 - `--spec` — Plotly figure JSON, inline or a file path.
 - `--theme-file` — house style: Plotly `template`, `palettes`, per-field `defaults`, base-map `overlays` (see Colors); or a shipped theme by name, e.g. `tropical_tidbits`.
 - `--dump-spec` — print (`-`) or save (a path) the spec, without drawing.
-- `--output`, `-o` — `.png`, `.jpg`, or `.html`.
+- `--output`, `-o` — `.png`, `.jpg`, `.html`, or `.gif` (`--animate` only).
 
 ### Customizing with `--spec`
 `--spec` changes the defaults. It takes [Plotly figure](https://plotly.com/python/reference/) JSON, `{"data": [...], "layout": {...}}`; write only the parts you change.
@@ -152,10 +154,11 @@ Add `--animate` to any map command (`-i GRID`, or a `--layer` stack of heatmap, 
 - The base map (coastlines, borders, lakes, rivers; admin-1 lines on small boxes) is the still map's and stays on every frame. Add boundaries with `--layer outline:region.geojson` (resolve-region writes one) and clip with `--layer mask:region.geojson`, as on a still map.
 - Every dim other than the map's own and the animated one must go (`isel` / `sel`, or summarize-dim); `{"data": [{"uid": "0", "meta": {"facet": "number"}}]}` animates another dim. Layers must cover the same times. It plays one map: stack inputs with `--layer`, not several `-i`. Time series and other non-map plots don't animate.
 - Speed: `{"layout": {"meta": {"animation": {"duration": 300}}}}` (ms per frame, default 500; `transition` ms between frames). Your own `layout.updatemenus` / `sliders` replace the default controls.
+- GIF: `-o out.gif` writes the frames as a looping GIF at the same `duration`, with no play / pause or slider. Each frame is drawn like a PNG (`layout.meta.export.scale` sets pixel density); GIFs hold 256 colors per frame, so smooth color scales band slightly. Repeat `-o` for both (`-o rain.html -o rain.gif`).
 - Size grows with frames × cells; stderr gives the frame count and data size and warns above 50 MB. Pick fewer frames (`{"step": {"start": 0, "stop": 12}}`) or a smaller `bbox`.
 
 ### Provenance
-The file's history (`weather_skills_history`) is embedded in the PNG metadata or HTML `<meta>` tag; read it with the `provenance` skill. A PNG/JPG with a complete history carries a small red seal in the bottom-right corner.
+The file's history (`weather_skills_history`) is embedded in the PNG / GIF metadata or HTML `<meta>` tag; read it with the `provenance` skill. A PNG/JPG/GIF with a complete history carries a small red seal in the bottom-right corner.
 
 ### More examples
 ```bash

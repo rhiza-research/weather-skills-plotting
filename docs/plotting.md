@@ -27,7 +27,7 @@ flowchart LR
   Validate --> Dump["--dump-spec"]
   Validate --> Bind[bind.py: fill arrays from Zarrs]
   Bind --> Assemble[figure.py: panels, color axes, overlays]
-  Assemble --> Out["PNG / JPG (kaleido) or HTML"]
+  Assemble --> Out["PNG / JPG / GIF (kaleido) or HTML"]
 ```
 
 ## Plotting computes as little as possible
@@ -103,9 +103,10 @@ time step (mm/h from `unit-convert`), which keeps its units.
 ## Output
 
 The `-o` suffix picks the format: `.png` or `.jpg` (kaleido, needs Chrome) or
-`.html` (self-contained, interactive). Images print a pixel `plot hash` and a
-`data: not null | NULL` line. Provenance is embedded in PNG `tEXt` chunks or
-an HTML `<meta>` tag.
+`.html` (self-contained, interactive), or `.gif` for `--animate` (each frame
+drawn by kaleido, joined by Pillow). Images print a pixel `plot hash` and a
+`data: not null | NULL` line. Provenance is embedded in PNG `tEXt` chunks, the
+GIF comment block, or an HTML `<meta>` tag.
 
 ```python
 from weather_skills_plotting import compile, export
