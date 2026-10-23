@@ -118,10 +118,15 @@ def _bundled_country_geoms(clip_geom):
             poly = shape(geom)
             if not poly.intersects(clip_geom):
                 continue
-            geoms.append(poly.intersection(clip_geom))
+            clipped = poly.intersection(clip_geom)
         except Exception:  # noqa: BLE001
             continue
-    return [shapely.boundary(g) for g in geoms if g is not None and not g.is_empty]
+        # Clipping at the map edge can leave a collection with line or point slivers,
+        # which have no boundary; outline only the polygon parts.
+        for part in getattr(clipped, "geoms", [clipped]):
+            if part.geom_type in ("Polygon", "MultiPolygon") and not part.is_empty:
+                geoms.append(shapely.boundary(part))
+    return geoms
 
 
 # Base-map layers ``layout.meta.overlays`` can switch on or off, in draw order (later on top).
@@ -345,7 +350,8 @@ def overlay_geoms(extent, settings: dict):
 
     The Natural Earth scale follows the map span; admin-1 only appears on
     country-scale views unless set explicitly. A layer that cannot be fetched
-    warns and is skipped, so the map still renders.
+    warns and is skipped, so the map still renders; if borders or coastline
+    cannot be fetched, the country outlines bundled with core stand in for both.
     """
     scale = boundary_layers(extent)
     key = (
@@ -368,6 +374,7 @@ def overlay_geoms(extent, settings: dict):
             out = [("borders", unwrap_geoms(geoms, extent[0]) if extent[1] > 180 else geoms)]
         _OVERLAY_CACHE[key] = out
         return out
+    bundled = False
     for name in OVERLAY_NAMES:
         choice = settings.get(name)
         if choice is False:
@@ -379,8 +386,20 @@ def overlay_geoms(extent, settings: dict):
             featurecla = {"borders": True, "disputed": False}.get(name)
             geoms = clip_ne_geoms(res or scale["scale"], category, ne_name, clip, featurecla)
         except Exception as exc:  # noqa: BLE001
-            print(f"Warning: {name} overlay unavailable ({exc}); skipping.", file=sys.stderr)
-            continue
+            if name not in ("borders", "coastline"):
+                print(f"Warning: {name} overlay unavailable ({exc}); skipping.", file=sys.stderr)
+                continue
+            if bundled:
+                # The bundled outlines already drawn include this layer's lines.
+                continue
+            # Country outlines trace both land borders and coasts.
+            print(
+                f"Warning: {name} overlay unavailable ({exc}); "
+                "drawing the bundled country outlines instead.",
+                file=sys.stderr,
+            )
+            geoms = _bundled_country_geoms(clip)
+            bundled = True
         if extent[1] > 180.0:
             geoms = unwrap_geoms(geoms, extent[0])
         if geoms:
