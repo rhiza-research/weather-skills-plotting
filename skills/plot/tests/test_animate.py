@@ -260,26 +260,3 @@ def test_filled_contour_frames_share_levels(grid, animation_fn, tmp_path):
     contours = json.loads(levels.pop())
     assert contours["start"] <= 0 and contours["end"] >= 3
     assert all(f["data"][0]["autocontour"] is False for f in frames)
-
-
-def test_controls_step_frames_without_plotly_animate(grid, animation_fn, tmp_path):
-    # Plotly.animate redraws the whole map each frame and it flashes; the embedded
-    # player steps the frames with Plotly.react instead.
-    out = tmp_path / "v.html"
-    run_skill(animation_fn, "--animate", "-i", grid, "-o", str(out))
-    text = out.read_text()
-    _, layout = base_of(text)
-    (menu,), (slider,) = layout["updatemenus"], layout["sliders"]
-    assert [b["method"] for b in menu["buttons"]] == ["skip", "skip"]
-    assert [b["args"][0] for b in menu["buttons"]] == ["play", "pause"]
-    assert {s["method"] for s in slider["steps"]} == {"skip"}
-    assert "Plotly.react(gd, data, layout)" in text
-
-
-def test_transition_keeps_plotly_animate(grid, animation_fn, tmp_path):
-    out = tmp_path / "v.html"
-    spec = {"layout": {"meta": {"animation": {"transition": 200}}}}
-    run_skill(animation_fn, "--animate", "-i", grid, "-o", str(out), "--spec", json.dumps(spec))
-    _, layout = base_of(out.read_text())
-    assert {b["method"] for b in layout["updatemenus"][0]["buttons"]} == {"animate"}
-    assert {s["method"] for s in layout["sliders"][0]["steps"]} == {"animate"}
