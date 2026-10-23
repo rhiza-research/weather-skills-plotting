@@ -247,3 +247,36 @@ def test_slider_starts_right_of_play_pause(grid, animation_fn, tmp_path):
     # Both sit on one row under the map; the slider's left pad clears the two buttons.
     assert menu["x"] == slider["x"] == 0 and menu["y"] == slider["y"] == 0
     assert slider["len"] == 1 and slider["pad"]["l"] >= 150
+
+
+def test_filled_contour_frames_share_levels(grid, animation_fn, tmp_path):
+    # Plotly's automatic levels follow each frame's values; the colorbar must not.
+    out = tmp_path / "v.html"
+    spec = {"data": [{"uid": "0", "type": "contour"}]}
+    run_skill(animation_fn, "--animate", "-i", grid, "-o", str(out), "--spec", json.dumps(spec))
+    _, frames = figure_of(out)
+    levels = {json.dumps(f["data"][0]["contours"], sort_keys=True) for f in frames}
+    assert len(levels) == 1
+    contours = json.loads(levels.pop())
+    assert contours["start"] <= 0 and contours["end"] >= 3
+    assert all(f["data"][0]["autocontour"] is False for f in frames)
+
+
+def test_changing_scatter_is_scattergl_in_html(tmp_path, animation_fn):
+    # Plotly.animate blanks the heatmap while it redraws a changing SVG scatter.
+    ds = make_gridded(n_time=3, name="u10")
+    ds["v10"] = ds["u10"] * 0 + 1.0
+    ds["u10"].values = np.arange(3.0)[:, None, None] * np.ones(ds["u10"].shape) + 1
+    for v in ("u10", "v10"):
+        ds[v].attrs.update(units="m s-1")
+    wind = str(write_zarr(ds, tmp_path / "wind.zarr"))
+    out = tmp_path / "v.html"
+    run_skill(animation_fn, "--animate", "--layer", f"quiver:{wind}", "-o", str(out))
+    text, frames = figure_of(out)
+    data, _ = base_of(text)
+    moving = frames[0]["traces"]
+    assert any("arrows" in data[i]["uid"] for i in moving)
+    for i in moving:
+        if "arrows" in data[i]["uid"]:
+            assert data[i]["type"] == "scattergl"
+            assert {f["data"][f["traces"].index(i)]["type"] for f in frames} == {"scattergl"}
