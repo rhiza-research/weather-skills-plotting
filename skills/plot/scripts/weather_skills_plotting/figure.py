@@ -345,6 +345,20 @@ def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
         lo, hi = lo - 1, hi + 1
     axis.setdefault("cmin", lo)
     axis.setdefault("cmax", hi)
+    lo, hi = float(user.get("cmin", lo)), float(user.get("cmax", hi))
+    for tr in contour_traces:
+        contours = tr.setdefault("contours", {})
+        if tr.get("autocontour") or {"start", "end", "size"} & contours.keys() or hi <= lo:
+            continue
+        # Plotly picks levels from each panel's own values, so panels and animation
+        # frames would disagree; take ~ncontours round levels across the colour range.
+        raw = (hi - lo) / tr.get("ncontours", 15)
+        mag = 10 ** math.floor(math.log10(raw))
+        size = next(s * mag for s in (1, 2, 2.5, 5, 10) if s * mag >= raw)
+        tr["autocontour"] = False
+        contours.update(
+            start=math.floor(lo / size) * size, end=math.ceil(hi / size) * size, size=size
+        )
     return axis
 
 
