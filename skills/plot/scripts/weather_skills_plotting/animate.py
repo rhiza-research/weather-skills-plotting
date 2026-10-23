@@ -23,6 +23,64 @@ from weather_skills_plotting.layout import map_layout, title_lines
 DEFAULT_DURATION_MS = 500
 DEFAULT_TRANSITION_MS = 0
 
+# Plays the default controls' frames with Plotly.react. Plotly.animate with redraw
+# rebuilds the map subplot, and the browser paints it blank for a frame: the map
+# flashes on every step. The controls use method "skip", so Plotly only sends their
+# click and slide events here. Runs after the figure is drawn ({plot_id} is its div).
+PLAYER_JS = """
+(function () {
+  var gd = document.getElementById("{plot_id}");
+  var frames = gd._transitionData._frames;
+  var base = gd.data.slice();
+  var current = 0;
+  var run = 0;
+
+  function show(i) {
+    current = i;
+    var frame = frames[i];
+    var data = base.slice();
+    (frame.traces || []).forEach(function (j, k) {
+      data[j] = Object.assign({}, base[j], frame.data[k]);
+    });
+    var layout = Object.assign({}, gd.layout, frame.layout);
+    if (layout.sliders) {
+      layout.sliders = layout.sliders.map(function (s, k) {
+        return k === 0 ? Object.assign({}, s, {active: i}) : s;
+      });
+    }
+    return Plotly.react(gd, data, layout);
+  }
+
+  function pause() { run += 1; }
+
+  // Like Plotly's play from the current frame: each frame once, stopping on the last.
+  function play(duration) {
+    var token = ++run;
+    function step(i) {
+      show(i).then(function () {
+        if (token === run && i < frames.length - 1) {
+          setTimeout(function () { if (token === run) step(i + 1); }, duration);
+        }
+      });
+    }
+    step(current === frames.length - 1 ? 0 : current + 1);
+  }
+
+  gd.on("plotly_buttonclicked", function (e) {
+    var args = e.button.args || [];
+    if (e.button.method !== "skip") return;
+    if (args[0] === "play") play(args[1].frame.duration);
+    if (args[0] === "pause") pause();
+  });
+  gd.on("plotly_sliderchange", function (e) {
+    if (!e.interaction || e.step.method !== "skip") return;
+    pause();
+    var name = e.step.args[0][0];
+    show(frames.findIndex(function (f) { return f.name === name; }));
+  });
+})();
+"""
+
 _AXIS_RE = re.compile(r"^[xy]axis(\d+)$")
 _PANEL_UID_RE = re.compile(r"^(.*)-p(\d+)(-.*)?$")
 
@@ -176,6 +234,9 @@ def animate_figure(
         "fromcurrent": True,
         "mode": "immediate",
     }
+    # PLAYER_JS steps the frames without the flash of Plotly.animate; a transition
+    # (tweening between frames) needs Plotly.animate, flash and all.
+    method = "animate" if transition else "skip"
     if controls and "updatemenus" not in user_layout:
         out_layout["updatemenus"] = [
             {
@@ -188,12 +249,16 @@ def animate_figure(
                 "yanchor": "top",
                 "pad": {"t": 40, "r": 10},
                 "buttons": [
-                    {"label": "▶ Play", "method": "animate", "args": [None, play_args]},
+                    {
+                        "label": "▶ Play",
+                        "method": method,
+                        "args": [None if transition else "play", play_args],
+                    },
                     {
                         "label": "❚❚ Pause",
-                        "method": "animate",
+                        "method": method,
                         "args": [
-                            [None],
+                            [None] if transition else "pause",
                             {"frame": {"duration": 0, "redraw": False}, "mode": "immediate"},
                         ],
                     },
@@ -217,7 +282,7 @@ def animate_figure(
                 "steps": [
                     {
                         "label": labels[p],
-                        "method": "animate",
+                        "method": method,
                         "args": [
                             [str(p)],
                             {

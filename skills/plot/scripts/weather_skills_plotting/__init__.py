@@ -102,6 +102,8 @@ def export(fig, output, *, datasets=None, scale=None):
     if suffix in (".html", ".htm"):
         import plotly.io as pio
 
+        from weather_skills_plotting.animate import PLAYER_JS
+
         # An animation opens paused on its first frame; the viewer presses Play.
         # The scroll wheel zooms, which Plotly leaves off by default.
         pio.write_html(
@@ -110,6 +112,7 @@ def export(fig, output, *, datasets=None, scale=None):
             include_plotlyjs=True,
             full_html=True,
             auto_play=False,
+            post_script=PLAYER_JS if fig.frames else None,
             # No Plotly Cloud upload or Plotly logo link.
             config={
                 "responsive": True,
