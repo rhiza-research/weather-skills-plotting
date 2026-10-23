@@ -260,3 +260,23 @@ def test_filled_contour_frames_share_levels(grid, animation_fn, tmp_path):
     contours = json.loads(levels.pop())
     assert contours["start"] <= 0 and contours["end"] >= 3
     assert all(f["data"][0]["autocontour"] is False for f in frames)
+
+
+def test_changing_scatter_is_scattergl_in_html(tmp_path, animation_fn):
+    # Plotly.animate blanks the heatmap while it redraws a changing SVG scatter.
+    ds = make_gridded(n_time=3, name="u10")
+    ds["v10"] = ds["u10"] * 0 + 1.0
+    ds["u10"].values = np.arange(3.0)[:, None, None] * np.ones(ds["u10"].shape) + 1
+    for v in ("u10", "v10"):
+        ds[v].attrs.update(units="m s-1")
+    wind = str(write_zarr(ds, tmp_path / "wind.zarr"))
+    out = tmp_path / "v.html"
+    run_skill(animation_fn, "--animate", "--layer", f"quiver:{wind}", "-o", str(out))
+    text, frames = figure_of(out)
+    data, _ = base_of(text)
+    moving = frames[0]["traces"]
+    assert any("arrows" in data[i]["uid"] for i in moving)
+    for i in moving:
+        if "arrows" in data[i]["uid"]:
+            assert data[i]["type"] == "scattergl"
+            assert {f["data"][f["traces"].index(i)]["type"] for f in frames} == {"scattergl"}
