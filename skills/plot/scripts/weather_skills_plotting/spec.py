@@ -444,6 +444,15 @@ def check_meta(spec: dict, palettes: dict) -> None:
         meta = trace.get("meta")
         if meta is not None:
             check_trace_meta(meta, f"data[{i}].meta", palettes)
+    for key in spec.get("layout") or {}:
+        if re.fullmatch(r"geo\d*", key):
+            raise UsageError(
+                f"plot spec layout.{key}: maps here are plain x/y axes, so layout.{key} draws "
+                "nothing. Coastlines, country borders, lakes and rivers are drawn by default; "
+                "style or hide them with layout.meta.overlays, e.g. "
+                '{"layout": {"meta": {"overlays": {"borders": {"line": {"color": "black", '
+                '"width": 1}}}}}}'
+            )
     meta = (spec.get("layout") or {}).get("meta")
     if meta is not None:
         check_layout_meta(meta)

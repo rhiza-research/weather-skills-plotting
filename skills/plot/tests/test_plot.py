@@ -223,6 +223,7 @@ def test_errors_are_actionable(tmp_path, plot_fn, capsys):
         ('{"inputs": [{"variable": "tp"}]}', "are not allowed"),
         ('{"data": [{"uid": "0", "colorscal": "Blues"}]}', "Did you mean"),
         ('{"layout": {"meta": {"geo": {"region": "Kenya"}}}}', "resolve-region"),
+        ('{"layout": {"geo": {"showcountries": true}}}', "layout.meta.overlays"),
     ]
     for spec, match in bad:
         with pytest.raises(SystemExit):
