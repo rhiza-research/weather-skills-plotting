@@ -1,6 +1,6 @@
 ---
 name: plot
-description: "Draw weather-skills Zarrs as maps (heatmap, contour, stations, wind arrows), time series, xy scatter plots, wind roses, forecast verification grids (obs, lead-week forecasts and their hits / bias / MAE maps), ECMWF-style mediograms (forecast vs model-climate ensembles at a point), or animated maps through time, saved as PNG, JPG, interactive HTML, or GIF. Titles, colors, panels, and layout are set with a standard Plotly figure JSON."
+description: "Draw weather-skills Zarrs as maps (heatmap, contour, stations, wind arrows, storm tracks), time series, xy scatter plots, wind roses, forecast verification grids (obs, lead-week forecasts and their hits / bias / MAE maps), ECMWF-style mediograms (forecast vs model-climate ensembles at a point), or animated maps through time, saved as PNG, JPG, interactive HTML, or GIF. Titles, colors, panels, and layout are set with a standard Plotly figure JSON."
 license: MIT
 compatibility: Requires Python 3.12 and uv. PNG/JPG export needs Chrome (installed, or `plotly_get_chrome -y`). Self-contained; the plotting library ships in scripts/.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py *)
@@ -24,6 +24,8 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i chirps.zarr=OBS -i ecmwf.zarr=FC -
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i chirps_area.zarr -i imerg_area.zarr -o rain.png
 # Layers on one map, bottom first
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --layer heatmap:rain.zarr --layer scatter:stations.zarr --layer outline:kenya.geojson -o map.png
+# Storm tracks (track-centre output) over rain, inside their funnel
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --layer heatmap:rain.zarr --layer track:tracks.zarr --layer outline:funnel.geojson -o funnel.png
 # One variable against another
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i iod_rain.zarr -o iod_vs_rain.png --spec '{"data": [{"uid": "0", "meta": {"x": "dmi", "y": "precip"}}]}'
 # Verification grid: obs, then each lead's forecast and verify map
@@ -40,7 +42,7 @@ The plot type follows the data: a lat/lon grid is a colored map, stations are co
 
 ### Arguments
 - `--input`, `-i` — Zarr to draw, as `PATH` or `PATH=NAME`; repeat for side-by-side maps or more lines.
-- `--layer` — `KIND:PATH` or `KIND:PATH=NAME` to stack on one map; repeat. Kinds: `heatmap`, `contour` (over a heatmap: labeled black lines, every 4 hPa for sea-level pressure; `"contours": {"coloring": "fill"}` fills it), `scatter` (stations; `"mode": "markers+text"` labels each with its `name` coordinate, else its id; local-extrema highs / lows print as a blue H / red L over the central value, restyled by a trace with that layer's uid), `quiver` (wind u/v: a speed field NAME and arrows NAME-arrows, each picking its own `isel` / `sel`), `outline` and `mask` (GeoJSON). `outline` and `mask` layers also combine with `-i` inputs (`-i grid.zarr --layer outline:counties.geojson`); `-i` itself takes Zarr paths only.
+- `--layer` — `KIND:PATH` or `KIND:PATH=NAME` to stack on one map; repeat. Kinds: `heatmap`, `contour` (over a heatmap: labeled black lines, every 4 hPa for sea-level pressure; `"contours": {"coloring": "fill"}` fills it), `scatter` (stations; `"mode": "markers+text"` labels each with its `name` coordinate, else its id; local-extrema highs / lows print as a blue H / red L over the central value, restyled by a trace with that layer's uid), `quiver` (wind u/v: a speed field NAME and arrows NAME-arrows, each picking its own `isel` / `sel`), `track` (storm tracks: member lines NAME-members and the mean track NAME; see **Storm tracks**), `outline` and `mask` (GeoJSON). `outline` and `mask` layers also combine with `-i` inputs (`-i grid.zarr --layer outline:counties.geojson`); `-i` itself takes Zarr paths only.
 - `--obs`, `--forecast`, `--verify` — verification grid: the observation for one week, then each lead's forecast (repeat, week-1 first) and its verify-skill output (once per `--forecast`, same order). See **Verification grid**.
 - `--mediogram` — forecast vs model climate at one point; pass `-i` twice (forecast, then m-climate). See **Mediogram**.
 - `--animate` — the same map, with its times or steps played as frames; takes the same `-i` / `--layer` inputs. `-o` must end in `.html` or `.gif`. See **Animation**.
@@ -121,6 +123,13 @@ CHIRPS and ECMWF week-1 rainfall side by side over Kenya, each on its own grid, 
 - Lines on one axis with different units, or with no dates in common, print a warning and still draw.
 - `"align": "dayofyear"` on each line puts every year on one calendar, labelled `1 Oct`, `15 Nov`, … (29 Feb joins 28 Feb). Pass one file per year, each a single season; a season across New Year (DJF) puts Jan–Feb at the left.
 - The y-axis label is the variable's `long_name` and units. A rainfall axis does not go below zero.
+
+### Storm tracks
+`--layer track:tracks.zarr=TRK` draws a trajectory Zarr (`featureType: trajectory`, from track-centre): one thin line per ensemble member (uid `TRK-members`) under the mean track (uid `TRK`), with a marker at each lead and the lead (`+24h`, `+48h`, …) printed every 24 h. Members end where their track was lost.
+- Each part is its own trace: `meta.bind` `"track"` with the longitude variable in `meta.x` and the latitude variable in `meta.y` (the layer finds them by units, degrees_east / degrees_north; `--dump-spec -` shows them). A pair along `step` (or `time`) is one line; a pair that also has a member dim is one line per member.
+- Style each by its uid: `{"data": [{"uid": "TRK", "name": "ECMWF mean", "showlegend": true, "line": {"color": "#1f4fbf"}, "marker": {"color": "#1f4fbf"}}, {"uid": "TRK-members", "opacity": 0.3}]}`. Your own `text` replaces the lead labels.
+- The funnel is the GeoJSON track-centre writes with `--funnel-geojson`: add it as `--layer outline:funnel.geojson`. Tracks draw over outlines. Several ensembles are several track layers, each with its own NAME.
+- A track has no time panels: it sits on every panel or animation frame of the map under it.
 
 ### Colors
 - Precip totals use the mm class palette `default_precip`; anomalies use `default_precip_anom`. The range follows `aggregation_period`: under 2 days 0–50 mm, up to 10 days (a dekad) 0–200, under 40 days 0–400, longer 0–1000 (anomalies ±50 / ±200 / ±300 / ±500).

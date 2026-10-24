@@ -26,7 +26,18 @@ TOP_KEYS = frozenset({"data", "layout"})
 
 # How a trace's arrays are filled from a dataset. See ``bind.py``.
 BINDS = frozenset(
-    {"field", "speed", "arrows", "points", "series", "xy", "samples", "windrose", "geojson"}
+    {
+        "field",
+        "speed",
+        "arrows",
+        "points",
+        "track",
+        "series",
+        "xy",
+        "samples",
+        "windrose",
+        "geojson",
+    }
 )
 # Bind used when ``meta.bind`` is unset, by Plotly trace type.
 DEFAULT_BIND = {
@@ -38,7 +49,7 @@ DEFAULT_BIND = {
     "box": "samples",
     "barpolar": "windrose",
 }
-MAP_BINDS = frozenset({"field", "speed", "arrows", "points", "geojson"})
+MAP_BINDS = frozenset({"field", "speed", "arrows", "points", "track", "geojson"})
 
 TRACE_META_KEYS = frozenset(
     {

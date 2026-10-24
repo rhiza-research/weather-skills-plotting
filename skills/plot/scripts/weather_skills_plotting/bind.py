@@ -31,6 +31,7 @@ from weather_skills_plotting.geodata import (
     extent_from_da,
     plain,
     point_dim,
+    step_dim,
     subset_points,
     subset_spatial,
 )
@@ -38,6 +39,7 @@ from weather_skills_plotting.kinds import aggregation_days, is_precip
 from weather_skills_plotting.labels import (
     axis_label,
     format_plot_date,
+    format_plot_time,
     format_step,
     format_units_for_display,
     is_datetime_axis,
@@ -649,6 +651,97 @@ def bind_points(trace, meta, ctx, loc):
     )
 
 
+TRACK_LABEL_HOURS = 24  # a track's points are labelled with their lead every this many hours
+
+
+def bind_track(trace, meta, ctx, loc):
+    """A storm track: ``meta.x`` (longitude) / ``meta.y`` (latitude) variables along a lead
+    (``step``) or ``time`` dim drawn as a line, or one line per value of a second dim such
+    as ensemble members (``number``)."""
+    source = meta.get("source") or {}
+    if not (meta.get("x") and meta.get("y")):
+        raise UsageError(
+            f'{loc}: meta.bind "track" needs meta.x (the longitude variable) and meta.y '
+            "(the latitude variable)"
+        )
+    ds = _dataset(ctx, source, f"{loc}.source")
+    picked = []
+    for key in ("x", "y"):
+        if meta[key] not in ds.data_vars:
+            raise UsageError(
+                f"{loc}.{key} {meta[key]!r} is not in the data; available: "
+                f"{', '.join(map(str, ds.data_vars))}"
+            )
+        picked.append(_sel(plain(ds[meta[key]]), source, f"{loc}.source"))
+    lon_da, lat_da = picked
+    if set(lon_da.dims) != set(lat_da.dims):
+        raise UsageError(
+            f"{loc}: x {meta['x']!r} has dims {list(lon_da.dims)} but y {meta['y']!r} has "
+            f"{list(lat_da.dims)}"
+        )
+    tdim = step_dim(lon_da)
+    if tdim is None:
+        raise UsageError(
+            f"{loc}: a track runs along step or time; {meta['x']!r} has dims {list(lon_da.dims)}"
+        )
+    others = [d for d in lon_da.dims if d != tdim]
+    _leftover_error(lon_da, {tdim, *others[:1]}, "tracks", loc)
+    lon = np.asarray(lon_da.transpose(*others, tdim).values, dtype=float)
+    lat = np.asarray(lat_da.transpose(*others, tdim).values, dtype=float)
+    if _wrapped(ctx):
+        # Same continuous axis as the wrapped grid: 150E..80W is 150..280.
+        lon = ((lon - ctx.bbox[1]) % 360.0) + ctx.bbox[1]
+    if not np.isfinite(lon).any():
+        raise UsageError(f"{loc}: {meta['x']!r} has no finite positions to draw")
+    # Each point's lead: +18h along step, the valid time along time.
+    leads = lon_da[tdim].values
+    if leads.dtype.kind == "m":
+        hours = leads / np.timedelta64(1, "h")
+        names = [f"+{h:g}h" for h in hours]
+    else:
+        hours = (leads - leads[0]) / np.timedelta64(1, "h")
+        names = [format_plot_time(v) for v in leads]
+    labels = [
+        n if h > 0 and h % TRACK_LABEL_HOURS == 0 else "" for n, h in zip(names, hours, strict=True)
+    ]
+    styles = ctx.theme["styles"]
+    if others:
+        # One line per member, NaN-separated (a member's track ends in NaN where it was lost).
+        members = lon_da[others[0]].values
+        gap = np.array([np.nan])
+        out = {
+            "mode": "lines",
+            "x": np.concatenate([np.concatenate([row, gap]) for row in lon]),
+            "y": np.concatenate([np.concatenate([row, gap]) for row in lat]),
+            "hovertext": [f"{others[0]} {m} {n}" for m in members for n in [*names, ""]],
+            "showlegend": False,
+        }
+        fill_defaults(out, styles["track_members"])
+    else:
+        out = {
+            "mode": "lines+markers+text",
+            "x": lon,
+            "y": lat,
+            "text": labels,
+            "textposition": "top center",
+            "hovertext": names,
+            "showlegend": False,
+        }
+        fill_defaults(out, styles["track"])
+    out["hovertemplate"] = "%{hovertext}: %{y:.2f}°N %{x:.2f}°E<extra></extra>"
+    finite = np.isfinite(lon) & np.isfinite(lat)
+    xs, ys = lon[finite], lat[finite]
+    pad_x = max(0.5, 0.1 * float(np.ptp(xs)))
+    pad_y = max(0.5, 0.1 * float(np.ptp(ys)))
+    extent = (
+        [ctx.bbox[1], ctx.bbox[3], ctx.bbox[2], ctx.bbox[0]]
+        if ctx.bbox
+        else [xs.min() - pad_x, xs.max() + pad_x, ys.min() - pad_y, ys.max() + pad_y]
+    )
+    # A track spans its leads, so it is one line on every panel, like an outline.
+    return Bound([Panel([out])], is_map=True, static=True, extent=[float(v) for v in extent])
+
+
 def _geojson_lines(path):
     import shapely
     from shapely.geometry import shape
@@ -1157,6 +1250,7 @@ BINDERS = {
     "speed": lambda t, m, c, loc: bind_field(t, m, c, loc, speed=True),
     "arrows": bind_arrows,
     "points": bind_points,
+    "track": bind_track,
     "geojson": bind_geojson,
     "series": bind_series,
     "xy": bind_xy,
@@ -1169,6 +1263,7 @@ _TYPES_FOR_BIND = {
     "speed": {"heatmap", "contour"},
     "arrows": {"scatter", "scattergl"},
     "points": {"scatter", "scattergl"},
+    "track": {"scatter", "scattergl"},
     "geojson": {"scatter", "scattergl"},
     "series": {"scatter", "scattergl", "bar"},
     "xy": {"scatter", "scattergl", "bar"},

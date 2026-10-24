@@ -110,6 +110,8 @@ merges into the standard one.
 | `arrow_key_box` | The box behind the reference arrow |
 | `members` | Ensemble members drawn as spaghetti |
 | `band_members` | Members drawn under a percentile band |
+| `track` | A single storm track (`meta.bind` `track`, e.g. the ensemble mean): line, a marker per lead, the lead every 24 h |
+| `track_members` | Storm tracks drawn one line per member |
 
 ## `overlays`
 

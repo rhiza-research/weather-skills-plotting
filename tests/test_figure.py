@@ -1264,3 +1264,64 @@ def test_xy_isel_picks_only_where_the_dim_is():
     meta["source"] = {"isel": {"step": 0}}
     with pytest.raises(UsageError, match="isel dimension 'step' is not in the data"):
         compile({"data": [{"uid": "0", "meta": meta}]}, {"0": ds})
+
+
+def _tracks(n_number=3, n_step=13):
+    """A trajectory Zarr like track-centre writes: member tracks and their mean, 6-hourly."""
+    steps = (np.arange(n_step) * 6).astype("timedelta64[h]").astype("timedelta64[ns]")
+    lon = 12.0 - 0.1 * np.arange(n_step) + 0.05 * np.arange(n_number)[:, None]
+    lat = np.full((n_number, n_step), 2.0)
+    lon[0, -3:] = lat[0, -3:] = np.nan  # member 0 lost after 54 h
+    ds = xr.Dataset(
+        {
+            "track_longitude": (("number", "step"), lon, {"units": "degrees_east"}),
+            "track_latitude": (("number", "step"), lat, {"units": "degrees_north"}),
+            "mean_longitude": ("step", np.nanmean(lon, axis=0), {"units": "degrees_east"}),
+            "mean_latitude": ("step", np.nanmean(lat, axis=0), {"units": "degrees_north"}),
+        },
+        coords={"number": np.arange(n_number), "step": steps},
+        attrs={"featureType": "trajectory"},
+    )
+    return ds
+
+
+def _track(uid, x, y, **kw):
+    return {
+        "uid": uid,
+        "type": "scatter",
+        "meta": {"bind": "track", "source": {"input": "t"}, "x": x, "y": y},
+        **kw,
+    }
+
+
+def test_track_draws_member_lines_under_a_labelled_mean():
+    spec = {
+        "data": [
+            _trace("a"),
+            _track("T-members", "track_longitude", "track_latitude"),
+            _track("T", "mean_longitude", "mean_latitude", line={"color": "red"}),
+        ]
+    }
+    fig = compile(spec, {"a": make_gridded(n_time=1).isel(time=0), "t": _tracks()})
+    uids = [t["uid"] for t in fig.data]
+    assert uids.index("T") > uids.index("T-members") > uids.index("a")
+    members = next(t for t in fig.data if t["uid"] == "T-members")
+    # One line per member, NaN-separated; member 0 ends where its track was lost.
+    assert members["mode"] == "lines" and len(members["x"]) == 3 * 14
+    assert np.isnan(members["x"][10:14]).all() and np.isfinite(members["x"][14:27]).all()
+    mean = next(t for t in fig.data if t["uid"] == "T")
+    assert mean["mode"] == "lines+markers+text" and mean["line"]["color"] == "red"
+    assert [t for t in mean["text"] if t] == ["+24h", "+48h", "+72h"]
+    assert mean["hovertext"][1] == "+6h"
+
+
+def test_track_needs_x_and_y_along_step_or_time():
+    tracks = _tracks()
+    bare = {"uid": "t", "type": "scatter", "meta": {"bind": "track", "source": {"input": "t"}}}
+    with pytest.raises(UsageError, match="needs meta.x"):
+        compile({"data": [bare]}, {"t": tracks})
+    with pytest.raises(UsageError, match="has dims"):
+        compile({"data": [_track("t", "track_longitude", "mean_latitude")]}, {"t": tracks})
+    flat = tracks.isel(step=0, drop=True)
+    with pytest.raises(UsageError, match="runs along step or time"):
+        compile({"data": [_track("t", "track_longitude", "track_latitude")]}, {"t": flat})
