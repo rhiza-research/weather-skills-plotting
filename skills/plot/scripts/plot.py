@@ -23,6 +23,7 @@ from pathlib import Path
 
 from weather_skills_core import Dataset, UsageError, weather_skill
 from weather_skills_core.cf import cf_dim
+from weather_skills_core.units import variable_units
 
 from weather_skills_plotting import parse_spec_arg
 from weather_skills_plotting.cli import (
@@ -48,8 +49,9 @@ from weather_skills_plotting.verify import build_verify_spec
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
 _SKILL_VERSION = "1.0.2"
 
-LAYER_KINDS = ("heatmap", "contour", "scatter", "quiver", "outline", "mask")
-_ZARR_LAYERS = frozenset({"heatmap", "contour", "scatter", "quiver"})
+LAYER_KINDS = ("heatmap", "contour", "scatter", "quiver", "track", "outline", "mask")
+_ZARR_LAYERS = frozenset({"heatmap", "contour", "scatter", "quiver", "track"})
+_DEGREES = {"degrees_east": "x", "degree_east": "x", "degrees_north": "y", "degree_north": "y"}
 
 
 class LayerArg:
@@ -117,6 +119,39 @@ def _as_drawn(ds, trace):
     return ds
 
 
+def _track_traces(uid, ds):
+    """A track layer: the member tracks (``UID-members``) under the single track (``UID``,
+    e.g. the ensemble mean), each naming its longitude / latitude variables (units
+    degrees_east / degrees_north) in ``meta.x`` / ``meta.y``."""
+    pairs = {}
+    for name, da in ds.data_vars.items():
+        axis = _DEGREES.get(str(variable_units(da) or "").strip().lower())
+        if axis:
+            pairs.setdefault(da.dims, {}).setdefault(axis, []).append(name)
+    traces = []
+    for dims, pair in sorted(pairs.items(), key=lambda item: -len(item[0])):
+        if [len(pair.get("x", [])), len(pair.get("y", []))] != [1, 1] or len(dims) > 2:
+            raise UsageError(
+                f"track layer {uid!r}: expected one longitude and one latitude variable on "
+                f"dims {list(dims)}, found {pair}; draw it with --spec traces of "
+                'meta.bind "track" naming meta.x / meta.y'
+            )
+        suffix = "-members" if len(dims) == 2 else ""
+        if any(t["uid"] == uid + suffix for t in traces):
+            raise UsageError(
+                f"track layer {uid!r}: several track pairs share {len(dims)} dims; draw them "
+                'with --spec traces of meta.bind "track" naming meta.x / meta.y'
+            )
+        meta = {"bind": "track", "source": {"input": uid}, "x": pair["x"][0], "y": pair["y"][0]}
+        traces.append({"uid": uid + suffix, "type": "scatter", "meta": meta})
+    if not traces:
+        raise UsageError(
+            f"track layer {uid!r} has no longitude / latitude variables (units degrees_east / "
+            "degrees_north); a track layer draws a trajectory Zarr such as track-centre writes"
+        )
+    return traces
+
+
 def _layer_traces(layers):
     data, datasets, mask = [], {}, None
     for uid, layer in zip(input_ids([x.name for x in layers]), layers, strict=True):
@@ -136,7 +171,14 @@ def _layer_traces(layers):
         source = {"input": uid}
         if layer.kind in ("heatmap", "contour"):
             data.append({"uid": uid, "type": layer.kind, "meta": {"source": source}})
+        elif layer.kind == "track":
+            data += _track_traces(uid, layer.ds)
         elif layer.kind == "scatter":
+            if layer.ds.attrs.get("featureType") == "trajectory":
+                raise UsageError(
+                    f"layer {uid!r} holds tracks (featureType trajectory): draw it with "
+                    "--layer track:PATH"
+                )
             data.append(
                 {"uid": uid, "type": "scatter", "meta": {"bind": "points", "source": source}}
             )
@@ -170,7 +212,8 @@ def _layer_traces(layers):
     action="append",
     type=parse_layer,
     help="KIND:PATH or KIND:PATH=NAME layer drawn on one shared map; repeat to stack, bottom "
-    "first. Kinds: heatmap, contour, scatter (stations), quiver (u/v), outline (GeoJSON), mask "
+    "first. Kinds: heatmap, contour, scatter (stations), quiver (u/v), track (storm tracks), "
+    "outline (GeoJSON), mask "
     "(GeoJSON). In --spec the layer is uid NAME, else its position: 0, 1, ….",
 )
 @weather_skill.argument(
@@ -258,7 +301,7 @@ def plot(
     if animate and len(files) > 1:
         raise UsageError(
             "--animate plays one map: stack the inputs with --layer (heatmap:, contour:, "
-            "scatter:, quiver:, outline:, mask:) instead of several -i"
+            "scatter:, quiver:, track:, outline:, mask:) instead of several -i"
         )
     layout = {}
     series = False
@@ -269,6 +312,12 @@ def plot(
             layout["meta"] = {"geo": {"mask_geojson": mask}}
     else:
         cli = dict(zip(input_ids([x.name for x in inputs]), files, strict=True))
+        for key, ds in cli.items():
+            if ds.attrs.get("featureType") == "trajectory":
+                raise UsageError(
+                    f"input {key!r} holds tracks (featureType trajectory): draw it on a map "
+                    "with --layer track:PATH, under or over other --layer inputs"
+                )
         datasets = spec_datasets(spec, cli)
         user = {t.get("uid"): t for t in (spec.data.get("data") or [])} if spec else {}
         drawn = {key: _as_drawn(d, user.get(key)) for key, d in datasets.items()}

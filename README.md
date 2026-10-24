@@ -11,7 +11,7 @@ for dataset loading, the CLI decorator, and a handful of shared utilities.
 
 | Skill | Role |
 | --- | --- |
-| [`plot`](skills/plot/) | Heatmap, contour, timeseries, xy scatter, wind-rose, quiver, or layered map, one dataset or several side by side; several 1-D series share one time axis. `--obs`/`--forecast`/`--verify` draw a lead-week verification grid, `--mediogram` an ECMWF-style mediogram, and `--animate` plays any map (all its layers) through time as animated HTML or GIF |
+| [`plot`](skills/plot/) | Heatmap, contour, timeseries, xy scatter, wind-rose, quiver, storm-track, or layered map, one dataset or several side by side; several 1-D series share one time axis. `--obs`/`--forecast`/`--verify` draw a lead-week verification grid, `--mediogram` an ECMWF-style mediogram, and `--animate` plays any map (all its layers) through time as animated HTML or GIF |
 
 The spec design (Plotly figure plus `meta` bindings) is documented in
 [`docs/plotting.md`](docs/plotting.md). PNG/JPG export needs Chrome: kaleido

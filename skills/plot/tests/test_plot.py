@@ -437,3 +437,58 @@ def test_one_figure_to_several_outputs(tmp_path, plot_fn):
     png, html = tmp_path / "a.png", tmp_path / "a.html"
     run_skill(plot_fn, "-i", str(grid), "-o", str(png), "-o", str(html))
     assert png.is_file() and "Plotly.newPlot" in html.read_text()
+
+
+def _tracks():
+    """A trajectory Zarr like track-centre writes: member tracks and their mean."""
+    import numpy as np
+
+    steps = (np.arange(5) * 12).astype("timedelta64[h]").astype("timedelta64[ns]")
+    lon = 12.0 - 0.2 * np.arange(5) + 0.1 * np.arange(3)[:, None]
+    lat = np.full((3, 5), 2.0)
+    return xr.Dataset(
+        {
+            "track_longitude": (("number", "step"), lon, {"units": "degrees_east"}),
+            "track_latitude": (("number", "step"), lat, {"units": "degrees_north"}),
+            "mean_longitude": ("step", lon.mean(axis=0), {"units": "degrees_east"}),
+            "mean_latitude": ("step", lat.mean(axis=0), {"units": "degrees_north"}),
+            "members": ("step", np.full(5, 3)),
+        },
+        coords={"number": np.arange(3), "step": steps},
+        attrs={"featureType": "trajectory"},
+    )
+
+
+def test_track_layer(tmp_path, plot_fn, capsys):
+    grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
+    tracks = write_zarr(_tracks(), tmp_path / "tracks.zarr")
+    argv = ["--layer", f"heatmap:{grid}", "--layer", f"track:{tracks}=ECMWF"]
+    spec = _dump(plot_fn, capsys, *argv)
+    members, mean = spec["data"][1:]
+    assert members == {
+        "uid": "ECMWF-members",
+        "type": "scatter",
+        "meta": {
+            "bind": "track",
+            "source": {"input": "ECMWF"},
+            "x": "track_longitude",
+            "y": "track_latitude",
+        },
+    }
+    assert mean["uid"] == "ECMWF" and mean["meta"]["x"] == "mean_longitude"
+    style = {
+        "data": [
+            {"uid": "ECMWF", "line": {"color": "blue"}},
+            {"uid": "ECMWF-members", "opacity": 0.2},
+        ]
+    }
+    run_skill(plot_fn, *argv, "-o", str(tmp_path / "tracks.png"), "--spec", json.dumps(style))
+    assert (tmp_path / "tracks.png").exists()
+
+
+def test_trajectory_input_names_the_track_layer(tmp_path, plot_fn, capsys):
+    tracks = write_zarr(_tracks(), tmp_path / "tracks.zarr")
+    for argv in (["-i", str(tracks)], ["--layer", f"scatter:{tracks}"]):
+        with pytest.raises(SystemExit):
+            run_skill(plot_fn, *argv, "-o", str(tmp_path / "x.png"))
+        assert "track:" in capsys.readouterr().err

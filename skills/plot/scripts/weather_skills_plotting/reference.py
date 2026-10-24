@@ -18,6 +18,8 @@ _BINDS = {
     "speed": "wind speed from u/v → heatmap or contour (pair with an arrows trace for a quiver map)",
     "arrows": "u/v wind arrows on a map → scatter lines; meta.arrows.step / .scale",
     "points": "station_id / point_id values → colored scatter markers on a map",
+    "track": "longitude meta.x / latitude meta.y along step or time → a line on a map, one per "
+    "value of a second dim (members); a single track gets a marker per lead, labelled every 24 h",
     "geojson": "GeoJSON boundary → scatter lines (meta.source.geojson); repeats on every panel",
     "series": "1-D along time or step → scatter / bar (default for those types)",
     "xy": "one variable against another from the same input → scatter markers, or bars with "
@@ -30,7 +32,8 @@ _META = {
     "bind": "how the trace's arrays are filled; see BINDS",
     "source": "the data: {input, variable, isel, sel, u, v, geojson, mask_geojson, point}",
     "x / y": "variable names for a scatter of one against the other, a point per shared "
-    "position (merge puts variables from two files in one)",
+    "position (merge puts variables from two files in one); with bind track, the longitude "
+    "and latitude variables",
     "facet": "dim to panel (default: step or time when present); false for none",
     "along": "series: dim drawn as one line per value (e.g. number for spaghetti)",
     "along_color": "same (default; one color, one legend entry) or cycle",
@@ -196,6 +199,14 @@ _RECIPES = [
         "Wind quiver map (or --layer quiver:PATH), an arrow every 3rd cell",
         '{"data": [{"uid": "0", "meta": {"bind": "speed"}}, {"uid": "arrows", "type": "scatter", '
         '"meta": {"bind": "arrows", "source": {"input": "0"}, "arrows": {"step": 3}}}]}',
+    ),
+    (
+        "Storm tracks over rain inside their funnel: --layer heatmap:rain.zarr --layer "
+        "outline:funnel.geojson=FUNNEL --layer track:tracks.zarr=TRK (track-centre output: "
+        "member lines TRK-members, mean track TRK), legend entries for each",
+        '{"data": [{"uid": "TRK", "name": "Mean track", "showlegend": true, "line": '
+        '{"color": "#1f4fbf"}, "marker": {"color": "#1f4fbf"}}, {"uid": "TRK-members", '
+        '"opacity": 0.3}, {"uid": "FUNNEL", "name": "90% funnel", "showlegend": true}]}',
     ),
     ("Wind rose", '{"data": [{"uid": "0", "type": "barpolar"}]}'),
     (

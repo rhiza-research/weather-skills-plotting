@@ -113,7 +113,13 @@
     "arrows": {"line": {"color": "black"}},
     "arrow_key_box": {"fillcolor": "rgba(255, 255, 255, 0.85)"},
     "members": {"opacity": 0.45},
-    "band_members": {"opacity": 0.25, "line": {"width": 1}}
+    "band_members": {"opacity": 0.25, "line": {"width": 1}},
+    "track": {
+      "line": {"color": "#262626", "width": 3},
+      "marker": {"color": "#262626", "size": 7},
+      "textfont": {"size": 12, "shadow": "1px 1px 1px white, -1px -1px 1px white, 1px -1px 1px white, -1px 1px 1px white"}
+    },
+    "track_members": {"line": {"color": "#525252", "width": 1}, "opacity": 0.5}
   },
   "overlays": {
     "admin1": {"line": {"color": "#737373", "width": 0.6}},

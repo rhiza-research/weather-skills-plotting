@@ -67,9 +67,19 @@ from weather_skills_plotting.spec import (
 )
 from weather_skills_plotting.themes import load_theme
 
-# Draw order inside a map panel: fields under overlays, then arrows, stations, outlines.
+# Draw order inside a map panel: fields under overlays, then arrows, stations, outlines,
+# tracks (a track reads over the funnel outline around it).
 MANY_PANELS = 24  # more map panels than this get a warning
-_MAP_RANK = {"field": 0, "speed": 0, "overlay": 1, "arrows": 2, "points": 3, "geojson": 4, None: 5}
+_MAP_RANK = {
+    "field": 0,
+    "speed": 0,
+    "overlay": 1,
+    "arrows": 2,
+    "points": 3,
+    "geojson": 4,
+    "track": 4.5,
+    None: 5,
+}
 _TRACE_COLOR_KEYS = ("colorscale", "reversescale", "showscale", "colorbar")
 _TRACE_LIMIT_KEYS = {"zmin": "cmin", "zmax": "cmax", "zmid": "cmid"}
 _MARKER_LIMIT_KEYS = {"cmin": "cmin", "cmax": "cmax", "cmid": "cmid"}
