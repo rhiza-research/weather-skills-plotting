@@ -93,6 +93,19 @@ def test_export_html_zooms_on_scroll(tmp_path):
     assert '"scrollZoom": true' in out.read_text()
 
 
+def test_export_html_writes_figure_json(tmp_path):
+    import json
+
+    from weather_skills_plotting import compile, export
+
+    ds = make_gridded(n_time=1)
+    out = export(compile(HEATMAP, {"a": ds}), tmp_path / "map.html", datasets={"a": ds})
+    sidecar = out.with_suffix(".plotly.json")
+    assert sidecar.exists()
+    figure = json.loads(sidecar.read_text())
+    assert figure["data"] and figure["layout"]
+
+
 def test_export_rejects_other_suffixes(tmp_path):
     from weather_skills_core.errors import UsageError
 

@@ -88,7 +88,8 @@ def export(fig, output, *, datasets=None, scale=None):
     """Write ``output`` (.png, .jpg or .html) and print the QA lines for images.
 
     Images print a pixel ``plot hash`` and whether the plotted data is all-NaN.
-    HTML embeds plotly.js so the file works offline.
+    HTML embeds plotly.js so the file works offline, and writes a
+    ``.plotly.json`` sidecar for the chat's shared-library viewer.
     """
     from weather_skills_core.errors import UsageError
 
@@ -100,12 +101,19 @@ def export(fig, output, *, datasets=None, scale=None):
         )
     output.parent.mkdir(parents=True, exist_ok=True)
     if suffix in (".html", ".htm"):
+        import json
+
         import plotly.io as pio
+
+        figure = _float32(fig.to_plotly_json())
+        # The chat draws this with one shared plotly.js instead of the copy
+        # embedded in every HTML artifact.
+        output.with_suffix(".plotly.json").write_text(json.dumps(figure, separators=(",", ":")))
 
         # An animation opens paused on its first frame; the viewer presses Play.
         # The scroll wheel zooms, which Plotly leaves off by default.
         pio.write_html(
-            _float32(fig.to_plotly_json()),
+            figure,
             output,
             include_plotlyjs=True,
             full_html=True,
