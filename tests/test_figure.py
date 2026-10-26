@@ -594,6 +594,25 @@ def test_xy_scatter_needs_the_same_dims():
         compile(spec, {"0": ds})
 
 
+def test_xy_against_time_points_to_along_and_align():
+    # The chat case: weekly members against a day-of-year coordinate on time.
+    time = np.arange("2026-10-25", "2026-11-15", 7, dtype="datetime64[D]").astype("datetime64[ns]")
+    ds = xr.Dataset(
+        {"tp": (("time", "number"), np.ones((3, 4))), "doy": (("time",), [298.0, 305.0, 312.0])},
+        coords={"time": time, "number": np.arange(4)},
+    )
+    spec = {"data": [{"uid": "0", "type": "scatter", "meta": {"x": "doy", "y": "tp"}}]}
+    with pytest.raises(UsageError, match='"along": \'number\'.*"align": "dayofyear"'):
+        compile(spec, {"0": ds})
+
+
+@pytest.mark.parametrize("key, value", [("along", "number"), ("align", "dayofyear")])
+def test_xy_rejects_series_keys(key, value):
+    meta = {"x": "a", "y": "b", key: value}
+    with pytest.raises(UsageError, match=f"{key} draws a series over time.*align"):
+        compile({"data": [{"uid": "0", "type": "scatter", "meta": meta}]}, {"0": make_gridded()})
+
+
 def test_samples_box_and_mean_line():
     ds = make_forecast(n_number=4, n_step=3)
     src = {"point": {"lat": 0.9, "lon": 10.1}}
