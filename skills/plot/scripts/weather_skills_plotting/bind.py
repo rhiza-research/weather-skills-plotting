@@ -920,7 +920,13 @@ def bind_xy(trace, meta, ctx, loc):
     source = meta.get("source") or {}
     ds = _dataset(ctx, source, f"{loc}.source")
     picked = []
-    for name in (meta.get("x"), meta.get("y")):
+    names = [meta.get("x"), meta.get("y")]
+    # meta.text names a variable whose values label the points, unless the trace
+    # sets its own text.
+    labelled = meta.get("text") and not (trace.get("text") or trace.get("texttemplate"))
+    if labelled:
+        names.append(meta["text"])
+    for name in names:
         # isel / sel reach only the side that has the dim: a county coordinate has no
         # time to pick. A dim the file lacks stays, so its "not in the data" error shows.
         dims = ds[name].dims if name in ds.variables else ds.dims
@@ -929,7 +935,7 @@ def bind_xy(trace, meta, ctx, loc):
             if source.get(key):
                 own[key] = {d: v for d, v in source[key].items() if d in dims or d not in ds.dims}
         picked.append(select(ctx, own, f"{loc}.source", variable=name)[0])
-    x_da, y_da = picked
+    x_da, y_da = picked[:2]
     if set(x_da.dims) != set(y_da.dims):
         raise UsageError(
             f"{loc}: x {meta.get('x')!r} has dims {list(x_da.dims)} but y {meta.get('y')!r} has "
@@ -968,6 +974,30 @@ def bind_xy(trace, meta, ctx, loc):
     if trace.get("text") or trace.get("texttemplate"):
         # The user's labels on the outermost points stay readable past the axis edge.
         out["cliponaxis"] = False
+    if labelled:
+        text_da = picked[2]
+        if not set(text_da.dims) <= set(x_da.dims):
+            raise UsageError(
+                f"{loc}.text {meta['text']!r} has dims {list(text_da.dims)}, which x "
+                f"{meta.get('x')!r} ({list(x_da.dims)}) lacks; select one value of the extra "
+                f"dims with {loc}.source.isel / sel"
+            )
+        labels = []
+        for v in np.asarray(text_da.broadcast_like(x_da).transpose(*x_da.dims).values).ravel():
+            if isinstance(v, (np.datetime64, np.timedelta64)) or hasattr(v, "calendar"):
+                labels.append(format_plot_date(v))
+            elif isinstance(v, (int, np.integer)) or (
+                isinstance(v, (float, np.floating)) and np.isfinite(v) and float(v).is_integer()
+            ):
+                labels.append(str(int(v)))
+            elif isinstance(v, (float, np.floating)):
+                labels.append("" if np.isnan(v) else f"{v:.3g}")
+            else:
+                labels.append(str(v))
+        out["text"] = [label for label, ok in zip(labels, keep, strict=True) if ok]
+        out.update(cliponaxis=False)
+        if not bar:
+            out.update(mode="markers+text", textposition="top center")
     # A short 1-D series of two numbers labels each point with its year, date or
     # name, unless the trace sets its own text.
     if (
@@ -976,7 +1006,7 @@ def bind_xy(trace, meta, ctx, loc):
         and xv.dtype.kind == "f"
         and yv.dtype.kind == "f"
         and keep.sum() <= 25
-        and not (trace.get("text") or trace.get("texttemplate"))
+        and not (trace.get("text") or trace.get("texttemplate") or meta.get("text"))
     ):
         labels = [
             str(v) if isinstance(v, (int, np.integer)) else format_plot_date(v)

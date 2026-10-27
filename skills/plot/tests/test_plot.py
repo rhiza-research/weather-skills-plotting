@@ -2,6 +2,7 @@
 
 import json
 
+import numpy as np
 import pytest
 import xarray as xr
 from skill_conftest import (
@@ -162,6 +163,65 @@ def test_scatter_of_two_variables(tmp_path, plot_fn, capsys):
     assert spec["data"][0]["meta"] == {"source": {"input": "0"}, "x": "dmi", "y": "precip"}
     run_skill(plot_fn, "-i", str(path), "-o", str(tmp_path / "xy.png"), "--spec", json.dumps(user))
     assert "data: not null (0 3/3 finite)" in capsys.readouterr().out
+
+
+def _enso_rain(tmp_path, n=40):
+    years = np.arange(1985, 1985 + n)
+    ds = xr.Dataset(
+        {
+            "nino34": (("year",), np.linspace(-1.5, 2.0, n)),
+            "precip": (("year",), np.linspace(300.0, 600.0, n)),
+            "rank": (("year",), np.arange(n, dtype=float)),
+        },
+        coords={"year": years},
+    )
+    ds["nino34"].attrs["units"] = "degree_Celsius"
+    ds["precip"].attrs["units"] = "mm"
+    return write_zarr(ds, tmp_path / "enso_rain.zarr")
+
+
+def test_meta_text_labels_each_point(tmp_path, plot_fn, capsys):
+    """40 years is past the automatic 25-point labelling; meta.text asks for labels."""
+    from weather_skills_plotting import compile
+
+    path = _enso_rain(tmp_path)
+    user = {"data": [{"uid": "0", "meta": {"x": "nino34", "y": "precip", "text": "year"}}]}
+    spec = _dump(plot_fn, capsys, "-i", str(path), "--spec", json.dumps(user))
+    trace = compile(spec, {"0": xr.open_zarr(path)}).data[0]
+    assert list(trace.text) == [str(y) for y in range(1985, 2025)]
+    assert trace.mode == "markers+text"
+    # A whole-number float prints without decimals.
+    user["data"][0]["meta"]["text"] = "rank"
+    spec = _dump(plot_fn, capsys, "-i", str(path), "--spec", json.dumps(user))
+    assert compile(spec, {"0": xr.open_zarr(path)}).data[0].text[:3] == ("0", "1", "2")
+    run_skill(plot_fn, "-i", str(path), "-o", str(tmp_path / "xy.png"), "--spec", json.dumps(user))
+
+
+def test_meta_text_yields_to_the_traces_own_text(tmp_path, plot_fn, capsys):
+    from weather_skills_plotting import compile
+
+    path = _enso_rain(tmp_path, n=3)
+    own = ["a", "b", "c"]
+    user = {
+        "data": [{"uid": "0", "text": own, "meta": {"x": "nino34", "y": "precip", "text": "year"}}]
+    }
+    spec = _dump(plot_fn, capsys, "-i", str(path), "--spec", json.dumps(user))
+    assert list(compile(spec, {"0": xr.open_zarr(path)}).data[0].text) == own
+
+
+def test_meta_text_errors(tmp_path, plot_fn, capsys):
+    path = _enso_rain(tmp_path, n=3)
+    for meta, message in (
+        ({"x": "nino34", "y": "precip", "text": "yr"}, "yr"),
+        ({"text": "year", "source": {"variable": "precip"}}, "meta.x / meta.y scatter"),
+    ):
+        user = {"data": [{"uid": "0", "meta": meta}]}
+        with pytest.raises(SystemExit) as exc:
+            run_skill(
+                plot_fn, "-i", str(path), "-o", str(tmp_path / "x.png"), "--spec", json.dumps(user)
+            )
+        assert exc.value.code == 2
+        assert message in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("kind", ["scatter", "bar"])

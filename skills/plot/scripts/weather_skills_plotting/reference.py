@@ -31,6 +31,8 @@ _META = {
     "source": "the data: {input, variable, isel, sel, u, v, geojson, mask_geojson, point}",
     "x / y": "variable names for a scatter of one against the other, a point per shared "
     "position (merge puts variables from two files in one)",
+    "text": "with x / y: a variable or coordinate whose values label each point (e.g. year); "
+    "the trace's own text wins",
     "facet": "dim to panel (default: step or time when present); false for none",
     "along": "series: dim drawn as one line per value (e.g. number for spaghetti)",
     "along_color": "same (default; one color, one legend entry) or cycle",
