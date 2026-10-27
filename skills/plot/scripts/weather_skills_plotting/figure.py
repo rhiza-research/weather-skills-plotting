@@ -69,14 +69,24 @@ from weather_skills_plotting.themes import load_theme
 
 # Draw order inside a map panel: fields under overlays, then arrows, stations, outlines.
 MANY_PANELS = 24  # more map panels than this get a warning
+# A still image with more map panels than this is refused: Chrome takes ~7 s to
+# render 200 small maps, ~18 s for 400, and never finishes 1,826 (five years of
+# days). 100 still holds 46 daily S2S leads, a year of weeks or two months of days.
+MAX_STILL_PANELS = 100
 _MAP_RANK = {"field": 0, "speed": 0, "overlay": 1, "arrows": 2, "points": 3, "geojson": 4, None: 5}
 _TRACE_COLOR_KEYS = ("colorscale", "reversescale", "showscale", "colorbar")
 _TRACE_LIMIT_KEYS = {"zmin": "cmin", "zmax": "cmax", "zmid": "cmid"}
 _MARKER_LIMIT_KEYS = {"cmin": "cmin", "cmax": "cmax", "cmid": "cmid"}
 
 
-def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
-    """Return a validated ``plotly.graph_objects.Figure``."""
+def compile_figure(
+    spec: dict, datasets: dict, *, theme: dict | None = None, max_panels: int | None = None
+):
+    """Return a validated ``plotly.graph_objects.Figure``.
+
+    ``max_panels`` refuses a figure with more map panels (a still image); an
+    animation passes ``None``, since it draws one panel per frame.
+    """
     import plotly.graph_objects as go
 
     theme = theme or load_theme()
@@ -133,7 +143,7 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
         raise UsageError("plot spec has no traces to draw")
 
     if any(b is not None and b.is_map for _, _, b in items):
-        data, layout = _assemble_map(items, user_layout, lmeta, ctx)
+        data, layout = _assemble_map(items, user_layout, lmeta, ctx, max_panels)
     else:
         data, layout = _assemble_chart(items, user_layout)
     layout.setdefault("template", DEFAULT_TEMPLATE)
@@ -386,7 +396,7 @@ def _input_label(ctx, trace):
     return Path(path).stem if path else None
 
 
-def _assemble_map(items, user_layout, lmeta, ctx):
+def _assemble_map(items, user_layout, lmeta, ctx, max_panels):
     groups: dict[int, list] = {}
     # A plain Plotly trace (city markers, a box) with no axis of its own goes on every map.
     floating = [item for item in items if item[2] is None and not item[1].get("xaxis")]
@@ -445,6 +455,13 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     else:
         panels = [(0, k) for k in plan[0]]
     n = len(panels)
+    if max_panels is not None and n > max_panels:
+        raise UsageError(
+            f"{n} map panels (one per time or step) is too many for one image; the limit "
+            f"is {max_panels}. Pick the times you need (meta.source.isel / sel, or the "
+            "select skill), aggregate first (aggregate-temporal, summarize-dim), or play them "
+            "as frames with --animate"
+        )
     if n > MANY_PANELS:
         print(
             f"Warning: {n} map panels; each will be small. Pick the ones you need with "

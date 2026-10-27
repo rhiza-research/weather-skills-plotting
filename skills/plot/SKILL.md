@@ -104,7 +104,7 @@ CHIRPS and ECMWF week-1 rainfall side by side over Kenya, each on its own grid, 
 ## Details
 
 ### Panels and layers
-- A file with several times or steps gets one panel each, titled with its date. `layout.grid.rows` / `columns` set the grid; `xgap` / `ygap` the spacing, as a fraction of a panel.
+- A file with several times or steps gets one panel each, titled with its date. `layout.grid.rows` / `columns` set the grid; `xgap` / `ygap` the spacing, as a fraction of a panel. A still image takes at most 100 panels and stops with an error past that: pick times with `meta.source.isel` / `sel` (or the select skill), aggregate first, or use `--animate`, which has no limit.
 - Panels showing the same quantity share one colorbar. To split one off: `{"data": [{"uid": "FC", "coloraxis": "coloraxis2"}]}`.
 - Panel titles are annotations named `panel-title-1`, `panel-title-2`, …; set one's text with `{"layout": {"annotations": [{"name": "panel-title-2", "text": "GEFS · hit 78% · BER 15%"}]}}`. The text takes any characters, and `<br>` for a second line. Side-by-side files default to their `-i` NAME (else the file name) as the title, but NAME is an id of letters, digits and `_`: put title text in the annotation, not in NAME.
 - Maps use plain x/y axes in degrees (x = longitude). Add points or lines as `scatter` traces with `x` / `y`, and boxes as `layout.shapes` with `xref: "x"`, `yref: "y"`.

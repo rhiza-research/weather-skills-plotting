@@ -75,13 +75,13 @@ def parse_spec_arg(value):
     return SpecArg(parse_plot_spec(value))
 
 
-def compile(spec, datasets, *, theme=None):
+def compile(spec, datasets, *, theme=None, max_panels=None):
     """Compile a spec against ``{input id: Dataset}`` into a Plotly figure."""
     from weather_skills_plotting.figure import compile_figure
 
     if isinstance(spec, SpecArg):
         spec = spec.data
-    return compile_figure(spec, datasets, theme=theme)
+    return compile_figure(spec, datasets, theme=theme, max_panels=max_panels)
 
 
 def export(fig, output, *, datasets=None, scale=None):
