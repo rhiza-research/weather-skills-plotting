@@ -37,7 +37,7 @@ __all__ = [
     "validate",
 ]
 
-OUTPUT_SUFFIXES = (".png", ".jpg", ".jpeg", ".html", ".htm")
+OUTPUT_SUFFIXES = (".png", ".jpg", ".jpeg", ".pdf", ".svg", ".html", ".htm")
 
 
 class SpecArg:
@@ -85,10 +85,11 @@ def compile(spec, datasets, *, theme=None):
 
 
 def export(fig, output, *, datasets=None, scale=None):
-    """Write ``output`` (.png, .jpg or .html) and print the QA lines for images.
+    """Write ``output`` (.png, .jpg, .pdf, .svg or .html) and print the QA lines for images.
 
-    Images print a pixel ``plot hash`` and whether the plotted data is all-NaN.
-    HTML embeds plotly.js so the file works offline.
+    Images print a pixel ``plot hash`` and whether the plotted data is all-NaN;
+    a PDF or SVG is hashed from a PNG render of the same figure. HTML embeds
+    plotly.js so the file works offline.
     """
     from weather_skills_core.errors import UsageError
 
@@ -96,7 +97,8 @@ def export(fig, output, *, datasets=None, scale=None):
     suffix = output.suffix.lower()
     if suffix not in OUTPUT_SUFFIXES:
         raise UsageError(
-            f"output {output.name!r} must end in .png, .jpg or .html (got {suffix or 'no suffix'})"
+            f"output {output.name!r} must end in .png, .jpg, .pdf, .svg or .html "
+            f"(got {suffix or 'no suffix'})"
         )
     output.parent.mkdir(parents=True, exist_ok=True)
     if suffix in (".html", ".htm"):
@@ -131,7 +133,14 @@ def export(fig, output, *, datasets=None, scale=None):
     pio.write_image(image, output, scale=scale, validate=False)
     from weather_skills_plotting.qa import report_figure
 
-    report_figure(output, datasets, fig=fig)
+    if suffix in (".pdf", ".svg"):
+        import io
+
+        # Vector files have no pixels to hash; hash the PNG of the same figure.
+        png = pio.to_image(image, format="png", scale=scale, validate=False)
+        report_figure(io.BytesIO(png), datasets, fig=fig)
+    else:
+        report_figure(output, datasets, fig=fig)
     return output
 
 
