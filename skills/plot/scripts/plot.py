@@ -53,7 +53,7 @@ _ZARR_LAYERS = frozenset({"heatmap", "contour", "scatter", "quiver"})
 
 
 class LayerArg:
-    """``--layer KIND:PATH[=NAME]``. The decorator opens Zarr layers (``.ds``)."""
+    """``--layer KIND:PATH[=UID]``. The decorator opens Zarr layers (``.ds``)."""
 
     def __init__(self, kind: str, path: str, name: str | None):
         self.kind, self.path, self.name, self.ds = kind, path, name, None
@@ -71,7 +71,7 @@ def parse_layer(value):
     kind = kind.strip().lower()
     if not sep or not path.strip() or kind not in LAYER_KINDS:
         raise argparse.ArgumentTypeError(
-            f"--layer expects KIND:PATH[=NAME] with KIND one of {', '.join(LAYER_KINDS)}; "
+            f"--layer expects KIND:PATH[=UID] with KIND one of {', '.join(LAYER_KINDS)}; "
             f"got {value!r}"
         )
     return LayerArg(kind, *split_name(path.strip(), "--layer"))
@@ -161,17 +161,17 @@ def _layer_traces(layers):
     dest="inputs",
     type=parse_input,
     action="append",
-    help="Input Zarr as PATH or PATH=NAME. Repeat for side-by-side maps, one panel per file on "
-    "its own grid. In --spec the input is uid NAME, else its position: 0, 1, …. Exclusive with "
+    help="Input Zarr as PATH or PATH=UID (letters, digits, _). Repeat for side-by-side maps, one panel per file on "
+    "its own grid. In --spec the input is uid UID, else its position: 0, 1, …. Exclusive with "
     "data layers.",
 )
 @weather_skill.argument(
     "--layer",
     action="append",
     type=parse_layer,
-    help="KIND:PATH or KIND:PATH=NAME layer drawn on one shared map; repeat to stack, bottom "
+    help="KIND:PATH or KIND:PATH=UID layer drawn on one shared map; repeat to stack, bottom "
     "first. Kinds: heatmap, contour, scatter (stations), quiver (u/v), outline (GeoJSON), mask "
-    "(GeoJSON). In --spec the layer is uid NAME, else its position: 0, 1, ….",
+    "(GeoJSON). In --spec the layer is uid UID, else its position: 0, 1, ….",
 )
 @weather_skill.argument(
     "--obs",

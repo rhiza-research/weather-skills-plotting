@@ -23,7 +23,7 @@ def _size1(ds, *names):
 
 
 def trace_label(ds, idx: int, key: str | None = None) -> str:
-    """Legend label: the -i NAME, station id (and name), file stem, else the display label."""
+    """Legend label: the -i UID, station id (and name), file stem, else the display label."""
     if key is not None and not str(key).isdigit():
         return str(key)
     station = _size1(ds, "station_id", "point_id")
