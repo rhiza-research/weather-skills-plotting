@@ -57,6 +57,13 @@ def test_inputs_named_on_the_command_line(tmp_path, plot_fn, capsys):
         (["-i", "x.zarr=bad-name"], "PATH=UID"),
         (["-i", "=OBS"], "PATH=UID"),
         (["--layer", "heatmap:x.zarr=a.b"], "PATH=UID"),
+        # The error spells out the fix: an id for -i and the text as the trace's name.
+        (
+            ["-i", "x.zarr=CHIRPS total (mm)"],
+            '=CHIRPS_total_mm and pass --spec {"data": [{"uid": "CHIRPS_total_mm", '
+            '"name": "CHIRPS total (mm)"}]}',
+        ),
+        (["--layer", "heatmap:x.zarr=IMERG Late"], "end it with =IMERG_Late"),
     ],
 )
 def test_bad_input_name(plot_fn, capsys, argv, match):
@@ -224,6 +231,15 @@ def test_errors_are_actionable(tmp_path, plot_fn, capsys):
         ('{"data": [{"uid": "0", "colorscal": "Blues"}]}', "Did you mean"),
         ('{"layout": {"meta": {"geo": {"region": "Kenya"}}}}', "resolve-region"),
         ('{"layout": {"geo": {"showcountries": true}}}', "layout.meta.overlays"),
+        ('{"annotations": [{"text": "n=5"}]}', '{"layout": {"annotations": …}}'),
+        ('{"config": {"displaylogo": false}}', "plot takes none"),
+        ('{"data": [{"uid": "0", "meta": {"variable": "precip"}}]}', '{"source": {"variable"'),
+        # A grid draws as a heatmap: line styling says how to get a line chart.
+        ('{"data": [{"uid": "0", "line": {"color": "red"}}]}', "summarize-dim"),
+        (
+            '{"layout": {"meta": {"overlays": {"lakes": {"color": "#1f4e9c"}}}}}',
+            '{"lakes": {"fillcolor"',
+        ),
     ]
     for spec, match in bad:
         with pytest.raises(SystemExit):

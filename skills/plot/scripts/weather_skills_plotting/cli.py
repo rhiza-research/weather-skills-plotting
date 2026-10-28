@@ -36,12 +36,15 @@ def split_name(value: str, flag: str) -> tuple[str, str | None]:
     if not sep:
         return str(value), None
     if not path or not _NAME.fullmatch(name):
+        uid = re.sub(r"[^A-Za-z0-9_]+", "_", name).strip("_") or "A"
         raise argparse.ArgumentTypeError(
             f"{flag} expects PATH or PATH=UID, UID made of letters, digits and _; got {value!r}. "
             "UID is the trace's uid in --spec and its default legend / panel text. Other text takes any "
             "characters: "
             'legend text is the trace\'s "name" in --spec data (matched by uid), '
-            'panel title text is layout.annotations [{"name": "panel-title-N", "text": ...}]'
+            'panel title text is layout.annotations [{"name": "panel-title-N", "text": ...}]. '
+            f"For example, end it with ={uid} and pass "
+            f'--spec {{"data": [{{"uid": "{uid}", "name": "{name}"}}]}}'
         )
     return path, name
 

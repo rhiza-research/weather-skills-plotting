@@ -133,9 +133,22 @@ def check_shape(data: dict) -> None:
     """Top level is ``data`` / ``layout`` only."""
     unknown = sorted(set(data) - TOP_KEYS)
     if unknown:
+        import plotly.graph_objects as go
+
+        hints = []
+        for key in unknown:
+            if key == "theme":
+                hints.append(_THEME_HINT.removeprefix("; "))
+            elif key == "config":
+                hints.append(
+                    "config is Plotly's viewer settings (toolbar, export button), not part of "
+                    "the figure, and plot takes none: drop it"
+                )
+            elif key in go.Layout()._valid_props:
+                hints.append(f'{key} belongs in layout: {{"layout": {{"{key}": …}}}}')
         raise UsageError(
             f"plot spec top-level key(s) {', '.join(unknown)} are not allowed; a spec is a "
-            'Plotly figure {"data": [traces], "layout": {…}}' + _THEME_HINT * ("theme" in unknown)
+            'Plotly figure {"data": [traces], "layout": {…}}' + "".join(f"; {h}" for h in hints)
         )
     if not isinstance(data.get("data", []), list):
         raise UsageError("plot spec data must be a list of trace objects")
@@ -299,6 +312,8 @@ def _check_keys(obj, allowed, loc: str) -> None:
             hint = f'; a dotted name is a nested path: write {{"{head}": {{"{rest}": …}}}}'
         elif key == "theme":
             hint = _THEME_HINT
+        elif key in SOURCE_KEYS and key not in allowed and "source" in allowed:
+            hint = f'; the data to draw is chosen in meta.source: {{"source": {{"{key}": …}}}}'
         elif loc.endswith("geo") and key in _PLACE_NAME_KEYS:
             hint = (
                 "; geo takes coordinates only — run resolve-region for a named place and "
@@ -411,6 +426,12 @@ def check_layout_meta(meta) -> None:
                     f"plot spec layout.meta.overlays.{key} must be true, false, or a "
                     "Plotly scatter style object"
                 )
+            if key == "lakes" and isinstance(value, dict) and "color" in value:
+                raise UsageError(
+                    "plot spec layout.meta.overlays.lakes has no color: lakes are filled shapes, "
+                    'so set the fill with {"lakes": {"fillcolor": "…"}} and the shore line with '
+                    '{"lakes": {"line": {"color": "…"}}}'
+                )
     if meta.get("export") is not None:
         _check_keys(meta["export"], EXPORT_KEYS, "layout.meta.export")
     animation = meta.get("animation")
@@ -479,6 +500,12 @@ def plotly_error(exc: Exception, loc: str = "") -> UsageError:
         )
     if "'bbox'" in head and "Geo" in head:
         msg += '\nThe map window is layout.meta.geo.bbox: {"layout": {"meta": {"geo": {"bbox": [N, W, S, E]}}}}'
+    if "Heatmap" in head and any(f"'{k}'" in head for k in ("line", "mode", "marker")):
+        msg += (
+            "\nThis input is a lat/lon grid, so it draws as a heatmap. For a line chart, "
+            "area-average it first (summarize-dim --dim latitude --dim longitude) or pick a "
+            "point (point-value)"
+        )
     prefix = f"plot spec {loc}: " if loc else "plot spec: "
     return UsageError(
         prefix + msg + "\nKeys are standard Plotly: https://plotly.com/python/reference/"
