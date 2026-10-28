@@ -135,6 +135,8 @@ def check_shape(data: dict) -> None:
     if unknown:
         import plotly.graph_objects as go
 
+        # Say where each misplaced key goes: a layout property (annotations, title, …)
+        # was meant for layout; config is Plotly's viewer settings, which plot ignores.
         hints = []
         for key in unknown:
             if key == "theme":
@@ -312,7 +314,8 @@ def _check_keys(obj, allowed, loc: str) -> None:
             hint = f'; a dotted name is a nested path: write {{"{head}": {{"{rest}": …}}}}'
         elif key == "theme":
             hint = _THEME_HINT
-        elif key in SOURCE_KEYS and key not in allowed and "source" in allowed:
+        elif key in SOURCE_KEYS and "source" in allowed:
+            # meta.variable / meta.isel / …: the data keys live one level down.
             hint = f'; the data to draw is chosen in meta.source: {{"source": {{"{key}": …}}}}'
         elif loc.endswith("geo") and key in _PLACE_NAME_KEYS:
             hint = (
@@ -426,6 +429,7 @@ def check_layout_meta(meta) -> None:
                     f"plot spec layout.meta.overlays.{key} must be true, false, or a "
                     "Plotly scatter style object"
                 )
+            # Lakes are drawn as filled shapes, so a scatter "color" has nothing to set.
             if key == "lakes" and isinstance(value, dict) and "color" in value:
                 raise UsageError(
                     "plot spec layout.meta.overlays.lakes has no color: lakes are filled shapes, "
@@ -500,6 +504,7 @@ def plotly_error(exc: Exception, loc: str = "") -> UsageError:
         )
     if "'bbox'" in head and "Geo" in head:
         msg += '\nThe map window is layout.meta.geo.bbox: {"layout": {"meta": {"geo": {"bbox": [N, W, S, E]}}}}'
+    # Line styling on a grid input: grids draw as heatmaps, which take no line / marker.
     if "Heatmap" in head and any(f"'{k}'" in head for k in ("line", "mode", "marker")):
         msg += (
             "\nThis input is a lat/lon grid, so it draws as a heatmap. For a line chart, "
