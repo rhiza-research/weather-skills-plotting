@@ -19,6 +19,10 @@ from weather_skills_plotting.spec import (
 
 LARGE_HTML_MB = 50
 LARGE_PNG_MP = 40  # megapixels: a PNG/JPG above this gets a warning
+# A still image with more panels than this is refused: Chrome takes ~7 s to render
+# 200 small maps, ~18 s for 400, and never finishes 1,826 (five years of days).
+# 100 still holds 46 daily S2S leads, a year of weeks or two months of days.
+MAX_PANELS = 100
 
 
 def input_path(ds) -> str | None:
@@ -148,11 +152,16 @@ def run(
                 f"output {path.name!r}: a GIF plays an animation; add --animate, or write a "
                 "still map to .png"
             )
-    from weather_skills_plotting.figure import MAX_STILL_PANELS
-
+    fig = panels = compile(merged, datasets, theme=theme)
     # An animation draws one panel per frame, so only still images are capped.
-    max_panels = None if animate else MAX_STILL_PANELS
-    fig = panels = compile(merged, datasets, theme=theme, max_panels=max_panels)
+    n_panels = len(list(fig.select_xaxes()))
+    if not animate and n_panels > MAX_PANELS:
+        raise UsageError(
+            f"{n_panels} panels (one per time or step) is too many for one image; the limit "
+            f"is {MAX_PANELS}. Pick the times you need (meta.source.isel / sel, or the "
+            "select skill), aggregate first (aggregate-temporal, summarize-dim), or play them "
+            "as frames with --animate"
+        )
     layout_meta = (merged.get("layout") or {}).get("meta") or {}
     animation = layout_meta.get("animation") or {}
     gif = None

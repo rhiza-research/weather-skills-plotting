@@ -457,7 +457,7 @@ def test_still_map_refuses_more_than_100_panels(tmp_path, plot_fn, capsys):
         run_skill(plot_fn, "-i", str(grid), "-o", str(tmp_path / "map.png"))
     assert exc.value.code == 2
     err = capsys.readouterr().err
-    assert "101 map panels" in err and "--animate" in err and "isel" in err
+    assert "101 panels" in err and "--animate" in err and "isel" in err
     assert not (tmp_path / "map.png").exists()
 
 
