@@ -134,9 +134,24 @@ def check_shape(data: dict) -> None:
     """Top level is ``data`` / ``layout`` only."""
     unknown = sorted(set(data) - TOP_KEYS)
     if unknown:
+        import plotly.graph_objects as go
+
+        # Say where each misplaced key goes: a layout property (annotations, title, …)
+        # was meant for layout; config is Plotly's viewer settings, which plot ignores.
+        hints = []
+        for key in unknown:
+            if key == "theme":
+                hints.append(_THEME_HINT.removeprefix("; "))
+            elif key == "config":
+                hints.append(
+                    "config is Plotly's viewer settings (toolbar, export button), not part of "
+                    "the figure, and plot takes none: drop it"
+                )
+            elif key in go.Layout()._valid_props:
+                hints.append(f'{key} belongs in layout: {{"layout": {{"{key}": …}}}}')
         raise UsageError(
             f"plot spec top-level key(s) {', '.join(unknown)} are not allowed; a spec is a "
-            'Plotly figure {"data": [traces], "layout": {…}}' + _THEME_HINT * ("theme" in unknown)
+            'Plotly figure {"data": [traces], "layout": {…}}' + "".join(f"; {h}" for h in hints)
         )
     if not isinstance(data.get("data", []), list):
         raise UsageError("plot spec data must be a list of trace objects")
@@ -300,6 +315,9 @@ def _check_keys(obj, allowed, loc: str) -> None:
             hint = f'; a dotted name is a nested path: write {{"{head}": {{"{rest}": …}}}}'
         elif key == "theme":
             hint = _THEME_HINT
+        elif key in SOURCE_KEYS and "source" in allowed:
+            # meta.variable / meta.isel / …: the data keys live one level down.
+            hint = f'; the data to draw is chosen in meta.source: {{"source": {{"{key}": …}}}}'
         elif loc.endswith("geo") and key in _PLACE_NAME_KEYS:
             hint = (
                 "; geo takes coordinates only — run resolve-region for a named place and "
@@ -343,6 +361,14 @@ def check_trace_meta(meta, loc: str, palettes: dict) -> None:
         raise UsageError(
             f"plot spec {loc}.text labels the points of a meta.x / meta.y scatter; set both, "
             "or put a list of labels in the trace's own text"
+        )
+    # x / y draw one point per shared position; the series-over-time keys do not apply.
+    series_only = [k for k in ("along", "align", "band") if meta.get(k) is not None]
+    if meta.get("x") is not None and series_only:
+        raise UsageError(
+            f"plot spec {loc}.{series_only[0]} draws a series over time and does not work with "
+            f"{loc}.x / y. Drop x and y to plot the variable along time; to overlay years on one "
+            f'seasonal axis, set "align": "dayofyear" on each line instead of an x of day numbers'
         )
     if meta.get("arrows") is not None:
         _check_keys(meta["arrows"], ARROW_KEYS, f"{loc}.arrows")
@@ -417,6 +443,13 @@ def check_layout_meta(meta) -> None:
                     f"plot spec layout.meta.overlays.{key} must be true, false, or a "
                     "Plotly scatter style object"
                 )
+            # Lakes are drawn as filled shapes, so a scatter "color" has nothing to set.
+            if key == "lakes" and isinstance(value, dict) and "color" in value:
+                raise UsageError(
+                    "plot spec layout.meta.overlays.lakes has no color: lakes are filled shapes, "
+                    'so set the fill with {"lakes": {"fillcolor": "…"}} and the shore line with '
+                    '{"lakes": {"line": {"color": "…"}}}'
+                )
     if meta.get("export") is not None:
         _check_keys(meta["export"], EXPORT_KEYS, "layout.meta.export")
     animation = meta.get("animation")
@@ -485,6 +518,13 @@ def plotly_error(exc: Exception, loc: str = "") -> UsageError:
         )
     if "'bbox'" in head and "Geo" in head:
         msg += '\nThe map window is layout.meta.geo.bbox: {"layout": {"meta": {"geo": {"bbox": [N, W, S, E]}}}}'
+    # Line styling on a grid input: grids draw as heatmaps, which take no line / marker.
+    if "Heatmap" in head and any(f"'{k}'" in head for k in ("line", "mode", "marker")):
+        msg += (
+            "\nThis input is a lat/lon grid, so it draws as a heatmap. For a line chart, "
+            "area-average it first (summarize-dim --dim latitude --dim longitude) or pick a "
+            "point (point-value)"
+        )
     prefix = f"plot spec {loc}: " if loc else "plot spec: "
     return UsageError(
         prefix + msg + "\nKeys are standard Plotly: https://plotly.com/python/reference/"

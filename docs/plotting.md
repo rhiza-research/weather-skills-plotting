@@ -102,11 +102,13 @@ Values are drawn in the file's own units (K stays K, Pa stays Pa); run
 
 ## Output
 
-The `-o` suffix picks the format: `.png` or `.jpg` (kaleido, needs Chrome) or
-`.html` (self-contained, interactive), or `.gif` for `--animate` (each frame
-drawn by kaleido, joined by Pillow). Images print a pixel `plot hash` and a
-`data: not null | NULL` line. Provenance is embedded in PNG `tEXt` chunks, the
-GIF comment block, or an HTML `<meta>` tag.
+The `-o` suffix picks the format: `.png`, `.jpg`, `.pdf` or `.svg` (kaleido,
+needs Chrome), `.html` (self-contained, interactive), or `.gif` for `--animate`
+(each frame drawn by kaleido, joined by Pillow). Images print a `plot hash` and
+a `data: not null | NULL` line; the hash is of the pixels for PNG and JPG, and
+of the figure JSON for PDF and SVG, so it does not match across those formats.
+Provenance is embedded in PNG `tEXt` chunks, the GIF comment block, or an HTML
+`<meta>` tag.
 
 ```python
 from weather_skills_plotting import compile, export

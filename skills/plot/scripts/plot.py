@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.12,<3.13"
 # dependencies = [
-#   "weather-skills-core>=0.2.0",
+#   "weather-skills-core>=0.3.1",
 #   "cf-xarray>=0.11",
 #   "cftime>=1.6",
 #   "numpy>=2.5",
@@ -46,14 +46,14 @@ from weather_skills_plotting.spec import DUMP_SPEC_HELP, SPEC_ARGUMENT_HELP, mer
 from weather_skills_plotting.verify import build_verify_spec
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "1.0.3"
+_SKILL_VERSION = "1.0.5"
 
 LAYER_KINDS = ("heatmap", "contour", "scatter", "quiver", "outline", "mask")
 _ZARR_LAYERS = frozenset({"heatmap", "contour", "scatter", "quiver"})
 
 
 class LayerArg:
-    """``--layer KIND:PATH[=NAME]``. The decorator opens Zarr layers (``.ds``)."""
+    """``--layer KIND:PATH[=UID]``. The decorator opens Zarr layers (``.ds``)."""
 
     def __init__(self, kind: str, path: str, name: str | None):
         self.kind, self.path, self.name, self.ds = kind, path, name, None
@@ -71,7 +71,7 @@ def parse_layer(value):
     kind = kind.strip().lower()
     if not sep or not path.strip() or kind not in LAYER_KINDS:
         raise argparse.ArgumentTypeError(
-            f"--layer expects KIND:PATH[=NAME] with KIND one of {', '.join(LAYER_KINDS)}; "
+            f"--layer expects KIND:PATH[=UID] with KIND one of {', '.join(LAYER_KINDS)}; "
             f"got {value!r}"
         )
     return LayerArg(kind, *split_name(path.strip(), "--layer"))
@@ -161,17 +161,17 @@ def _layer_traces(layers):
     dest="inputs",
     type=parse_input,
     action="append",
-    help="Input Zarr as PATH or PATH=NAME. Repeat for side-by-side maps, one panel per file on "
-    "its own grid. In --spec the input is uid NAME, else its position: 0, 1, …. Exclusive with "
+    help="Input Zarr as PATH or PATH=UID (letters, digits, _). Repeat for side-by-side maps, one panel per file on "
+    "its own grid. In --spec the input is uid UID, else its position: 0, 1, …. Exclusive with "
     "data layers.",
 )
 @weather_skill.argument(
     "--layer",
     action="append",
     type=parse_layer,
-    help="KIND:PATH or KIND:PATH=NAME layer drawn on one shared map; repeat to stack, bottom "
+    help="KIND:PATH or KIND:PATH=UID layer drawn on one shared map; repeat to stack, bottom "
     "first. Kinds: heatmap, contour, scatter (stations), quiver (u/v), outline (GeoJSON), mask "
-    "(GeoJSON). In --spec the layer is uid NAME, else its position: 0, 1, ….",
+    "(GeoJSON). In --spec the layer is uid UID, else its position: 0, 1, ….",
 )
 @weather_skill.argument(
     "--obs",

@@ -19,6 +19,10 @@ from weather_skills_plotting.spec import (
 
 LARGE_HTML_MB = 50
 LARGE_PNG_MP = 40  # megapixels: a PNG/JPG above this gets a warning
+# A still image with more panels than this is refused: Chrome takes ~7 s to render
+# 200 small maps, ~18 s for 400, and never finishes 1,826 (five years of days).
+# 100 still holds 46 daily S2S leads, a year of weeks or two months of days.
+MAX_PANELS = 100
 
 
 def input_path(ds) -> str | None:
@@ -31,23 +35,28 @@ _NAME = re.compile(r"[A-Za-z0-9_]+")
 
 
 def split_name(value: str, flag: str) -> tuple[str, str | None]:
-    """``PATH=NAME`` → ``(PATH, NAME)``; a bare ``PATH`` has no name."""
+    """``PATH=UID`` → ``(PATH, UID)``; a bare ``PATH`` has no uid."""
     path, sep, name = str(value).rpartition("=")
     if not sep:
         return str(value), None
     if not path or not _NAME.fullmatch(name):
+        # A valid uid for the example: each run of other characters becomes _, the ends
+        # are trimmed, and "0" (the first input's default uid) stands in if nothing is left.
+        uid = re.sub(r"[^A-Za-z0-9_]+", "_", name).strip("_") or "0"
         raise argparse.ArgumentTypeError(
-            f"{flag} expects PATH or PATH=NAME, NAME made of letters, digits and _; got {value!r}. "
-            "NAME is the trace's uid and its default legend / panel text. Other text takes any "
+            f"{flag} expects PATH or PATH=UID, UID made of letters, digits and _; got {value!r}. "
+            "UID is the trace's uid in --spec and its default legend / panel text. Other text takes any "
             "characters: "
             'legend text is the trace\'s "name" in --spec data (matched by uid), '
-            'panel title text is layout.annotations [{"name": "panel-title-N", "text": ...}]'
+            'panel title text is layout.annotations [{"name": "panel-title-N", "text": ...}]. '
+            f"For example, end it with ={uid} and pass "
+            f'--spec {{"data": [{{"uid": "{uid}", "name": "{name}"}}]}}'
         )
     return path, name
 
 
 class InputArg:
-    """``-i PATH[=NAME]``. The decorator opens the Zarr (``.ds``)."""
+    """``-i PATH[=UID]``. The decorator opens the Zarr (``.ds``)."""
 
     def __init__(self, path: str, name: str | None):
         self.path, self.name, self.ds = path, name, None
@@ -65,11 +74,11 @@ def parse_input(value):
 
 
 def input_ids(names) -> list[str]:
-    """The id of each input in order: its NAME, else its position (``"0"``, ``"1"``, …)."""
+    """The id of each input in order: its UID, else its position (``"0"``, ``"1"``, …)."""
     ids = [name or str(i) for i, name in enumerate(names)]
     for key in ids:
         if ids.count(key) > 1:
-            raise UsageError(f"two inputs have the id {key!r}; give each a distinct PATH=NAME")
+            raise UsageError(f"two inputs have the id {key!r}; give each a distinct PATH=UID")
     return ids
 
 
@@ -144,6 +153,15 @@ def run(
                 "still map to .png"
             )
     fig = panels = compile(merged, datasets, theme=theme)
+    # An animation draws one panel per frame, so only still images are capped.
+    n_panels = len(list(fig.select_xaxes()))
+    if not animate and n_panels > MAX_PANELS:
+        raise UsageError(
+            f"{n_panels} panels (one per time or step) is too many for one image; the limit "
+            f"is {MAX_PANELS}. Pick the times you need (meta.source.isel / sel, or the "
+            "select skill), aggregate first (aggregate-temporal, summarize-dim), or play them "
+            "as frames with --animate"
+        )
     layout_meta = (merged.get("layout") or {}).get("meta") or {}
     animation = layout_meta.get("animation") or {}
     gif = None

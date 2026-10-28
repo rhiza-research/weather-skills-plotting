@@ -51,7 +51,7 @@ _META = {
 }
 
 _SOURCE = {
-    "input": "input id: NAME from -i PATH=NAME, else the position 0, 1, … (obs, forecast1 … for --verify grids; forecast, mclimate for --mediogram)",
+    "input": "input id: UID from -i PATH=UID, else the position 0, 1, … (obs, forecast1 … for --verify grids; forecast, mclimate for --mediogram)",
     "variable": "data variable to draw; required when the file holds more than one",
     "isel": '0-based positions, e.g. {"number": 0, "step": [0, 1]}; -1 is the last. One '
     "integer picks one value (one map); a list keeps the dim (one panel each); a range is "

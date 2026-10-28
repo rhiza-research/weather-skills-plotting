@@ -2,10 +2,10 @@
 name: plot
 description: "Draw weather-skills Zarrs as maps (heatmap, contour, stations, wind arrows), time series, xy scatter plots, wind roses, forecast verification grids (obs, lead-week forecasts and their hits / bias / MAE maps), ECMWF-style mediograms (forecast vs model-climate ensembles at a point), or animated maps through time, saved as PNG, JPG, interactive HTML, or GIF. Titles, colors, panels, and layout are set with a standard Plotly figure JSON."
 license: MIT
-compatibility: Requires Python 3.12 and uv. PNG/JPG export needs Chrome (installed, or `plotly_get_chrome -y`). Self-contained; the plotting library ships in scripts/.
+compatibility: Requires Python 3.12 and uv. PNG, JPG, PDF and SVG export needs Chrome (installed, or `plotly_get_chrome -y`). Self-contained; the plotting library ships in scripts/.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py *)
 metadata:
-  version: "1.0.3"
+  version: "1.0.5"
   catalog-group: figure
 ---
 
@@ -39,22 +39,22 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --animate -i rain_daily.zarr -o rain.
 The plot type follows the data: a lat/lon grid is a colored map, stations are colored markers, 1-D series are lines on one time axis. `meta.x` / `meta.y` scatter two variables or coordinates; a name coordinate such as `county` becomes a category axis (a dot chart: `"meta": {"x": "precip_7d", "y": "county"}`). `meta.text` labels each point with a variable or coordinate, e.g. `"meta": {"x": "nino34", "y": "precip", "text": "year"}`; short series of up to 25 points get their year or date by default. `--obs`/`--forecast`/`--verify` and `--mediogram` pick the two special figures (sections below); `--animate` plays any map through time instead of drawing side-by-side panels. Use one of the three at a time.
 
 ### Arguments
-- `--input`, `-i` — Zarr to draw, as `PATH` or `PATH=NAME`; repeat for side-by-side maps or more lines.
-- `--layer` — `KIND:PATH` or `KIND:PATH=NAME` to stack on one map; repeat. Kinds: `heatmap`, `contour` (over a heatmap: labeled black lines, every 4 hPa for sea-level pressure; `"contours": {"coloring": "fill"}` fills it), `scatter` (stations; `"mode": "markers+text"` labels each with its `name` coordinate, else its id; local-extrema highs / lows print as a blue H / red L over the central value, restyled by a trace with that layer's uid), `quiver` (wind u/v: a speed field NAME and arrows NAME-arrows, each picking its own `isel` / `sel`), `outline` and `mask` (GeoJSON). `outline` and `mask` layers also combine with `-i` inputs (`-i grid.zarr --layer outline:counties.geojson`); `-i` itself takes Zarr paths only.
+- `--input`, `-i` — Zarr to draw, as `PATH` or `PATH=UID`; repeat for side-by-side maps or more lines. `UID` (letters, digits, `_`, e.g. `WRF`) is the trace's `"uid"` in `--spec`; legend text goes in that trace's `"name"`, panel titles in a `panel-title-N` annotation.
+- `--layer` — `KIND:PATH` or `KIND:PATH=UID` to stack on one map; repeat. Kinds: `heatmap`, `contour` (over a heatmap: labeled black lines, every 4 hPa for sea-level pressure; `"contours": {"coloring": "fill"}` fills it), `scatter` (stations; `"mode": "markers+text"` labels each with its `name` coordinate, else its id; local-extrema highs / lows print as a blue H / red L over the central value, restyled by a trace with that layer's uid), `quiver` (wind u/v: a speed field UID and arrows UID-arrows, each picking its own `isel` / `sel`), `outline` and `mask` (GeoJSON). `outline` and `mask` layers also combine with `-i` inputs (`-i grid.zarr --layer outline:counties.geojson`); `-i` itself takes Zarr paths only.
 - `--obs`, `--forecast`, `--verify` — verification grid: the observation for one week, then each lead's forecast (repeat, week-1 first) and its verify-skill output (once per `--forecast`, same order). See **Verification grid**.
 - `--mediogram` — forecast vs model climate at one point; pass `-i` twice (forecast, then m-climate). See **Mediogram**.
 - `--animate` — the same map, with its times or steps played as frames; takes the same `-i` / `--layer` inputs. `-o` must end in `.html` or `.gif`. See **Animation**.
 - `--spec` — Plotly figure JSON, inline or a file path.
 - `--theme-file` — house style: Plotly `template`, `palettes`, per-field `defaults`, element `styles`, base-map `overlays` (see Colors); or a shipped theme by name, e.g. `tropical_tidbits`.
 - `--dump-spec` — print (`-`) or save (a path) the spec, without drawing.
-- `--output`, `-o` — `.png`, `.jpg`, `.html`, or `.gif` (`--animate` only).
+- `--output`, `-o` — `.png`, `.jpg`, `.pdf`, `.svg`, `.html`, or `.gif` (`--animate` only). PDF and SVG are vector files for reports and editing; text stays text. Repeat `-o` to write several formats from one run (`-o map.png -o map.pdf`).
 
 ### Customizing with `--spec`
 `--spec` changes the defaults. It takes [Plotly figure](https://plotly.com/python/reference/) JSON, `{"data": [...], "layout": {...}}`; write only the parts you change.
 
 Each input file is one entry in `data`. Name it on the command line (`-i ecmwf.zarr=FC`) and put that name in `"uid"`. Unnamed files are `"0"`, `"1"`, … in order.
 
-A trace's `uid` is its file's NAME when the file is named, else its position: `-i a.zarr=West` is `"uid": "West"`, and `"0"` then matches nothing (plot stops). Copy uids from the `-i` line, or run `--dump-spec -` to see them. NAME is an id (letters, digits, `_`); it is also the default legend and panel text until the trace sets `"name"` (legend text such as `"TAHMO (automatic)"`) or a `panel-title-N` annotation its title.
+A trace's `uid` is its file's UID when one is given, else its position: `-i a.zarr=West` is `"uid": "West"`, and `"0"` then matches nothing (plot stops). Copy uids from the `-i` line, or run `--dump-spec -` to see them. UID is an id (letters, digits, `_`); it is also the default legend and panel text until the trace sets `"name"` (legend text such as `"TAHMO (automatic)"`) or a `panel-title-N` annotation its title.
 
 ```bash
 # Two named files, restyled by name: bars per county, one panel each
@@ -65,7 +65,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i west.zarr=West -i east.zarr=East -
 # Named lines: legend names and colors
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i chirps_area.zarr=CHIRPS -i imerg_area.zarr=IMERG -o rain.png --spec '{"data": [
   {"uid": "CHIRPS", "line": {"color": "black"}}, {"uid": "IMERG", "name": "IMERG Late", "line": {"dash": "dash"}}]}'
-# Named layers: the uid is the NAME after the path
+# Named layers: the uid is the UID after the path
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --layer heatmap:rain.zarr=RAIN --layer contour:msl.zarr=MSLP -o map.png --spec '{"data": [
   {"uid": "RAIN", "zmin": 0, "zmax": 50}, {"uid": "MSLP", "contours": {"size": 2}}]}'
 ```
@@ -104,9 +104,9 @@ CHIRPS and ECMWF week-1 rainfall side by side over Kenya, each on its own grid, 
 ## Details
 
 ### Panels and layers
-- A file with several times or steps gets one panel each, titled with its date. `layout.grid.rows` / `columns` set the grid; `xgap` / `ygap` the spacing, as a fraction of a panel.
+- A file with several times or steps gets one panel each, titled with its date. `layout.grid.rows` / `columns` set the grid; `xgap` / `ygap` the spacing, as a fraction of a panel. A still image takes at most 100 panels and stops with an error past that: pick times with `meta.source.isel` / `sel` (or the select skill), aggregate first, or use `--animate`, which has no limit.
 - Panels showing the same quantity share one colorbar. To split one off: `{"data": [{"uid": "FC", "coloraxis": "coloraxis2"}]}`.
-- Panel titles are annotations named `panel-title-1`, `panel-title-2`, …; set one's text with `{"layout": {"annotations": [{"name": "panel-title-2", "text": "GEFS · hit 78% · BER 15%"}]}}`. The text takes any characters, and `<br>` for a second line. Side-by-side files default to their `-i` NAME (else the file name) as the title, but NAME is an id of letters, digits and `_`: put title text in the annotation, not in NAME.
+- Panel titles are annotations named `panel-title-1`, `panel-title-2`, …; set one's text with `{"layout": {"annotations": [{"name": "panel-title-2", "text": "GEFS · hit 78% · BER 15%"}]}}`. The text takes any characters, and `<br>` for a second line. Side-by-side files default to their `-i` UID (else the file name) as the title, but UID is an id of letters, digits and `_`: put title text in the annotation, not in UID.
 - Maps use plain x/y axes in degrees (x = longitude). Add points or lines as `scatter` traces with `x` / `y`, and boxes as `layout.shapes` with `xref: "x"`, `yref: "y"`.
 - An `outline` layer frames the map unless `geo.bbox` is set, and hides the built-in admin-1 lines. Use it to draw official boundaries.
 - The canvas fits the maps (up to 760×560 px for one map, 340×340 px per panel in a grid). `layout.width` / `height` fix it.
@@ -134,7 +134,7 @@ CHIRPS and ECMWF week-1 rainfall side by side over Kenya, each on its own grid, 
   - `palettes`: `{name: {colors, bounds}}` for `meta.palette`; a name like a built-in one replaces it.
   - `defaults`: what a field gets when the spec names no palette, per kind: `precip`, `precip_anomaly`, `precip_poa`, `spi`, `wind_speed`, `diverging`, `sea_level_pressure`, `temperature`, `sequential`. A value is a palette (name, color list or `{colors, bounds}`) or a Plotly colorscale name.
   - `styles`: Plotly settings per drawn element, e.g. `isobars`, `highs` / `lows` (H / L text), `arrows`; anything the spec sets on a trace wins.
-  - `overlays`: line styles per base-map layer, e.g. `{"borders": {"line": {"color": "#333333"}}}`.
+  - `overlays`: line styles per base-map layer, e.g. `{"borders": {"line": {"color": "#333333"}}}`; lakes are filled, so their color is `{"lakes": {"fillcolor": "…"}}`.
 - Without `--theme-file`, `$WEATHER_SKILLS_PLOT_THEME` or `~/.config/weather-skills/plot.json|toml` is used if present.
 
 ### Verification grid

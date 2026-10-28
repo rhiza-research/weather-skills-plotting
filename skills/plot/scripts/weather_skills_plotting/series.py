@@ -23,7 +23,7 @@ def _size1(ds, *names):
 
 
 def trace_label(ds, idx: int, key: str | None = None) -> str:
-    """Legend label: the -i NAME, station id (and name), file stem, else the display label."""
+    """Legend label: the -i UID, station id (and name), file stem, else the display label."""
     if key is not None and not str(key).isdigit():
         return str(key)
     station = _size1(ds, "station_id", "point_id")
@@ -66,13 +66,19 @@ def warn_disjoint_dates(spec: dict, datasets: dict) -> None:
         if times.dtype.kind == "M" and times.size:
             spans[trace.get("uid") or key] = (times.min(), times.max())
     items = list(spans.items())
+    apart = []
     for i, (a, (a0, a1)) in enumerate(items):
         for b, (b0, b1) in items[i + 1 :]:
             if a1 < b0 or b1 < a0:
-                warn(
-                    f"series {a} ({str(a0)[:10]}–{str(a1)[:10]}) and {b} "
-                    f"({str(b0)[:10]}–{str(b1)[:10]}) share no dates"
-                )
+                apart.extend(k for k in (a, b) if k not in apart)
+    if apart:
+        # One warning however many pairs: with n disjoint series, a line per pair buries
+        # any error that follows.
+        listed = ", ".join(f"{k} ({str(spans[k][0])[:10]}–{str(spans[k][1])[:10]})" for k in apart)
+        warn(
+            f"series {listed} do not all share dates, so they sit apart on the time axis; "
+            f'to overlay years on one seasonal axis, set "align": "dayofyear" on each line'
+        )
 
 
 def warn_mixed_units(spec: dict, datasets: dict) -> None:
