@@ -1027,6 +1027,10 @@ def bind_xy(trace, meta, ctx, loc):
             for v in x_da[x_da.dims[0]].values
         ]
         text = [label for label, ok in zip(labels, keep, strict=True) if ok]
+    # Point labels default a little under the axis font; the trace's textfont.size wins.
+    size = (trace.get("textfont") or {}).get("size") or 10
+    if text is not None:
+        out["textfont"] = {"size": size}
     if text is not None and bar:
         # Above the bar, at full size: Plotly otherwise shrinks a label to the bar width.
         out.update(text=text, textposition="outside", constraintext="none", cliponaxis=False)
@@ -1034,7 +1038,8 @@ def bind_xy(trace, meta, ctx, loc):
         # Dates and names have no axis fractions to place by.
         out.update(mode="markers+text", text=text, textposition="top center", cliponaxis=False)
     elif text is not None:
-        # Greedy placement in axis fractions (a label ~ 0.018 wide per character, 0.05 tall):
+        # Greedy placement in axis fractions (at 12 px a label is ~ 0.018 wide per character
+        # and 0.05 tall):
         # each label takes the first side that does not cover one already placed.
         x0, y0 = out["x"], out["y"]
         fx = (x0 - x0.min()) / max(float(np.ptp(x0)), 1e-12)
@@ -1049,7 +1054,7 @@ def bind_xy(trace, meta, ctx, loc):
         }
         boxes, positions = [], []
         for px, py, label in zip(fx, fy, text, strict=True):
-            w, h = 0.018 * len(label), 0.05
+            w, h = 0.018 * len(label) * size / 12, 0.05 * size / 12
             candidates = []
             for name, (dx, dy) in sides.items():
                 bx = px + 0.01 + dx * (w + 0.02)

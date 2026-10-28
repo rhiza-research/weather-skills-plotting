@@ -214,6 +214,11 @@ def test_meta_text_labels_each_point(tmp_path, plot_fn, capsys):
     trace = compile(spec, {"0": xr.open_zarr(path)}).data[0]
     assert list(trace.text) == [str(y) for y in range(1985, 2025)]
     assert trace.mode == "markers+text"
+    assert trace.textfont.size == 10
+    user["data"][0]["textfont"] = {"size": 14}
+    spec = _dump(plot_fn, capsys, "-i", str(path), "--spec", json.dumps(user))
+    assert compile(spec, {"0": xr.open_zarr(path)}).data[0].textfont.size == 14
+    del user["data"][0]["textfont"]
     # A whole-number float prints without decimals.
     user["data"][0]["meta"]["text"] = "rank"
     spec = _dump(plot_fn, capsys, "-i", str(path), "--spec", json.dumps(user))
