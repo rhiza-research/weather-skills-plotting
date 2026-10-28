@@ -172,18 +172,23 @@ def run(
         user_layout = merged.get("layout") or {}
         if ".gif" in suffixes:
             # A GIF plays by itself: no play / pause or slider.
-            gif = animate_figure(fig, user_layout=user_layout, animation=animation, controls=False)
-        fig = animate_figure(fig, user_layout=user_layout, animation=animation)
-        size = estimate_html_mb(fig)
-        print(
-            f"animation: {len(fig.frames)} frames, {size:.1f} MB of figure data",
-            file=sys.stderr,
-        )
-        if size > LARGE_HTML_MB and suffixes & {".html", ".htm"}:
-            warn(
-                f"the HTML will be large (~{size:.0f} MB) and slow to open; select fewer frames "
-                "(meta.source.isel / sel) or a smaller layout.meta.geo.bbox"
+            fig = gif = animate_figure(
+                fig, user_layout=user_layout, animation=animation, controls=False
             )
+            if not suffixes & {".html", ".htm"}:
+                print(f"animation: {len(gif.frames)} frames", file=sys.stderr)
+        if suffixes & {".html", ".htm"}:
+            fig = animate_figure(panels, user_layout=user_layout, animation=animation)
+            size = estimate_html_mb(fig)
+            print(
+                f"animation: {len(fig.frames)} frames, {size:.1f} MB of figure data",
+                file=sys.stderr,
+            )
+            if size > LARGE_HTML_MB:
+                warn(
+                    f"the HTML will be large (~{size:.0f} MB) and slow to open; select fewer "
+                    "frames (meta.source.isel / sel) or a smaller layout.meta.geo.bbox"
+                )
     export_meta = layout_meta.get("export") or {}
     scale = scale or export_meta.get("scale") or 1
     width, height = fig.layout.width or 700, fig.layout.height or 500

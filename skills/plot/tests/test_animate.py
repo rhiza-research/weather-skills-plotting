@@ -280,3 +280,19 @@ def test_changing_scatter_is_scattergl_in_html(tmp_path, animation_fn):
         if "arrows" in data[i]["uid"]:
             assert data[i]["type"] == "scattergl"
             assert {f["data"][f["traces"].index(i)]["type"] for f in frames} == {"scattergl"}
+
+
+def test_moving_highs_animate_without_the_svg_text_halo(grid, tmp_path, animation_fn):
+    # local-extrema H / L take the theme's textfont.shadow, which scattergl rejects.
+    highs = make_point_obs(n_time=4)
+    highs["precip"].values = np.arange(4.0)[None, :] * np.ones(highs["precip"].shape)
+    highs["precip"].attrs["extremum_kind"] = "high"
+    highs = str(write_zarr(highs, tmp_path / "highs.zarr"))
+    layers = ["--layer", f"heatmap:{grid}", "--layer", f"scatter:{highs}"]
+    run_skill(animation_fn, "--animate", *layers, "-o", str(tmp_path / "v.gif"))
+    assert (tmp_path / "v.gif").stat().st_size > 0
+    out = tmp_path / "v.html"
+    run_skill(animation_fn, "--animate", *layers, "-o", str(out))
+    data, _ = base_of(figure_of(out)[0])
+    gl = [t for t in data if t["type"] == "scattergl"]
+    assert gl and all("shadow" not in t["textfont"] for t in gl)

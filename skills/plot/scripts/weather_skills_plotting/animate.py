@@ -112,11 +112,13 @@ def animate_figure(
         # Plotly.animate redraws a changing (animatable) scatter in a pass that drops
         # the heatmap layer, so the map flashes blank each frame; scattergl is not
         # animatable and redraws in one go. The GIF draws stills and keeps SVG scatter.
+        # scattergl lacks a few SVG-only properties (textfont.shadow, the theme's H / L
+        # halo); Plotly's own validator drops whatever the new type can't draw.
         for j in indices:
             if base[j].get("type") == "scatter":
-                base[j]["type"] = "scattergl"
-                for p in range(n):
-                    panels[p][j] = {**panels[p][j], "type": "scattergl"}
+                for traces in (base, *panels):
+                    gl = {k: v for k, v in traces[j].items() if k != "type"}
+                    traces[j] = go.Scattergl(gl, skip_invalid=True).to_plotly_json()
 
     # Panel 2..N titles sit on x2, x3 … and drop out here; panel 1's becomes the frame label.
     annotations = [a for a in layout.get("annotations") or [] if _annotation_on_panel_one(a)]
