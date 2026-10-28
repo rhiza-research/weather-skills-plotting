@@ -48,7 +48,7 @@ from weather_skills_plotting.verify import build_verify_spec
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
 _SKILL_VERSION = "1.0.5"
 
-LAYER_KINDS = ("heatmap", "contour", "scatter", "quiver", "outline", "mask")
+LAYER_KINDS = ("heatmap", "contour", "scatter", "quiver", "outline")
 _ZARR_LAYERS = frozenset({"heatmap", "contour", "scatter", "quiver"})
 
 
@@ -118,11 +118,8 @@ def _as_drawn(ds, trace):
 
 
 def _layer_traces(layers):
-    data, datasets, mask = [], {}, None
+    data, datasets = [], {}
     for uid, layer in zip(input_ids([x.name for x in layers]), layers, strict=True):
-        if layer.kind == "mask":
-            mask = layer.path
-            continue
         if layer.kind == "outline":
             data.append(
                 {
@@ -151,7 +148,7 @@ def _layer_traces(layers):
                     "meta": {"bind": "arrows", "source": source},
                 }
             )
-    return data, datasets, mask
+    return data, datasets
 
 
 @weather_skill(name="plot", version=_SKILL_VERSION)
@@ -170,8 +167,8 @@ def _layer_traces(layers):
     action="append",
     type=parse_layer,
     help="KIND:PATH or KIND:PATH=UID layer drawn on one shared map; repeat to stack, bottom "
-    "first. Kinds: heatmap, contour, scatter (stations), quiver (u/v), outline (GeoJSON), mask "
-    "(GeoJSON). In --spec the layer is uid UID, else its position: 0, 1, ….",
+    "first. Kinds: heatmap, contour, scatter (stations), quiver (u/v), outline (GeoJSON). "
+    "In --spec the layer is uid UID, else its position: 0, 1, ….",
 )
 @weather_skill.argument(
     "--obs",
@@ -195,7 +192,7 @@ def _layer_traces(layers):
     "--mediogram",
     action="store_true",
     help="Mediogram at one point: -i the forecast Zarr, then -i the m-climate Zarr "
-    "(input ids forecast, mclimate); set layout.meta.geo.point in --spec.",
+    "(input ids forecast, mclimate), each a point-value output at one point.",
 )
 @weather_skill.argument(
     "--animate",
@@ -209,6 +206,11 @@ def _layer_traces(layers):
     help="Theme JSON/TOML, or a shipped theme name (tropical_tidbits), layered on the "
     "standard look: {template, palettes, defaults, styles, overlays}.",
 )
+@weather_skill.argument(
+    "--scale",
+    type=float,
+    help="PNG/JPG pixel multiplier (default 1): 2 doubles the resolution, not the layout.",
+)
 @weather_skill.argument("--dump-spec", nargs="?", const="-", probe=True, help=DUMP_SPEC_HELP)
 def plot(
     inputs,
@@ -221,6 +223,7 @@ def plot(
     animate,
     spec,
     theme_file,
+    scale,
     dump_spec,
     **kwargs,
 ):
@@ -238,35 +241,32 @@ def plot(
         if inputs or layers:
             raise UsageError("--obs/--forecast/--verify make a verification grid; drop -i/--layer")
         merged, datasets = build_verify_spec(obs, forecast, verify, spec)
-        return run(merged, None, datasets, output, dump_spec, theme_file=theme_file)
+        return run(merged, None, datasets, output, dump_spec, theme_file=theme_file, scale=scale)
     if mediogram:
         if layers:
             raise UsageError("--mediogram takes two -i inputs (forecast, m-climate), not --layer")
         merged, datasets = build_mediogram_spec(files, spec)
-        return run(merged, None, datasets, output, dump_spec, theme_file=theme_file)
+        return run(merged, None, datasets, output, dump_spec, theme_file=theme_file, scale=scale)
     if replayed in ("plot --verify", "plot --mediogram") and not files and not layers:
         # The dumped spec already holds every trace and its layout.
-        return run(spec.data, None, spec.opened(), output, dump_spec, theme_file=theme_file)
-    # Boundaries and masks go on -i maps too: an outline on every panel.
-    shapes = [x for x in layers if x.kind in ("outline", "mask")] if files else []
+        return run(
+            spec.data, None, spec.opened(), output, dump_spec, theme_file=theme_file, scale=scale
+        )
+    # Boundaries go on -i maps too: an outline on every panel.
+    shapes = [x for x in layers if x.kind == "outline"] if files else []
     if shapes and len(shapes) == len(layers):
         layers = []
     if files and layers:
-        raise UsageError(
-            "pass -i/--input or --layer, not both (-i takes only outline: and mask: layers)"
-        )
+        raise UsageError("pass -i/--input or --layer, not both (-i takes only outline: layers)")
     if animate and len(files) > 1:
         raise UsageError(
             "--animate plays one map: stack the inputs with --layer (heatmap:, contour:, "
-            "scatter:, quiver:, outline:, mask:) instead of several -i"
+            "scatter:, quiver:, outline:) instead of several -i"
         )
-    layout = {}
     series = False
     if layers:
-        data, datasets, mask = _layer_traces(layers)
+        data, datasets = _layer_traces(layers)
         datasets = spec_datasets(spec, datasets)
-        if mask:
-            layout["meta"] = {"geo": {"mask_geojson": mask}}
     else:
         cli = dict(zip(input_ids([x.name for x in inputs]), files, strict=True))
         datasets = spec_datasets(spec, cli)
@@ -293,9 +293,6 @@ def plot(
         else:
             data = []
         for j, shape in enumerate(shapes):
-            if shape.kind == "mask":
-                layout["meta"] = {"geo": {"mask_geojson": shape.path}}
-                continue
             for i in range(len(datasets)):
                 outline = {
                     "uid": f"outline{j + 1}" + (f"-{i + 1}" if i else ""),
@@ -311,13 +308,20 @@ def plot(
                 "pass -i/--input, --layer, or a --spec with data and layout.meta.inputs"
             )
     base = skeleton("plot --animate" if animate else "plot", datasets, data)
-    if layout.get("meta"):
-        base["layout"]["meta"].update(layout["meta"])
     merged = merge_spec(base, spec.data if spec is not None else {})
     if series:
         warn_mixed_units(merged, datasets)
         warn_disjoint_dates(merged, datasets)
-    return run(merged, None, datasets, output, dump_spec, theme_file=theme_file, animate=animate)
+    return run(
+        merged,
+        None,
+        datasets,
+        output,
+        dump_spec,
+        theme_file=theme_file,
+        scale=scale,
+        animate=animate,
+    )
 
 
 install_spec_help(plot)

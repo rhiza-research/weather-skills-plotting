@@ -112,8 +112,7 @@
     "boundary": {"line": {"color": "black", "width": 2}},
     "arrows": {"line": {"color": "black"}},
     "arrow_key_box": {"fillcolor": "rgba(255, 255, 255, 0.85)"},
-    "members": {"opacity": 0.45},
-    "band_members": {"opacity": 0.25, "line": {"width": 1}}
+    "members": {"opacity": 0.45}
   },
   "overlays": {
     "admin1": {"line": {"color": "#737373", "width": 0.6}},

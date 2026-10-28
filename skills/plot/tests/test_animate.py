@@ -74,11 +74,13 @@ def test_frames_share_one_color_axis(grid, animation_fn, tmp_path):
     assert {f["data"][0].get("coloraxis") for f in frames} == {"coloraxis"}
 
 
-def test_animation_speed_and_user_slider(grid, animation_fn, tmp_path):
+def test_user_controls_set_the_speed(grid, animation_fn, tmp_path):
+    # Plotly's own updatemenus / sliders replace the default controls, frame duration too.
     out = tmp_path / "v.html"
+    play = {"label": "Play", "method": "animate", "args": [None, {"frame": {"duration": 120}}]}
     spec = {
         "layout": {
-            "meta": {"animation": {"duration": 120}},
+            "updatemenus": [{"type": "buttons", "buttons": [play]}],
             "sliders": [{"steps": [{"label": "mine", "method": "animate", "args": [["0"]]}]}],
         }
     }
@@ -115,7 +117,9 @@ def test_gif_one_frame_per_time(grid, animation_fn, tmp_path, capsys):
     from weather_skills_core.provenance import load_figure_history
 
     out = tmp_path / "v.gif"
-    spec = {"layout": {"meta": {"animation": {"duration": 120}}}}
+    # The Play button's frame duration sets the GIF speed too.
+    play = {"label": "Play", "method": "animate", "args": [None, {"frame": {"duration": 120}}]}
+    spec = {"layout": {"updatemenus": [{"type": "buttons", "buttons": [play]}]}}
     run_skill(animation_fn, "--animate", "-i", grid, "--spec", json.dumps(spec), "-o", str(out))
     assert "plot hash:" in capsys.readouterr().out
     with Image.open(out) as img:
@@ -129,6 +133,23 @@ def test_gif_one_frame_per_time(grid, animation_fn, tmp_path, capsys):
     # The field changes every frame.
     assert len(set(firsts)) == 4
     assert load_figure_history(out)
+
+
+def test_gif_draws_no_play_button(grid):
+    # The spec's Play button sets the GIF speed; the GIF itself has no controls.
+    import xarray as xr
+
+    from weather_skills_plotting import compile
+    from weather_skills_plotting.animate import animate_figure
+
+    menus = [{"type": "buttons", "buttons": [{"label": "Play", "method": "animate"}]}]
+    trace = {"uid": "0", "type": "heatmap", "meta": {"source": {"input": "0"}}}
+    spec = {"data": [trace], "layout": {"updatemenus": menus}}
+    fig = compile(spec, {"0": xr.open_zarr(grid)})
+    gif = animate_figure(fig, user_layout=spec["layout"], controls=False)
+    assert not gif.layout.updatemenus and not gif.layout.sliders
+    html = animate_figure(fig, user_layout=spec["layout"])
+    assert html.layout.updatemenus[0].buttons[0].label == "Play"
 
 
 def test_gif_of_constant_field(tmp_path, animation_fn):
@@ -194,10 +215,12 @@ def test_outline_layer_on_every_frame(grid, edge, animation_fn, tmp_path, capsys
     assert all(outline not in f["traces"] for f in frames)
 
 
-def test_mask_layer(grid, edge, animation_fn, capsys):
-    run_skill(animation_fn, "--animate", "-i", grid, "--layer", f"mask:{edge}", "--dump-spec", "-")
-    spec = json.loads(capsys.readouterr().out)
-    assert spec["layout"]["meta"]["geo"]["mask_geojson"] == edge
+def test_mask_layer_is_gone(grid, edge, animation_fn, capsys):
+    # Masking is clip-region's job.
+    with pytest.raises(SystemExit) as exc:
+        run_skill(animation_fn, "--animate", "-i", grid, "--layer", f"mask:{edge}", "-o", "x.html")
+    assert exc.value.code == 2
+    assert "KIND one of" in capsys.readouterr().err
 
 
 def test_layers_animate_like_a_still_map(grid, edge, animation_fn, tmp_path):

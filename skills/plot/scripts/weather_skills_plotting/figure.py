@@ -20,15 +20,14 @@ import sys
 
 import numpy as np
 from weather_skills_core.errors import UsageError
-from weather_skills_core.standard_utils import parse_bbox, polygon_from_geojson
 from weather_skills_core.units import convert_values, variable_units
 
-from weather_skills_plotting.bind import Context, bind_of, bind_trace
+from weather_skills_plotting.bind import Context, arrow_key, bind_of, bind_trace
 from weather_skills_plotting.geodata import (
+    OVERLAY_NAMES,
     dateline_bbox,
     geoms_to_xy,
     overlay_geoms,
-    overlay_settings,
 )
 from weather_skills_plotting.kinds import (
     ISOBAR_INTERVAL_HPA,
@@ -82,22 +81,13 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
     theme = theme or load_theme()
     spec = validate(copy.deepcopy(spec), theme)
     user_layout = copy.deepcopy(spec.get("layout") or {})
-    lmeta = user_layout.pop("meta", None) or {}
-    geo = lmeta.get("geo") or {}
-    bbox = geo.get("bbox")
-    bbox = tuple(parse_bbox(bbox)) if isinstance(bbox, str) else (tuple(bbox) if bbox else None)
-    if bbox is None:
-        # A grid that crosses the dateline is drawn on one continuous 0..360 window.
-        bbox = dateline_bbox(datasets.values())
-    elif bbox[0] < bbox[2]:
-        raise UsageError(f"layout.meta.geo.bbox {list(bbox)} is [N, W, S, E]; north is below south")
+    user_layout.pop("meta", None)
     ctx = Context(
         datasets=datasets,
         palettes=theme["palettes"],
         theme=theme,
-        bbox=bbox,
-        polygon=polygon_from_geojson(geo["mask_geojson"]) if geo.get("mask_geojson") else None,
-        point=geo.get("point"),
+        # A grid that crosses the dateline is drawn on one continuous 0..360 window.
+        bbox=dateline_bbox(datasets.values()),
     )
     colorway = list(
         layout_value(user_layout, "colorway") or theme["template"]["layout"]["colorway"]
@@ -106,24 +96,25 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
     items = []
     n_colored = 0
     traces = spec.get("data") or []
-    # UID-members / UID-band style the parts of band trace UID; they draw nothing alone.
-    banded = {t.get("uid"): t for t in traces if (t.get("meta") or {}).get("band") is not None}
-    parts: dict = {}
+    # The base-map layers are traces the figure adds; a spec trace with one's uid
+    # (coastline, borders, disputed, lakes, rivers, admin1) styles it on every panel.
+    overlays = {t["uid"]: t for t in traces if t.get("uid") in OVERLAY_NAMES}
+    # UID-DIM-VALUE styles one member of along trace UID; it draws nothing alone.
+    along = {t.get("uid"): t["meta"]["along"] for t in traces if (t.get("meta") or {}).get("along")}
+    members: dict = {}
     for trace in traces:
-        base, _, part = str(trace.get("uid") or "").rpartition("-")
-        if part in ("members", "band") and base in banded:
-            if part == "members" and (banded[base].get("meta") or {}).get("members") is False:
-                raise UsageError(
-                    f"uid {trace['uid']!r} styles the member lines of {base!r}, but its "
-                    "meta.members is false"
-                )
-            parts.setdefault(base, {})[part] = trace
-    skip = {id(p) for d in parts.values() for p in d.values()}
+        uid = str(trace.get("uid") or "")
+        for base, dim in along.items():
+            if uid.startswith(f"{base}-{dim}-"):
+                members.setdefault(base, {})[uid] = trace
+    skip = {id(t) for t in overlays.values()} | {
+        id(t) for d in members.values() for t in d.values()
+    }
     for i, trace in enumerate(traces):
         if id(trace) in skip:
             continue
-        if trace.get("uid") in banded:
-            trace = {**trace, "meta": {**trace["meta"], "_parts": parts.get(trace["uid"], {})}}
+        if trace.get("uid") in members:
+            trace = {**trace, "meta": {**trace["meta"], "_parts": members[trace["uid"]]}}
         bound = None
         if bind_of(trace):
             bound = bind_trace(trace, ctx, f"data[{i}]", color=colorway[n_colored % len(colorway)])
@@ -133,7 +124,7 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
         raise UsageError("plot spec has no traces to draw")
 
     if any(b is not None and b.is_map for _, _, b in items):
-        data, layout = _assemble_map(items, user_layout, lmeta, ctx)
+        data, layout = _assemble_map(items, user_layout, overlays, ctx)
     else:
         data, layout = _assemble_chart(items, user_layout)
     layout.setdefault("template", DEFAULT_TEMPLATE)
@@ -166,30 +157,24 @@ def _style(trace: dict) -> dict:
 def _concrete(spec_trace: dict, generated: dict, uid: str) -> dict:
     """Generated arrays with the user's own trace keys on top (user wins).
 
-    A band trace draws three parts: its own uid is the mean line, and the spec
-    traces ``UID-members`` / ``UID-band`` style the member lines and the shading.
+    An along trace draws one trace per member, ``UID-DIM-VALUE``: the spec
+    trace's style reaches every member, and a spec trace with a member's uid
+    styles that member alone.
     """
     gen = dict(generated)
     suffix = gen.pop("uid_suffix", None)
-    meta = spec_trace.get("meta") or {}
     out = {"type": spec_trace.get("type") or "scatter"}
-    if meta.get("band") is not None and suffix in ("members", "band-low", "band"):
-        style = _style(
-            (meta.get("_parts") or {}).get("members" if suffix == "members" else "band", {})
-        )
-        if suffix == "band-low":
-            # The lower edge only carries the outline; the fill and legend are the band's.
-            style = {k: v for k, v in style.items() if k == "line"}
-        elif suffix == "members" and "name" in style:
-            # A named trace has a legend entry, as in Plotly.
-            style = {"showlegend": True, **style}
-        out.update(deep_merge(gen, style))
-    else:
-        user = _style(spec_trace)
-        if "=" in str(suffix or ""):
-            # One trace per along member: the member's name, not the input's.
-            user.pop("name", None)
-        out.update(deep_merge(gen, user))
+    user = _style(spec_trace)
+    if "=" in str(suffix or ""):
+        # One trace per along member: the member's name, not the input's.
+        user.pop("name", None)
+        parts = (spec_trace.get("meta") or {}).get("_parts") or {}
+        member = parts.get(safe_uid(f"{spec_trace.get('uid')}-{suffix}"))
+        if member is not None:
+            # A member styled on its own (a control run) is not drawn see-through.
+            gen.pop("opacity", None)
+            user = deep_merge(user, _style(member))
+    out.update(deep_merge(gen, user))
     out["uid"] = safe_uid(f"{uid}-{suffix}" if suffix else uid)
     return out
 
@@ -386,7 +371,7 @@ def _input_label(ctx, trace):
     return Path(path).stem if path else None
 
 
-def _assemble_map(items, user_layout, lmeta, ctx):
+def _assemble_map(items, user_layout, overlays, ctx):
     groups: dict[int, list] = {}
     # A plain Plotly trace (city markers, a box) with no axis of its own goes on every map.
     floating = [item for item in items if item[2] is None and not item[1].get("xaxis")]
@@ -491,7 +476,7 @@ def _assemble_map(items, user_layout, lmeta, ctx):
                 (b.extent for _, _, b in groups[g] if b is not None and b.extent), None
             )
         if extents[p] is None:
-            raise UsageError("a map panel has no data extent; set layout.meta.geo.bbox")
+            raise UsageError("a map panel has no data extent; set its xaxis.range / yaxis.range")
     if len(order) > 1:
         # Side by side, a panel is named for its input (-i UID, else file name),
         # and keeps its date too when the panels show different dates.
@@ -643,6 +628,24 @@ def _assemble_map(items, user_layout, lmeta, ctx):
             ]
             extents = [union if e else None for e in extents]
 
+    # The view: a panel's Plotly xaxis / yaxis range (longitude / latitude) wins over
+    # its data extent, and the base map is drawn for it. clip-region cuts the data.
+    for p in range(n):
+        s = axis_suffix(p)
+        x_range = (user_layout.get(f"xaxis{s}") or {}).get("range")
+        y_range = (user_layout.get(f"yaxis{s}") or {}).get("range")
+        if extents[p] is not None and (x_range or y_range):
+            extents[p] = [*(x_range or extents[p][:2]), *(y_range or extents[p][2:])]
+            # The wind key sits in the corner of the view, not of the data.
+            for _, tr, _, bound in panel_traces[p]:
+                if bound is None or bound.arrow_key is None:
+                    continue
+                box, key = arrow_key(extents[p], *bound.arrow_key, ctx.theme["styles"])
+                for suffix, new in (("-key-box", box), ("-key", key)):
+                    if tr["uid"].endswith(suffix):
+                        tr["x"], tr["y"] = new["x"], new["y"]
+                        break
+
     # Grid and canvas follow the maps' shape; colorbars go beside the rows or
     # under the columns they colour when the panels split that way.
     aspect = float(np.median([(e[1] - e[0]) / max(e[3] - e[2], 1e-6) for e in extents if e]))
@@ -750,9 +753,12 @@ def _assemble_map(items, user_layout, lmeta, ctx):
             axis["showscale"] = False
         layout[name] = deep_merge(axis, lifted_of[name])
 
-    # Overlays, then assemble each panel's traces in draw order.
-    settings = overlay_settings(lmeta.get("overlays"))
-    if outlines and settings.get("admin1") is None:
+    # Overlays, then assemble each panel's traces in draw order. A spec trace with an
+    # overlay's uid styles it on every panel; "visible": false leaves it out.
+    settings = {
+        name: False if t.get("visible") is False else _style(t) for name, t in overlays.items()
+    }
+    if outlines and "admin1" not in settings:
         # The outline file is the boundary to show; Natural Earth's would double it.
         settings["admin1"] = False
     data = []
@@ -790,7 +796,7 @@ def _assemble_map(items, user_layout, lmeta, ctx):
                 "y": ys,
                 "hoverinfo": "skip",
                 "showlegend": False,
-                "uid": f"overlay-{name}-{p + 1}",
+                "uid": f"{name}-p{p + 1}" if n > 1 else name,
                 **style,
             }
             panel_traces[p].append((_MAP_RANK["overlay"], tr, None, None))
@@ -829,8 +835,14 @@ def _assemble_chart(items, user_layout):
             tr["uid"] = safe_uid(uid)
             data.append(tr)
             continue
-        for j, gen in enumerate(bound.panels[0].traces):
-            tr = _concrete(spec_trace, gen, uid if j == 0 or "uid_suffix" in gen else f"{uid}-{j}")
+        group = [
+            _concrete(spec_trace, gen, uid if j == 0 or "uid_suffix" in gen else f"{uid}-{j}")
+            for j, gen in enumerate(bound.panels[0].traces)
+        ]
+        # Members styled by their own uid draw over the rest of the ensemble.
+        parts = (spec_trace.get("meta") or {}).get("_parts") or {}
+        group.sort(key=lambda t: t["uid"] in parts)
+        for tr in group:
             if tr.get("type") != "barpolar":
                 tr["xaxis"], tr["yaxis"] = xa, ya
             data.append(tr)

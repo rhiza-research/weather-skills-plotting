@@ -168,19 +168,6 @@ def test_ensemble_map_is_not_averaged():
         compile({"data": [_trace("a")]}, {"a": make_forecast(n_number=3, n_step=4)})
 
 
-def test_isel_and_bbox_subset():
-    ds = make_gridded(n_time=3)
-    spec = {
-        "data": [_trace("a", source={"isel": {"time": 1}})],
-        "layout": {"meta": {"geo": {"bbox": [3, 11, 1, 12]}}},
-    }
-    fig = compile(spec, {"a": ds})
-    heat = _data(fig, "heatmap")
-    assert len(heat) == 1
-    assert list(heat[0]["x"]) == [11.0, 12.0]
-    assert _layout(fig)["xaxis"]["range"] == [11.0, 12.0]
-
-
 def test_contour_uses_class_edges_as_levels():
     spec = {"data": [_trace("a", type="contour")]}
     tr = _data(compile(spec, {"a": make_gridded(n_time=1)}), "contour")[0]
@@ -344,6 +331,8 @@ def test_sea_level_pressure_is_red_blue_with_white_at_standard_atmosphere():
 
 
 def test_points_layer_over_field_and_static_outline(tmp_path):
+    from weather_skills_plotting.geodata import OVERLAY_NAMES
+
     grid = make_gridded(n_time=2, lats=(-1.0, 0.0, 1.0), lons=(36.0, 37.0, 38.0))
     stations = make_station(n_station=3, n_time=2)
     stations["precip"].attrs["units"] = "mm day-1"
@@ -370,87 +359,9 @@ def test_points_layer_over_field_and_static_outline(tmp_path):
     # draw order: field, overlays, points, outline, plain traces
     assert uids[0] == "a-p2"
     assert uids.index("b-p2") < uids.index("edge-p2") < uids.index("city-p2")
-    assert any(u.startswith("overlay-") for u in uids)
+    assert any(u.removesuffix("-p2") in OVERLAY_NAMES for u in uids)
     # same variable on one map shares a scale
     assert per_panel[uids.index("b-p2")]["marker"]["coloraxis"] == "coloraxis"
-
-
-def test_overlays_switch_off_and_restyle():
-    ds = make_gridded(n_time=1)
-    off = compile({"data": [_trace("a")], "layout": {"meta": {"overlays": False}}}, {"a": ds})
-    assert not [t for t in _data(off) if t["uid"].startswith("overlay")]
-    styled = compile(
-        {
-            "data": [_trace("a")],
-            "layout": {
-                "meta": {"overlays": {"coastline": False, "borders": {"line": {"color": "red"}}}}
-            },
-        },
-        {"a": ds},
-    )
-    over = [t for t in _data(styled) if t["uid"].startswith("overlay")]
-    assert [t["uid"] for t in over] == ["overlay-borders-1"]
-    assert over[0]["line"]["color"] == "red"
-
-
-def test_series_spaghetti_band_and_cycle():
-    # An area mean, as summarize-dim --dim latitude --dim longitude writes it.
-    ds = make_forecast(n_number=5, n_step=4).mean(["latitude", "longitude"], keep_attrs=True)
-    src = {}
-    same = compile(
-        {
-            "data": [
-                _trace("a", type="scatter", source=src, meta={"bind": "series", "along": "number"})
-            ]
-        },
-        {"a": ds},
-    )
-    lines = _data(same)
-    assert len(lines) == 1 and list(lines[0]["x"]).count(None) == 5
-    band = compile(
-        {
-            "data": [
-                _trace(
-                    "a",
-                    type="scatter",
-                    source=src,
-                    meta={"bind": "series", "along": "number", "band": [10, 90]},
-                )
-            ]
-        },
-        {"a": ds},
-    )
-    # Faint members, the band's two edges, then the mean line.
-    assert [t["fill"] for t in _data(band)] == [None, None, "tonexty", None]
-    assert _data(band)[-1]["name"].endswith("ensemble mean")
-    bare = compile(
-        {
-            "data": [
-                _trace(
-                    "a",
-                    type="scatter",
-                    source=src,
-                    meta={"bind": "series", "along": "number", "band": [10, 90], "members": False},
-                )
-            ]
-        },
-        {"a": ds},
-    )
-    assert [t["fill"] for t in _data(bare)] == [None, "tonexty", None]
-    cycle = compile(
-        {
-            "data": [
-                _trace(
-                    "a",
-                    type="scatter",
-                    source=src,
-                    meta={"bind": "series", "along": "number", "along_color": "cycle"},
-                )
-            ]
-        },
-        {"a": ds},
-    )
-    assert [t["name"] for t in _data(cycle)] == ["0", "1", "2", "3", "4"]
 
 
 def test_series_needs_select_or_along():
@@ -614,13 +525,12 @@ def test_xy_rejects_series_keys(key, value):
 
 
 def test_samples_box_and_mean_line():
-    ds = make_forecast(n_number=4, n_step=3)
-    src = {"point": {"lat": 0.9, "lon": 10.1}}
+    ds = _at_point(make_forecast(n_number=4, n_step=3))
     fig = compile(
         {
             "data": [
-                _trace("a", type="box", source=src, meta={"bind": "samples"}),
-                _trace("m", input="a", type="scatter", source=src, meta={"bind": "samples"}),
+                _trace("a", type="box", meta={"bind": "samples"}),
+                _trace("m", input="a", type="scatter", meta={"bind": "samples"}),
             ]
         },
         {"a": ds},
@@ -628,6 +538,12 @@ def test_samples_box_and_mean_line():
     box, mean = _data(fig)
     assert len(box["y"]) == 12 and list(box["x"][:4]) == ["+0d"] * 4
     assert list(mean["x"]) == ["+0d", "+1d", "+2d"]
+    # A grid needs point-value first.
+    with pytest.raises(UsageError, match="point-value"):
+        compile(
+            {"data": [_trace("a", type="box", meta={"bind": "samples"})]},
+            {"a": make_forecast(n_number=4, n_step=3)},
+        )
 
 
 def test_windrose_bins():
@@ -669,13 +585,20 @@ def test_arrows_and_speed_quiver():
     )
     for k in ("u10", "v10"):
         ds[k].attrs["units"] = "m s-1"
+    every_other = {"start": 0, "stop": 5, "step": 2}
     spec = {
         "data": [
             {"uid": "a", "type": "heatmap", "meta": {"bind": "speed", "source": {"input": "a"}}},
             {
                 "uid": "w",
                 "type": "scatter",
-                "meta": {"bind": "arrows", "source": {"input": "a"}, "arrows": {"step": 2}},
+                "meta": {
+                    "bind": "arrows",
+                    "source": {
+                        "input": "a",
+                        "isel": {"latitude": every_other, "longitude": every_other},
+                    },
+                },
             },
         ]
     }
@@ -685,6 +608,15 @@ def test_arrows_and_speed_quiver():
     assert _layout(fig)["coloraxis"]["colorbar"]["title"]["text"] == "Wind speed [m/s]"
     arrows = next(t for t in _data(fig) if t["uid"] == "w")
     assert list(arrows["x"]).count(None) == 9 * 3  # 3×3 thinned arrows, shaft + two head strokes
+
+    # Zoomed with the axes' range, the 10 m/s key moves into the view's corner.
+    spec["layout"] = {"xaxis": {"range": [12, 26]}, "yaxis": {"range": [2, 16]}}
+    fig = compile(spec, {"a": ds})
+    for uid in ("w-key", "w-key-box"):
+        key = next(t for t in _data(fig) if t["uid"] == uid)
+        xs = [x for x in key["x"] if x is not None]
+        ys = [y for y in key["y"] if y is not None]
+        assert 12 <= min(xs) and max(xs) <= 26 and 2 <= min(ys) and max(ys) <= 16
 
 
 def test_bind_type_mismatch():
@@ -833,43 +765,6 @@ def test_user_annotations_add_to_panel_titles():
     assert [a["text"] for a in _layout(compile(spec, {"s": series}))["annotations"]] == ["Mine"]
 
 
-def test_string_bbox_and_horizontal_colorbar_below():
-    ds = make_gridded(n_time=2)
-    fig = compile(
-        {
-            "data": [_trace("a")],
-            "layout": {
-                "coloraxis": {"colorbar": {"orientation": "h"}},
-                "meta": {"geo": {"bbox": "1/10/0/11"}},
-            },
-        },
-        {"a": ds},
-    )
-    bar = _layout(fig)["coloraxis"]["colorbar"]
-    assert bar["orientation"] == "h" and bar["yref"] == "container"
-
-
-def test_same_standard_name_shares_a_bar_and_small_bbox_keeps_overlapped_cells():
-    grid = make_gridded(n_time=1, lats=(-1.5, 0.0, 1.5), lons=(36.0, 37.5, 39.0), name="t2m")
-    grid["t2m"].attrs.update(standard_name="air_temperature", long_name="2 m temperature")
-    stations = make_station(n_station=3, n_time=1).rename(precip="temperature")
-    stations["temperature"].attrs.update(
-        standard_name="air_temperature", long_name="Surface air temperature"
-    )
-    for ds in (grid, stations):
-        ds[list(ds.data_vars)[0]].attrs["units"] = "degree_Celsius"
-    spec = {
-        "data": [_trace("a"), _trace("b", type="scatter", meta={"bind": "points"})],
-        # Smaller than one 1.5° cell and centred on none.
-        "layout": {"meta": {"geo": {"bbox": [0.2, 36.5, -0.6, 37.1]}}},
-    }
-    fig = compile(spec, {"a": grid, "b": stations})
-    field = next(t for t in _data(fig) if t["uid"].startswith("a"))
-    assert np.asarray(field["z"]).size > 0
-    points = next(t for t in _data(fig) if t["uid"].startswith("b"))
-    assert points["marker"]["coloraxis"] == field["coloraxis"]
-
-
 def test_theme_file_sets_palette_colorway_and_overlays(tmp_path):
     from weather_skills_plotting.themes import load_theme
 
@@ -892,13 +787,13 @@ def test_theme_file_sets_palette_colorway_and_overlays(tmp_path):
     fig = compile({"data": [_trace("a")]}, {"a": ds}, theme=theme)
     bar = _layout(fig)["coloraxis"]["colorbar"]
     assert list(bar["ticktext"]) == ["0", "1", "10"]
-    borders = [t for t in _data(fig, "scatter") if str(t["uid"]).startswith("overlay-borders")]
+    borders = [t for t in _data(fig, "scatter") if t["uid"] == "borders"]
     assert borders and all(t["line"]["color"] == "#ff0000" for t in borders)
     # A palette that exists only in the theme file is a known meta.palette name.
     fig = compile({"data": [_trace("a", meta={"palette": "agency"})]}, {"a": ds}, theme=theme)
     assert list(_layout(fig)["coloraxis"]["colorbar"]["ticktext"]) == ["0", "1", "10"]
-    # Explicit series colors (ensemble members, band) follow the template's colorway.
-    meta = {"bind": "series", "along": "number", "band": [10, 90]}
+    # Explicit series colors (ensemble members) follow the template's colorway.
+    meta = {"bind": "series", "along": "number"}
     area_mean = make_forecast(n_number=5, n_step=4).mean(["latitude", "longitude"], keep_attrs=True)
     fig = compile({"data": [_trace("a", type="scatter", meta=meta)]}, {"a": area_mean}, theme=theme)
     assert _data(fig)[0]["line"]["color"] == "#123456"
@@ -953,7 +848,7 @@ def test_dateline_grid_and_points_draw_on_one_continuous_window():
     fig = compile(spec, {"a": grid, "b": station})
     lo, hi = _layout(fig)["xaxis"]["range"]
     assert 140 < lo < 155 and 275 < hi < 290
-    marker = next(t for t in _data(fig, "scatter") if t["uid"].startswith("b"))
+    marker = next(t for t in _data(fig, "scatter") if t["uid"] == "b")
     assert np.allclose(np.asarray(marker["x"], dtype=float), [210.0])
     labels = _layout(fig)["xaxis"]["ticktext"]
     assert "180°" in labels and "-160°" in labels
@@ -1036,16 +931,6 @@ def test_second_y_axis_gets_its_own_round_ticks():
     }
     axis = _layout(compile(spec, {"a": a, "b": b}))["yaxis2"]
     assert axis["tickmode"] == "auto" and axis["showgrid"] is False
-
-
-def test_upside_down_bbox_and_several_leftover_dims_are_named():
-    ds = make_gridded(n_time=1)
-    spec = {"data": [_trace("a")], "layout": {"meta": {"geo": {"bbox": [-5, 10, 5, 13]}}}}
-    with pytest.raises(UsageError, match="north is below south"):
-        compile(spec, {"a": ds})
-    cube = make_gridded(n_time=1).expand_dims(number=[0, 1], vertical=[500, 850])
-    with pytest.raises(UsageError, match="dimensions 'number', 'vertical' remain"):
-        compile({"data": [_trace("a")]}, {"a": cube})
 
 
 def test_probability_spans_zero_to_one_and_precip_rate_change_is_brbg():
@@ -1217,45 +1102,6 @@ def test_temperature_is_drawn_in_the_files_units(capsys):
     assert "K" in axis["colorbar"]["title"]["text"]
 
 
-def test_band_parts_are_styled_by_their_own_uids():
-    ds = make_forecast(n_number=5, n_step=4).mean(["latitude", "longitude"], keep_attrs=True)
-    ds["tp"][:] = np.arange(20.0).reshape(5, 4)
-    meta = {"bind": "series", "along": "number", "band": [0, 100]}
-    spec = {
-        "data": [
-            _trace("f", type="scatter", name="Mean", line={"color": "red", "width": 4}, meta=meta),
-            {"uid": "f-members", "line": {"color": "grey"}, "opacity": 0.3},
-            {"uid": "f-band", "name": "Range", "fillcolor": "pink"},
-        ]
-    }
-    by_uid = {t["uid"]: t for t in _data(compile(spec, {"f": ds}))}
-    assert by_uid["f"]["name"] == "Mean" and by_uid["f"]["line"]["width"] == 4
-    members = by_uid["f-members"]
-    assert members["line"]["color"] == "grey" and members["opacity"] == 0.3
-    assert members["line"]["width"] != 4 and members["name"] != "Mean"
-    assert not members["showlegend"]
-    spec["data"][1]["name"] = "Members"
-    named = next(t for t in _data(compile(spec, {"f": ds})) if t["uid"] == "f-members")
-    assert named["showlegend"] and named["name"] == "Members"
-    band = by_uid["f-band"]
-    assert (band["name"], band["fillcolor"]) == ("Range", "pink")
-    # Without a style of its own, [0, 100] reads min–max.
-    spec["data"] = spec["data"][:1]
-    names = [t["name"] for t in _data(compile(spec, {"f": ds})) if t["uid"] == "f-band"]
-    assert names == ["min–max"]
-
-
-def test_band_part_without_a_band_is_an_error():
-    from weather_skills_plotting.spec import merge_traces
-
-    with pytest.raises(
-        UsageError, match="'f-band' styles part of a trace only when 'f' has meta.band"
-    ):
-        merge_traces(
-            [{"uid": "f", "meta": {"source": {"input": "f"}}}], [{"uid": "f-band", "name": "x"}]
-        )
-
-
 def test_xy_draws_bars_by_county():
     ds = xr.Dataset(
         {"precip": (("county",), [12.0, 30.5, 4.0])},
@@ -1283,3 +1129,143 @@ def test_xy_isel_picks_only_where_the_dim_is():
     meta["source"] = {"isel": {"step": 0}}
     with pytest.raises(UsageError, match="isel dimension 'step' is not in the data"):
         compile({"data": [{"uid": "0", "meta": meta}]}, {"0": ds})
+
+
+def test_isel_and_axis_range_view():
+    ds = make_gridded(n_time=3)
+    spec = {
+        "data": [_trace("a", source={"isel": {"time": 1}})],
+        "layout": {"xaxis": {"range": [11.0, 12.0]}, "yaxis": {"range": [1.0, 3.0]}},
+    }
+    fig = compile(spec, {"a": ds})
+    heat = _data(fig, "heatmap")
+    assert len(heat) == 1
+    # The view zooms; the data is not cut (clip-region does that).
+    assert list(heat[0]["x"]) == list(ds["longitude"].values)
+    assert _layout(fig)["xaxis"]["range"] == [11.0, 12.0]
+    assert _layout(fig)["yaxis"]["range"] == [1.0, 3.0]
+
+
+def test_overlays_hide_and_restyle_by_uid():
+    from weather_skills_plotting.geodata import OVERLAY_NAMES
+
+    ds = make_gridded(n_time=1)
+    hidden = [{"uid": name, "visible": False} for name in OVERLAY_NAMES]
+    off = compile({"data": [_trace("a"), *hidden]}, {"a": ds})
+    assert not [t for t in _data(off) if t["uid"] in OVERLAY_NAMES]
+    styled = compile(
+        {
+            "data": [
+                _trace("a"),
+                {"uid": "coastline", "visible": False},
+                {"uid": "borders", "line": {"color": "red"}},
+            ]
+        },
+        {"a": ds},
+    )
+    over = [t for t in _data(styled) if t["uid"] in OVERLAY_NAMES]
+    assert "coastline" not in [t["uid"] for t in over]
+    borders = next(t for t in over if t["uid"] == "borders")
+    assert borders["line"]["color"] == "red"
+
+
+def test_series_members_one_trace_each():
+    # An area mean, as summarize-dim --dim latitude --dim longitude writes it.
+    ds = make_forecast(n_number=5, n_step=4).mean(["latitude", "longitude"], keep_attrs=True)
+    meta = {"bind": "series", "along": "number"}
+    lines = _data(compile({"data": [_trace("a", type="scatter", meta=meta)]}, {"a": ds}))
+    assert [t["uid"] for t in lines] == [f"a-number-{i}" for i in range(5)]
+    # One color and one legend entry: an ensemble reads as one series.
+    assert len({t["line"]["color"] for t in lines}) == 1
+    assert [t["showlegend"] for t in lines] == [False, False, False, False, True]
+    assert [t["hovertext"] for t in lines] == ["0", "1", "2", "3", "4"]
+    # A member's own uid styles that member alone.
+    spec = {
+        "data": [
+            _trace("a", type="scatter", meta=meta),
+            {"uid": "a-number-2", "name": "Control", "showlegend": True, "line": {"color": "red"}},
+        ]
+    }
+    styled = _data(compile(spec, {"a": ds}))
+    by_uid = {t["uid"]: t for t in styled}
+    assert by_uid["a-number-2"]["line"]["color"] == "red"
+    # It draws over the other members, opaque, so a control run stands out.
+    assert styled[-1]["uid"] == "a-number-2"
+    assert by_uid["a-number-2"]["opacity"] is None and by_uid["a-number-1"]["opacity"] < 1
+    assert by_uid["a-number-2"]["name"] == "Control" and by_uid["a-number-2"]["showlegend"]
+    assert by_uid["a-number-1"]["line"]["color"] != "red"
+
+
+def test_quantile_band_is_plain_plotly_fill():
+    # summarize-dim --method quantile -q 0.1 -q 0.9 over number.
+    ens = make_forecast(n_number=5, n_step=4).mean(["latitude", "longitude"], keep_attrs=True)
+    q = ens.quantile([0.1, 0.9], dim="number", keep_attrs=True)
+    spec = {
+        "data": [
+            _trace("LOW", input="q", type="scatter", source={"sel": {"quantile": 0.1}}),
+            _trace(
+                "HIGH",
+                input="q",
+                type="scatter",
+                source={"sel": {"quantile": 0.9}},
+                fill="tonexty",
+            ),
+        ]
+    }
+    low, high = _data(compile(spec, {"q": q}))
+    assert (low["fill"], high["fill"]) == (None, "tonexty")
+    assert np.all(np.asarray(high["y"]) >= np.asarray(low["y"]))
+
+
+def _at_point(ds):
+    """The nearest cell as point-value writes it: one station_id, lat/lon coords."""
+    cell = ds.isel(latitude=1, longitude=0)
+    lat, lon = float(cell["latitude"]), float(cell["longitude"])
+    cell = cell.drop_vars(["latitude", "longitude"]).expand_dims(station_id=["P0"])
+    return cell.assign_coords(
+        latitude=("station_id", [lat]),
+        longitude=("station_id", [lon]),
+        grid_latitude=("station_id", [lat]),
+        grid_longitude=("station_id", [lon]),
+    )
+
+
+def test_horizontal_colorbar_below():
+    ds = make_gridded(n_time=2)
+    fig = compile(
+        {"data": [_trace("a")], "layout": {"coloraxis": {"colorbar": {"orientation": "h"}}}},
+        {"a": ds},
+    )
+    bar = _layout(fig)["coloraxis"]["colorbar"]
+    assert bar["orientation"] == "h" and bar["yref"] == "container"
+
+
+def test_same_standard_name_shares_a_bar():
+    grid = make_gridded(n_time=1, lats=(-1.5, 0.0, 1.5), lons=(36.0, 37.5, 39.0), name="t2m")
+    grid["t2m"].attrs.update(standard_name="air_temperature", long_name="2 m temperature")
+    stations = make_station(n_station=3, n_time=1).rename(precip="temperature")
+    stations["temperature"].attrs.update(
+        standard_name="air_temperature", long_name="Surface air temperature"
+    )
+    for ds in (grid, stations):
+        ds[list(ds.data_vars)[0]].attrs["units"] = "degree_Celsius"
+    spec = {"data": [_trace("a"), _trace("b", type="scatter", meta={"bind": "points"})]}
+    fig = compile(spec, {"a": grid, "b": stations})
+    field = next(t for t in _data(fig) if t["uid"] == "a")
+    points = next(t for t in _data(fig) if t["uid"] == "b")
+    assert points["marker"]["coloraxis"] == field["coloraxis"]
+
+
+def test_several_leftover_dims_are_named():
+    cube = make_gridded(n_time=1).expand_dims(number=[0, 1], vertical=[500, 850])
+    with pytest.raises(UsageError, match="dimensions 'number', 'vertical' remain"):
+        compile({"data": [_trace("a")]}, {"a": cube})
+
+
+def test_member_style_without_an_along_trace_is_an_error():
+    from weather_skills_plotting.spec import merge_traces
+
+    with pytest.raises(UsageError, match="'f-number-1' matches no trace"):
+        merge_traces(
+            [{"uid": "f", "meta": {"source": {"input": "f"}}}], [{"uid": "f-number-1", "name": "x"}]
+        )

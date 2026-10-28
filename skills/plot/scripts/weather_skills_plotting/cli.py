@@ -125,16 +125,6 @@ def run(
     validate(merged, theme)
     dest = dump_spec_dest(dump)
     if dest is not None:
-        # A band trace's other parts are traces of their own: list their uids to style.
-        have = {t.get("uid") for t in merged.get("data") or []}
-        for trace in list(merged.get("data") or []):
-            if (trace.get("meta") or {}).get("band") is not None:
-                parts = ["band"] + ([] if trace["meta"].get("members") is False else ["members"])
-                merged["data"] += [
-                    {"uid": f"{trace.get('uid')}-{p}"}
-                    for p in parts
-                    if f"{trace.get('uid')}-{p}" not in have
-                ]
         dump_spec(merged, dest)
         return None
     if output is None:
@@ -162,18 +152,30 @@ def run(
             "select skill), aggregate first (aggregate-temporal, summarize-dim), or play them "
             "as frames with --animate"
         )
-    layout_meta = (merged.get("layout") or {}).get("meta") or {}
-    animation = layout_meta.get("animation") or {}
     gif = None
     if animate:
-        from weather_skills_plotting.animate import animate_figure, estimate_html_mb
+        from weather_skills_plotting.animate import (
+            DEFAULT_DURATION_MS,
+            animate_figure,
+            estimate_html_mb,
+        )
 
         # The skeleton adds only layout.meta, so the merged layout is the user's own.
         user_layout = merged.get("layout") or {}
+        # A GIF plays at the spec's Play button speed, as the HTML does: the first
+        # animate button in layout.updatemenus with a frame duration.
+        gif_ms = DEFAULT_DURATION_MS
+        buttons = [b for m in user_layout.get("updatemenus") or [] for b in m.get("buttons") or []]
+        for button in buttons:
+            args = button.get("args") or []
+            frame = (args[1] or {}).get("frame") or {} if len(args) > 1 else {}
+            if button.get("method") == "animate" and frame.get("duration") is not None:
+                gif_ms = frame["duration"]
+                break
         if ".gif" in suffixes:
             # A GIF plays by itself: no play / pause or slider.
-            gif = animate_figure(fig, user_layout=user_layout, animation=animation, controls=False)
-        fig = animate_figure(fig, user_layout=user_layout, animation=animation)
+            gif = animate_figure(fig, user_layout=user_layout, controls=False)
+        fig = animate_figure(fig, user_layout=user_layout)
         size = estimate_html_mb(fig)
         print(
             f"animation: {len(fig.frames)} frames, {size:.1f} MB of figure data",
@@ -182,31 +184,29 @@ def run(
         if size > LARGE_HTML_MB and suffixes & {".html", ".htm"}:
             warn(
                 f"the HTML will be large (~{size:.0f} MB) and slow to open; select fewer frames "
-                "(meta.source.isel / sel) or a smaller layout.meta.geo.bbox"
+                "(meta.source.isel / sel) or clip-region the input to a smaller area"
             )
-    export_meta = layout_meta.get("export") or {}
-    scale = scale or export_meta.get("scale") or 1
+    scale = scale or 1
     width, height = fig.layout.width or 700, fig.layout.height or 500
     if any(path.suffix.lower() not in (".html", ".htm") for path in outputs):
         if min(width, height) < 300:
             warn(
                 f"a {width:.0f}x{height:.0f} px canvas is too small for titles, ticks and the "
                 "colorbar to fit; leave layout width/height unset or use 300 px or more "
-                "(layout.meta.export.scale changes pixel density, not the layout)"
+                "(--scale changes pixel density, not the layout)"
             )
         if width * height * scale**2 > LARGE_PNG_MP * 1e6:
             warn(
-                f"export.scale {scale:g} writes a {width * scale:.0f}x{height * scale:.0f} px "
+                f"--scale {scale:g} writes a {width * scale:.0f}x{height * scale:.0f} px "
                 f"image ({width * height * scale**2 / 1e6:.0f} MP); 2-4 is plenty for print"
             )
     written = []
     for path in outputs:
         if path.suffix.lower() == ".gif":
-            from weather_skills_plotting.animate import DEFAULT_DURATION_MS, write_gif
+            from weather_skills_plotting.animate import write_gif
             from weather_skills_plotting.qa import report_figure
 
-            duration = animation.get("duration", DEFAULT_DURATION_MS)
-            written.append(write_gif(gif, path, duration=duration, scale=scale))
+            written.append(write_gif(gif, path, duration=gif_ms, scale=scale))
             # The panel figure holds every frame's data for the finite counts.
             report_figure(path, datasets, fig=panels)
         else:
