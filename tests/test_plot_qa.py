@@ -99,5 +99,5 @@ def test_export_rejects_other_suffixes(tmp_path):
     from weather_skills_plotting import compile, export
 
     ds = make_gridded(n_time=1)
-    with pytest.raises(UsageError, match=".png, .jpg or .html"):
-        export(compile(HEATMAP, {"a": ds}), tmp_path / "map.svg")
+    with pytest.raises(UsageError, match=r"\.pdf, \.svg or \.html"):
+        export(compile(HEATMAP, {"a": ds}), tmp_path / "map.tiff")
