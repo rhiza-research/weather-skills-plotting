@@ -47,7 +47,7 @@ The plot type follows the data: a lat/lon grid is a colored map, stations are co
 - `--spec` — Plotly figure JSON, inline or a file path.
 - `--theme-file` — house style: Plotly `template`, `palettes`, per-field `defaults`, element `styles`, base-map `overlays` (see Colors); or a shipped theme by name, e.g. `tropical_tidbits`.
 - `--dump-spec` — print (`-`) or save (a path) the spec, without drawing.
-- `--output`, `-o` — `.png`, `.jpg`, `.pdf`, `.svg`, `.html`, or `.gif` (`--animate` only). PDF and SVG are vector files for reports and editing in Illustrator or Inkscape; text stays text. Repeat `-o` to write several formats from one run (`-o map.png -o map.pdf`).
+- `--output`, `-o` — `.png`, `.jpg`, `.pdf`, `.svg`, `.html`, or `.gif` (`--animate` only). PDF and SVG are vector files for reports and editing; text stays text. Repeat `-o` to write several formats from one run (`-o map.png -o map.pdf`).
 
 ### Customizing with `--spec`
 `--spec` changes the defaults. It takes [Plotly figure](https://plotly.com/python/reference/) JSON, `{"data": [...], "layout": {...}}`; write only the parts you change.
