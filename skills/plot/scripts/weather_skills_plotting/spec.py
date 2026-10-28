@@ -426,20 +426,12 @@ def check_layout_meta(meta) -> None:
                     f"plot spec layout.meta.overlays.{key} must be true, false, or a "
                     "Plotly scatter style object"
                 )
-            if isinstance(value, dict):
-                import plotly.graph_objects as go
-
-                try:
-                    go.Scatter(value)
-                except ValueError as exc:
-                    err = plotly_error(exc, f"layout.meta.overlays.{key}")
-                    if key == "lakes" and "color" in value:
-                        err = UsageError(
-                            f"{err}\nLakes are filled shapes: set the fill with "
-                            '{"lakes": {"fillcolor": "…"}} and the shore line with '
-                            '{"lakes": {"line": {"color": "…"}}}'
-                        )
-                    raise err from None
+            if key == "lakes" and isinstance(value, dict) and "color" in value:
+                raise UsageError(
+                    "plot spec layout.meta.overlays.lakes has no color: lakes are filled shapes, "
+                    'so set the fill with {"lakes": {"fillcolor": "…"}} and the shore line with '
+                    '{"lakes": {"line": {"color": "…"}}}'
+                )
     if meta.get("export") is not None:
         _check_keys(meta["export"], EXPORT_KEYS, "layout.meta.export")
     animation = meta.get("animation")
@@ -488,34 +480,6 @@ def check_meta(spec: dict, palettes: dict) -> None:
 
 
 _VALID_PROP_RE = re.compile(r"^    ([A-Za-z_][A-Za-z0-9_]*)\s*$")
-# matplotlib's default cycle names, which Plotly does not know.
-_TABLEAU = {
-    "tab:blue": "#1f77b4",
-    "tab:orange": "#ff7f0e",
-    "tab:green": "#2ca02c",
-    "tab:red": "#d62728",
-    "tab:purple": "#9467bd",
-    "tab:brown": "#8c564b",
-    "tab:pink": "#e377c2",
-    "tab:gray": "#7f7f7f",
-    "tab:grey": "#7f7f7f",
-    "tab:olive": "#bcbd22",
-    "tab:cyan": "#17becf",
-}
-
-
-def bad_trace_loc(data) -> str:
-    """``trace uid 'A' (a heatmap trace)`` for the first trace Plotly rejects, else ``""``."""
-    import plotly.graph_objects as go
-
-    for trace in data or []:
-        try:
-            # A failed check drops the dict's "type": test a copy.
-            go.Figure({"data": [dict(trace)]})
-        except ValueError:
-            kind = trace.get("type") or "scatter"
-            return f"trace uid {trace.get('uid')!r} (a {kind} trace)"
-    return ""
 
 
 def plotly_error(exc: Exception, loc: str = "") -> UsageError:
@@ -542,12 +506,6 @@ def plotly_error(exc: Exception, loc: str = "") -> UsageError:
             "area-average it first (summarize-dim --dim latitude --dim longitude) or pick a "
             "point (point-value)"
         )
-    tab = next((name for name in _TABLEAU if f"'{name}'" in text), None)
-    if tab:
-        msg += (
-            f"\n{tab} is a matplotlib color name; Plotly takes hex, rgb()/rgba() or CSS "
-            f"names: {tab} is {_TABLEAU[tab]!r}"
-        )
     prefix = f"plot spec {loc}: " if loc else "plot spec: "
     return UsageError(
         prefix + msg + "\nKeys are standard Plotly: https://plotly.com/python/reference/"
@@ -571,10 +529,9 @@ def validate(spec: dict, theme: dict | None = None) -> dict:
     # Our template names must exist before Plotly checks layout.template.
     register_templates(theme)
     try:
-        # Plotly drops "type" from a trace dict it rejects; keep the spec's intact.
-        go.Figure({**spec, "data": [dict(t) for t in spec.get("data") or []]})
+        go.Figure(spec)
     except ValueError as exc:
-        raise plotly_error(exc, bad_trace_loc(spec.get("data"))) from None
+        raise plotly_error(exc) from None
     return spec
 
 

@@ -30,7 +30,7 @@ def input_path(ds) -> str | None:
 _NAME = re.compile(r"[A-Za-z0-9_]+")
 
 
-def split_name(value: str, flag: str, prefix: str = "") -> tuple[str, str | None]:
+def split_name(value: str, flag: str) -> tuple[str, str | None]:
     """``PATH=UID`` → ``(PATH, UID)``; a bare ``PATH`` has no uid."""
     path, sep, name = str(value).rpartition("=")
     if not sep:
@@ -43,7 +43,7 @@ def split_name(value: str, flag: str, prefix: str = "") -> tuple[str, str | None
             "characters: "
             'legend text is the trace\'s "name" in --spec data (matched by uid), '
             'panel title text is layout.annotations [{"name": "panel-title-N", "text": ...}]. '
-            f"For example: {flag} {prefix}{path}={uid} with "
+            f"For example, end it with ={uid} and pass "
             f'--spec {{"data": [{{"uid": "{uid}", "name": "{name}"}}]}}'
         )
     return path, name

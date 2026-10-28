@@ -74,7 +74,7 @@ def parse_layer(value):
             f"--layer expects KIND:PATH[=UID] with KIND one of {', '.join(LAYER_KINDS)}; "
             f"got {value!r}"
         )
-    return LayerArg(kind, *split_name(path.strip(), "--layer", prefix=f"{kind}:"))
+    return LayerArg(kind, *split_name(path.strip(), "--layer"))
 
 
 def _default_trace(uid: str, ds, user=None, *, xaxis=None) -> dict:

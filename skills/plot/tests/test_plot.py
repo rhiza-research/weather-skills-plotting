@@ -60,10 +60,10 @@ def test_inputs_named_on_the_command_line(tmp_path, plot_fn, capsys):
         # The error spells out the fix: an id for -i and the text as the trace's name.
         (
             ["-i", "x.zarr=CHIRPS total (mm)"],
-            '-i x.zarr=CHIRPS_total_mm with --spec {"data": [{"uid": "CHIRPS_total_mm", '
+            '=CHIRPS_total_mm and pass --spec {"data": [{"uid": "CHIRPS_total_mm", '
             '"name": "CHIRPS total (mm)"}]}',
         ),
-        (["--layer", "heatmap:x.zarr=IMERG Late"], "--layer heatmap:x.zarr=IMERG_Late"),
+        (["--layer", "heatmap:x.zarr=IMERG Late"], "end it with =IMERG_Late"),
     ],
 )
 def test_bad_input_name(plot_fn, capsys, argv, match):
@@ -234,9 +234,8 @@ def test_errors_are_actionable(tmp_path, plot_fn, capsys):
         ('{"annotations": [{"text": "n=5"}]}', '{"layout": {"annotations": …}}'),
         ('{"config": {"displaylogo": false}}', "plot takes none"),
         ('{"data": [{"uid": "0", "meta": {"variable": "precip"}}]}', '{"source": {"variable"'),
-        # A grid draws as a heatmap: line styling names the trace and the fix.
+        # A grid draws as a heatmap: line styling says how to get a line chart.
         ('{"data": [{"uid": "0", "line": {"color": "red"}}]}', "summarize-dim"),
-        ('{"data": [{"uid": "0", "line": {"color": "red"}}]}', "trace uid '0' (a heatmap"),
         (
             '{"layout": {"meta": {"overlays": {"lakes": {"color": "#1f4e9c"}}}}}',
             '{"lakes": {"fillcolor"',
@@ -246,25 +245,6 @@ def test_errors_are_actionable(tmp_path, plot_fn, capsys):
         with pytest.raises(SystemExit):
             run_skill(plot_fn, "-i", str(grid), "-o", str(tmp_path / "x.png"), "--spec", spec)
         assert match in capsys.readouterr().err
-
-
-def test_matplotlib_color_name_gets_its_hex(tmp_path, plot_fn, capsys):
-    series = write_zarr(
-        make_gridded(n_time=5).mean(["latitude", "longitude"], keep_attrs=True),
-        tmp_path / "series.zarr",
-    )
-    spec = '{"data": [{"uid": "0", "line": {"color": "tab:blue"}}]}'
-    with pytest.raises(SystemExit):
-        run_skill(plot_fn, "-i", str(series), "-o", str(tmp_path / "x.png"), "--spec", spec)
-    assert "tab:blue is '#1f77b4'" in capsys.readouterr().err
-
-
-def test_lake_fill_color(tmp_path, plot_fn):
-    grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
-    out = tmp_path / "x.png"
-    spec = '{"layout": {"meta": {"overlays": {"lakes": {"fillcolor": "#1f4e9c"}}}}}'
-    run_skill(plot_fn, "-i", str(grid), "-o", str(out), "--spec", spec)
-    assert out.is_file()
 
 
 def test_help_lists_meta_reference(plot_fn, capsys):

@@ -59,7 +59,6 @@ from weather_skills_plotting.palettes import (
     resolve_default_precip,
 )
 from weather_skills_plotting.spec import (
-    bad_trace_loc,
     deep_merge,
     fill_defaults,
     merge_spec,
@@ -152,10 +151,9 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
             )
     out_layout = merge_spec({"layout": layout}, {"layout": user_layout})["layout"]
     try:
-        # Plotly drops "type" from a trace dict it rejects; the error message reads it.
-        return go.Figure({"data": [dict(t) for t in data], "layout": out_layout})
+        return go.Figure({"data": data, "layout": out_layout})
     except ValueError as exc:
-        raise plotly_error(exc, bad_trace_loc(data)) from None
+        raise plotly_error(exc) from None
 
 
 # ---------------------------------------------------------------- trace merge
