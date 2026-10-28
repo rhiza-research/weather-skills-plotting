@@ -431,13 +431,11 @@ def test_dumped_animation_replays_as_an_animation(tmp_path, plot_fn, capsys):
 def test_station_picked_by_sel_is_a_line_on_the_shared_axes(tmp_path, plot_fn, capsys):
     pts = write_zarr(make_point_obs(n_points=3), tmp_path / "pts.zarr")
     sid = str(xr.open_zarr(pts)["point_id"].values[1])
-    user = {"data": [{"uid": u, "meta": {"source": {"sel": {"point_id": sid}}}} for u in "AB"]}
-    spec = _dump(plot_fn, capsys, "-i", f"{pts}=A", "-i", f"{pts}=B", "--spec", json.dumps(user))
+    user = {"data": [{"uid": u, "meta": {"source": {"sel": {"point_id": sid}}}} for u in "01"]}
+    spec = _dump(plot_fn, capsys, "-i", str(pts), "-i", str(pts), "--spec", json.dumps(user))
     assert all("bind" not in t["meta"] and "xaxis" not in t for t in spec["data"])
     out = tmp_path / "st.png"
-    run_skill(
-        plot_fn, "-i", f"{pts}=A", "-i", f"{pts}=B", "-o", str(out), "--spec", json.dumps(user)
-    )
+    run_skill(plot_fn, "-i", str(pts), "-i", str(pts), "-o", str(out), "--spec", json.dumps(user))
     assert out.is_file()
 
 

@@ -36,7 +36,7 @@ def split_name(value: str, flag: str) -> tuple[str, str | None]:
     if not sep:
         return str(value), None
     if not path or not _NAME.fullmatch(name):
-        uid = re.sub(r"[^A-Za-z0-9_]+", "_", name).strip("_") or "A"
+        uid = re.sub(r"[^A-Za-z0-9_]+", "_", name).strip("_") or "0"
         raise argparse.ArgumentTypeError(
             f"{flag} expects PATH or PATH=UID, UID made of letters, digits and _; got {value!r}. "
             "UID is the trace's uid in --spec and its default legend / panel text. Other text takes any "
