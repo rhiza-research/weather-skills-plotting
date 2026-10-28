@@ -380,7 +380,7 @@ def _input_label(ctx, trace):
 
     source = (trace.get("meta") or {}).get("source") or {}
     if source.get("input") is not None and not str(source["input"]).isdigit():
-        return str(source["input"])  # the NAME from -i PATH=NAME
+        return str(source["input"])  # the UID from -i PATH=UID
     ds = ctx.datasets.get(str(source.get("input"))) if source.get("input") else None
     path = getattr(ds, "attrs", {}).get(INPUT_PATH_ATTR) if ds is not None else None
     return Path(path).stem if path else None
@@ -493,7 +493,7 @@ def _assemble_map(items, user_layout, lmeta, ctx):
         if extents[p] is None:
             raise UsageError("a map panel has no data extent; set layout.meta.geo.bbox")
     if len(order) > 1:
-        # Side by side, a panel is named for its input (-i NAME, else file name),
+        # Side by side, a panel is named for its input (-i UID, else file name),
         # and keeps its date too when the panels show different dates.
         dates = [t for t in panel_titles if t]
         differ = len(set(dates)) > 1
