@@ -145,17 +145,21 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
                 (n for n in built if n and n.startswith("panel-title-")),
                 key=lambda n: int(n.rsplit("-", 1)[1]),
             )
-            # Name each panel by its axis and current title, so a spec that
+            # Say where each panel is and what it shows now, so a spec that
             # numbered titles in trace order can see which panel is which.
-            panels = [
-                f"{n} (xaxis{str(built[n].get('xref', 'x')).split()[0][1:]}: "
-                f"{str(built[n].get('text', '')).replace('<br>', ' ')})"
-                for n in have
-            ]
+            cols = ((spec.get("layout") or {}).get("grid") or {}).get("columns")
+            panels = []
+            for n in have:
+                where = ""
+                if cols:
+                    r, c = divmod(int(n.rsplit("-", 1)[1]) - 1, cols)
+                    where = f"row {r + 1}, column {c + 1}: "
+                text = str(built[n].get("text", "")).replace("<br>", " ")
+                panels.append(f"{n} ({where}{text})")
             raise UsageError(
-                f"layout.annotations name {name!r} matches no panel. N in panel-title-N is the "
-                f"panel's axis number (the panel on xaxis7 is panel-title-7), not the trace's "
-                f"position in data; this figure's panels are {', '.join(panels) or 'none'}"
+                f"layout.annotations name {name!r} matches no panel. Panels are numbered left "
+                f"to right, then row by row down, and panel-title-N titles panel N, the panel "
+                f"of traces on xN / yN; this figure has {', '.join(panels) or 'no panels'}"
             )
     out_layout = merge_spec({"layout": layout}, {"layout": user_layout})["layout"]
     try:

@@ -809,8 +809,8 @@ def test_member_panels_titled_and_bad_panel_title_named():
     assert titles == ["Member 0", "Member 1", "Member 2"]
     with pytest.raises(
         UsageError,
-        match=r"panel-title-0.*axis number.*panel-title-1 \(xaxis: Member 0\), "
-        r"panel-title-2 \(xaxis2: Member 1\), panel-title-3 \(xaxis3: Member 2\)",
+        match=r"panel-title-0.*row by row.*panel-title-1 \(Member 0\), "
+        r"panel-title-2 \(Member 1\), panel-title-3 \(Member 2\)",
     ):
         compile(
             {
@@ -838,7 +838,8 @@ def test_panel_titles_follow_axis_number_not_trace_order():
     assert by_name["panel-title-3"]["text"] == "B"
     assert by_name["panel-title-3"]["xref"] == "x3 domain"
     with pytest.raises(
-        UsageError, match=r"panel-title-1 \(xaxis: a\), panel-title-3 \(xaxis3: b\)"
+        UsageError,
+        match=r"panel-title-1 \(row 1, column 1: a\), panel-title-3 \(row 2, column 1: b\)",
     ):
         compile(
             {"data": data, "layout": {**layout, "annotations": [{"name": "panel-title-2"}]}},
