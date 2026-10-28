@@ -448,6 +448,24 @@ def test_along_stations_is_lines_not_a_station_map(tmp_path, plot_fn, capsys):
     assert "bind" not in spec["data"][0]["meta"]
 
 
+def test_still_map_refuses_more_than_100_panels(tmp_path, plot_fn, capsys):
+    """Five years of days as panels never finished rendering; stop with a way out."""
+    grid = write_zarr(make_gridded(n_time=101), tmp_path / "grid.zarr")
+    with pytest.raises(SystemExit) as exc:
+        run_skill(plot_fn, "-i", str(grid), "-o", str(tmp_path / "map.png"))
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "101 map panels" in err and "--animate" in err and "isel" in err
+    assert not (tmp_path / "map.png").exists()
+
+
+def test_animation_is_not_capped_by_the_still_panel_limit(tmp_path, plot_fn):
+    grid = write_zarr(make_gridded(n_time=101), tmp_path / "grid.zarr")
+    out = tmp_path / "anim.html"
+    run_skill(plot_fn, "--animate", "-i", str(grid), "-o", str(out))
+    assert "Plotly.newPlot" in out.read_text()
+
+
 def test_one_figure_to_several_outputs(tmp_path, plot_fn):
     grid = write_zarr(make_gridded(), tmp_path / "grid.zarr")
     png, html = tmp_path / "a.png", tmp_path / "a.html"

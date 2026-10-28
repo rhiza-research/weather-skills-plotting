@@ -146,7 +146,11 @@ def run(
                 f"output {path.name!r}: a GIF plays an animation; add --animate, or write a "
                 "still map to .png"
             )
-    fig = panels = compile(merged, datasets, theme=theme)
+    from weather_skills_plotting.figure import MAX_STILL_PANELS
+
+    # An animation draws one panel per frame, so only still images are capped.
+    max_panels = None if animate else MAX_STILL_PANELS
+    fig = panels = compile(merged, datasets, theme=theme, max_panels=max_panels)
     layout_meta = (merged.get("layout") or {}).get("meta") or {}
     animation = layout_meta.get("animation") or {}
     gif = None
