@@ -93,6 +93,25 @@ def test_export_html_zooms_on_scroll(tmp_path):
     assert '"scrollZoom": true' in out.read_text()
 
 
+def test_export_html_writes_figure_json(tmp_path):
+    import json
+
+    from weather_skills_plotting import compile, export
+
+    spec = {**HEATMAP, "layout": {"xaxis": {"range": [float("nan"), 1.0]}}}
+    ds = make_gridded(n_time=1)
+    out = export(compile(spec, {"a": ds}), tmp_path / "map.html", datasets={"a": ds})
+    sidecar = out.with_suffix(".plotly.json")
+    assert sidecar.exists()
+    # JSON.parse in the chat viewer rejects NaN tokens; they become null.
+    figure = json.loads(
+        sidecar.read_text(),
+        parse_constant=lambda c: pytest.fail(f"non-strict JSON constant {c!r}"),
+    )
+    assert figure["data"] and figure["layout"]
+    assert figure["layout"]["xaxis"]["range"][0] is None
+
+
 def test_export_rejects_other_suffixes(tmp_path):
     from weather_skills_core.errors import UsageError
 
