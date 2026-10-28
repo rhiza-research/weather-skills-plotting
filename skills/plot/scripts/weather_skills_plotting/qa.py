@@ -122,10 +122,14 @@ def figure_counts(fig) -> list[tuple[str, int, int]]:
     return [(name, f, n) for name, (f, n) in rows.items()]
 
 
-def report_figure(path, datasets=None, *, file=None, fig=None) -> str:
-    """Print ``plot hash`` and ``data:`` lines. Returns the pixel hash."""
+def report_figure(path, datasets=None, *, file=None, fig=None, digest=None) -> str:
+    """Print ``plot hash`` and ``data:`` lines. Returns the hash.
+
+    The hash is ``digest`` when given, else the pixel hash of the image at ``path``.
+    """
     dest = sys.stdout if file is None else file
-    digest = hash_png_pixels(path)
+    if digest is None:
+        digest = hash_png_pixels(path)
     rows = figure_counts(fig) if fig is not None else []
     if rows:
         detail = ", ".join(f"{name} {finite}/{n} finite" for name, finite, n in rows)

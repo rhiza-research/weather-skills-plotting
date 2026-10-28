@@ -125,9 +125,12 @@ def test_pdf_and_svg_outputs_with_provenance_and_qa(tmp_path, plot_fn, capsys):
     for out in (pdf, svg):
         history = load_figure_history(out)
         assert history and history[-1]["skill"] == "plot"
-    # Each vector file is hashed from a PNG of the same figure, so all three agree.
-    hashes = [line for line in capsys.readouterr().out.splitlines() if "plot hash:" in line]
-    assert len(hashes) == 3 and len(set(hashes)) == 1
+    # PDF and SVG are hashed from the figure JSON, so they agree with each other
+    # and not with the PNG's pixel hash.
+    png_hash, pdf_hash, svg_hash = [
+        line for line in capsys.readouterr().out.splitlines() if "plot hash:" in line
+    ]
+    assert pdf_hash == svg_hash != png_hash
 
 
 def test_series_of_a_forecast(tmp_path, plot_fn):
