@@ -54,9 +54,9 @@ def test_inputs_named_on_the_command_line(tmp_path, plot_fn, capsys):
 @pytest.mark.parametrize(
     ("argv", "match"),
     [
-        (["-i", "x.zarr=bad-name"], "PATH=NAME"),
-        (["-i", "=OBS"], "PATH=NAME"),
-        (["--layer", "heatmap:x.zarr=a.b"], "PATH=NAME"),
+        (["-i", "x.zarr=bad-name"], "PATH=UID"),
+        (["-i", "=OBS"], "PATH=UID"),
+        (["--layer", "heatmap:x.zarr=a.b"], "PATH=UID"),
     ],
 )
 def test_bad_input_name(plot_fn, capsys, argv, match):

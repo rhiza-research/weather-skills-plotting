@@ -31,14 +31,14 @@ _NAME = re.compile(r"[A-Za-z0-9_]+")
 
 
 def split_name(value: str, flag: str) -> tuple[str, str | None]:
-    """``PATH=NAME`` → ``(PATH, NAME)``; a bare ``PATH`` has no name."""
+    """``PATH=UID`` → ``(PATH, UID)``; a bare ``PATH`` has no uid."""
     path, sep, name = str(value).rpartition("=")
     if not sep:
         return str(value), None
     if not path or not _NAME.fullmatch(name):
         raise argparse.ArgumentTypeError(
-            f"{flag} expects PATH or PATH=NAME, NAME made of letters, digits and _; got {value!r}. "
-            "NAME is the trace's uid and its default legend / panel text. Other text takes any "
+            f"{flag} expects PATH or PATH=UID, UID made of letters, digits and _; got {value!r}. "
+            "UID is the trace's uid in --spec and its default legend / panel text. Other text takes any "
             "characters: "
             'legend text is the trace\'s "name" in --spec data (matched by uid), '
             'panel title text is layout.annotations [{"name": "panel-title-N", "text": ...}]'
@@ -47,7 +47,7 @@ def split_name(value: str, flag: str) -> tuple[str, str | None]:
 
 
 class InputArg:
-    """``-i PATH[=NAME]``. The decorator opens the Zarr (``.ds``)."""
+    """``-i PATH[=UID]``. The decorator opens the Zarr (``.ds``)."""
 
     def __init__(self, path: str, name: str | None):
         self.path, self.name, self.ds = path, name, None
@@ -65,11 +65,11 @@ def parse_input(value):
 
 
 def input_ids(names) -> list[str]:
-    """The id of each input in order: its NAME, else its position (``"0"``, ``"1"``, …)."""
+    """The id of each input in order: its UID, else its position (``"0"``, ``"1"``, …)."""
     ids = [name or str(i) for i, name in enumerate(names)]
     for key in ids:
         if ids.count(key) > 1:
-            raise UsageError(f"two inputs have the id {key!r}; give each a distinct PATH=NAME")
+            raise UsageError(f"two inputs have the id {key!r}; give each a distinct PATH=UID")
     return ids
 
 
