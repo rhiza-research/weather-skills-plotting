@@ -2,10 +2,10 @@
 name: plot
 description: "Draw weather-skills Zarrs as maps (heatmap, contour, stations, wind arrows), time series, xy scatter plots, wind roses, forecast verification grids (obs, lead-week forecasts and their hits / bias / MAE maps), ECMWF-style mediograms (forecast vs model-climate ensembles at a point), or animated maps through time, saved as PNG, JPG, interactive HTML, or GIF. Titles, colors, panels, and layout are set with a standard Plotly figure JSON."
 license: MIT
-compatibility: Requires Python 3.12 and uv. PNG/JPG export needs Chrome (installed, or `plotly_get_chrome -y`). Self-contained; the plotting library ships in scripts/.
+compatibility: Requires Python 3.12 and uv. PNG, JPG, PDF and SVG export needs Chrome (installed, or `plotly_get_chrome -y`). Self-contained; the plotting library ships in scripts/.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py *)
 metadata:
-  version: "1.0.5"
+  version: "1.0.6"
   catalog-group: figure
 ---
 
@@ -47,7 +47,7 @@ The plot type follows the data: a lat/lon grid is a colored map, stations are co
 - `--spec` — Plotly figure JSON, inline or a file path.
 - `--theme-file` — house style: Plotly `template`, `palettes`, per-field `defaults`, element `styles`, base-map `overlays` (see Colors); or a shipped theme by name, e.g. `tropical_tidbits`.
 - `--dump-spec` — print (`-`) or save (a path) the spec, without drawing.
-- `--output`, `-o` — `.png`, `.jpg`, `.html`, or `.gif` (`--animate` only).
+- `--output`, `-o` — `.png`, `.jpg`, `.pdf`, `.svg`, `.html`, or `.gif` (`--animate` only). PDF and SVG are vector files for reports and editing; text stays text. Repeat `-o` to write several formats from one run (`-o map.png -o map.pdf`).
 
 ### Customizing with `--spec`
 `--spec` changes the defaults. It takes [Plotly figure](https://plotly.com/python/reference/) JSON, `{"data": [...], "layout": {...}}`; write only the parts you change.

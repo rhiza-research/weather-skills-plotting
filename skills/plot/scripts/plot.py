@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.12,<3.13"
 # dependencies = [
-#   "weather-skills-core>=0.2.0",
+#   "weather-skills-core>=0.3.1",
 #   "cf-xarray>=0.11",
 #   "cftime>=1.6",
 #   "numpy>=2.5",
@@ -46,7 +46,7 @@ from weather_skills_plotting.spec import DUMP_SPEC_HELP, SPEC_ARGUMENT_HELP, mer
 from weather_skills_plotting.verify import build_verify_spec
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "1.0.5"
+_SKILL_VERSION = "1.0.6"
 
 LAYER_KINDS = ("heatmap", "contour", "scatter", "quiver", "outline", "mask")
 _ZARR_LAYERS = frozenset({"heatmap", "contour", "scatter", "quiver"})

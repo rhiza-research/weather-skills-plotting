@@ -123,6 +123,23 @@ def test_html_output(tmp_path, plot_fn):
     assert "Plotly.newPlot" in html
 
 
+def test_pdf_and_svg_outputs_with_provenance_and_qa(tmp_path, plot_fn, capsys):
+    grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
+    png, pdf, svg = tmp_path / "map.png", tmp_path / "map.pdf", tmp_path / "map.svg"
+    run_skill(plot_fn, "-i", str(grid), "-o", str(png), "-o", str(pdf), "-o", str(svg))
+    assert pdf.read_bytes().startswith(b"%PDF")
+    assert "<svg" in svg.read_text()
+    for out in (pdf, svg):
+        history = load_figure_history(out)
+        assert history and history[-1]["skill"] == "plot"
+    # PDF and SVG are hashed from the figure JSON, so they agree with each other
+    # and not with the PNG's pixel hash.
+    png_hash, pdf_hash, svg_hash = [
+        line for line in capsys.readouterr().out.splitlines() if "plot hash:" in line
+    ]
+    assert pdf_hash == svg_hash != png_hash
+
+
 def test_series_of_a_forecast(tmp_path, plot_fn):
     # An area mean, as summarize-dim --dim latitude --dim longitude writes it.
     fc = write_zarr(
