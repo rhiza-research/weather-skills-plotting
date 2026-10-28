@@ -22,7 +22,7 @@ import numpy as np
 from weather_skills_core.errors import UsageError
 from weather_skills_core.units import convert_values, variable_units
 
-from weather_skills_plotting.bind import Context, bind_of, bind_trace
+from weather_skills_plotting.bind import Context, arrow_key, bind_of, bind_trace
 from weather_skills_plotting.geodata import (
     OVERLAY_NAMES,
     dateline_bbox,
@@ -171,6 +171,8 @@ def _concrete(spec_trace: dict, generated: dict, uid: str) -> dict:
         parts = (spec_trace.get("meta") or {}).get("_parts") or {}
         member = parts.get(safe_uid(f"{spec_trace.get('uid')}-{suffix}"))
         if member is not None:
+            # A member styled on its own (a control run) is not drawn see-through.
+            gen.pop("opacity", None)
             user = deep_merge(user, _style(member))
     out.update(deep_merge(gen, user))
     out["uid"] = safe_uid(f"{uid}-{suffix}" if suffix else uid)
@@ -634,6 +636,15 @@ def _assemble_map(items, user_layout, overlays, ctx):
         y_range = (user_layout.get(f"yaxis{s}") or {}).get("range")
         if extents[p] is not None and (x_range or y_range):
             extents[p] = [*(x_range or extents[p][:2]), *(y_range or extents[p][2:])]
+            # The wind key sits in the corner of the view, not of the data.
+            for _, tr, _, bound in panel_traces[p]:
+                if bound is None or bound.arrow_key is None:
+                    continue
+                box, key = arrow_key(extents[p], *bound.arrow_key, ctx.theme["styles"])
+                for suffix, new in (("-key-box", box), ("-key", key)):
+                    if tr["uid"].endswith(suffix):
+                        tr["x"], tr["y"] = new["x"], new["y"]
+                        break
 
     # Grid and canvas follow the maps' shape; colorbars go beside the rows or
     # under the columns they colour when the panels split that way.
@@ -824,8 +835,14 @@ def _assemble_chart(items, user_layout):
             tr["uid"] = safe_uid(uid)
             data.append(tr)
             continue
-        for j, gen in enumerate(bound.panels[0].traces):
-            tr = _concrete(spec_trace, gen, uid if j == 0 or "uid_suffix" in gen else f"{uid}-{j}")
+        group = [
+            _concrete(spec_trace, gen, uid if j == 0 or "uid_suffix" in gen else f"{uid}-{j}")
+            for j, gen in enumerate(bound.panels[0].traces)
+        ]
+        # Members styled by their own uid draw over the rest of the ensemble.
+        parts = (spec_trace.get("meta") or {}).get("_parts") or {}
+        group.sort(key=lambda t: t["uid"] in parts)
+        for tr in group:
             if tr.get("type") != "barpolar":
                 tr["xaxis"], tr["yaxis"] = xa, ya
             data.append(tr)

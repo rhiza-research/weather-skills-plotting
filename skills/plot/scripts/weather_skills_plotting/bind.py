@@ -106,6 +106,8 @@ class Bound:
     title: str | None = None
     layout: dict = field(default_factory=dict)
     x_tickformat: str | None = None
+    # Wind arrows: (scale, units) to redraw the reference key in a zoomed view.
+    arrow_key: tuple | None = None
 
 
 @dataclass
@@ -451,6 +453,47 @@ def _arrow_segments(lon, lat, u, v, scale):
     return xs, ys
 
 
+def arrow_key(extent, scale, units, styles):
+    """The 10 m/s reference arrow and its white box, in the bottom-right of ``extent``.
+
+    ``extent`` is the map's view; figure assembly redraws the key here when a
+    panel's xaxis / yaxis range zooms the view away from the data's extent.
+    """
+    span_x, span_y = extent[1] - extent[0], extent[3] - extent[2]
+    kx, ky = extent[1] - 0.04 * span_x - ARROW_KEY_SPEED * scale, extent[2] + 0.04 * span_y
+    kxs, kys = _arrow_segments(
+        np.array([kx]), np.array([ky]), np.array([ARROW_KEY_SPEED]), np.array([0.0]), scale
+    )
+    # A white box behind the reference arrow so data arrows do not run through it.
+    box_x = [kx - 0.2 * span_x, extent[1] - 0.01 * span_x]
+    box_y = [ky - 0.04 * span_y, ky + 0.04 * span_y]
+    key_box = {
+        "type": "scatter",
+        "mode": "lines",
+        "x": [box_x[0], box_x[1], box_x[1], box_x[0], box_x[0]],
+        "y": [box_y[0], box_y[0], box_y[1], box_y[1], box_y[0]],
+        "fill": "toself",
+        "line": {"width": 0},
+        "hoverinfo": "skip",
+        "showlegend": False,
+        "uid_suffix": "key-box",
+    }
+    fill_defaults(key_box, styles["arrow_key_box"])
+    key_trace = {
+        "type": "scatter",
+        "mode": "lines+text",
+        "x": kxs + [kx - 0.01 * span_x],
+        "y": kys + [ky],
+        "text": [""] * len(kxs) + [f"{ARROW_KEY_SPEED:g} {units}"],
+        "textposition": "middle left",
+        "hoverinfo": "skip",
+        "showlegend": False,
+        "uid_suffix": "key",
+    }
+    fill_defaults(key_trace, styles["arrows"])
+    return key_box, key_trace
+
+
 def bind_arrows(trace, meta, ctx, loc):
     source = meta.get("source") or {}
     opts = meta.get("arrows") or {}
@@ -488,11 +531,6 @@ def bind_arrows(trace, meta, ctx, loc):
             u_part[lon].values, u_part[lat].values, u_part.values, v_part.values, step
         )
         xs, ys = _arrow_segments(lon_q, lat_q, uq, vq, scale)
-        span_x, span_y = extent[1] - extent[0], extent[3] - extent[2]
-        kx, ky = extent[1] - 0.04 * span_x - ARROW_KEY_SPEED * scale, extent[2] + 0.04 * span_y
-        kxs, kys = _arrow_segments(
-            np.array([kx]), np.array([ky]), np.array([ARROW_KEY_SPEED]), np.array([0.0]), scale
-        )
         styles = ctx.theme["styles"]
         arrows = {
             "mode": "lines",
@@ -502,35 +540,9 @@ def bind_arrows(trace, meta, ctx, loc):
             "showlegend": False,
         }
         fill_defaults(arrows, styles["arrows"])
-        # A white box behind the reference arrow so data arrows do not run through it.
-        box_x = [kx - 0.2 * span_x, extent[1] - 0.01 * span_x]
-        box_y = [ky - 0.04 * span_y, ky + 0.04 * span_y]
-        key_box = {
-            "type": "scatter",
-            "mode": "lines",
-            "x": [box_x[0], box_x[1], box_x[1], box_x[0], box_x[0]],
-            "y": [box_y[0], box_y[0], box_y[1], box_y[1], box_y[0]],
-            "fill": "toself",
-            "line": {"width": 0},
-            "hoverinfo": "skip",
-            "showlegend": False,
-            "uid_suffix": "key-box",
-        }
-        fill_defaults(key_box, styles["arrow_key_box"])
-        key_trace = {
-            "type": "scatter",
-            "mode": "lines+text",
-            "x": kxs + [kx - 0.01 * span_x],
-            "y": kys + [ky],
-            "text": [""] * len(kxs) + [f"{ARROW_KEY_SPEED:g} {units}"],
-            "textposition": "middle left",
-            "hoverinfo": "skip",
-            "showlegend": False,
-            "uid_suffix": "key",
-        }
-        fill_defaults(key_trace, styles["arrows"])
+        key_box, key_trace = arrow_key(extent, scale, units, styles)
         panels.append(Panel([arrows, key_box, key_trace], ptitle, key))
-    return Bound(panels, is_map=True, extent=extent)
+    return Bound(panels, is_map=True, extent=extent, arrow_key=(scale, units))
 
 
 def _points_extent(da):

@@ -237,7 +237,10 @@ def animate_figure(fig, *, user_layout: dict | None = None, controls=True):
             }
         ]
     for key in ("updatemenus", "sliders"):
-        if controls and key in user_layout:
+        if not controls:
+            # A GIF plays by itself: the spec's Play button only sets its speed.
+            out_layout.pop(key, None)
+        elif key in user_layout:
             out_layout[key] = copy.deepcopy(user_layout[key])
 
     return go.Figure({"data": base, "layout": out_layout, "frames": frames})

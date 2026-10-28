@@ -609,6 +609,15 @@ def test_arrows_and_speed_quiver():
     arrows = next(t for t in _data(fig) if t["uid"] == "w")
     assert list(arrows["x"]).count(None) == 9 * 3  # 3×3 thinned arrows, shaft + two head strokes
 
+    # Zoomed with the axes' range, the 10 m/s key moves into the view's corner.
+    spec["layout"] = {"xaxis": {"range": [12, 26]}, "yaxis": {"range": [2, 16]}}
+    fig = compile(spec, {"a": ds})
+    for uid in ("w-key", "w-key-box"):
+        key = next(t for t in _data(fig) if t["uid"] == uid)
+        xs = [x for x in key["x"] if x is not None]
+        ys = [y for y in key["y"] if y is not None]
+        assert 12 <= min(xs) and max(xs) <= 26 and 2 <= min(ys) and max(ys) <= 16
+
 
 def test_bind_type_mismatch():
     with pytest.raises(UsageError, match="draws as type contour or heatmap.*series"):
@@ -1177,8 +1186,12 @@ def test_series_members_one_trace_each():
             {"uid": "a-number-2", "name": "Control", "showlegend": True, "line": {"color": "red"}},
         ]
     }
-    by_uid = {t["uid"]: t for t in _data(compile(spec, {"a": ds}))}
+    styled = _data(compile(spec, {"a": ds}))
+    by_uid = {t["uid"]: t for t in styled}
     assert by_uid["a-number-2"]["line"]["color"] == "red"
+    # It draws over the other members, opaque, so a control run stands out.
+    assert styled[-1]["uid"] == "a-number-2"
+    assert by_uid["a-number-2"]["opacity"] is None and by_uid["a-number-1"]["opacity"] < 1
     assert by_uid["a-number-2"]["name"] == "Control" and by_uid["a-number-2"]["showlegend"]
     assert by_uid["a-number-1"]["line"]["color"] != "red"
 

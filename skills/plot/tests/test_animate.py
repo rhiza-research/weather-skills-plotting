@@ -135,6 +135,23 @@ def test_gif_one_frame_per_time(grid, animation_fn, tmp_path, capsys):
     assert load_figure_history(out)
 
 
+def test_gif_draws_no_play_button(grid):
+    # The spec's Play button sets the GIF speed; the GIF itself has no controls.
+    import xarray as xr
+
+    from weather_skills_plotting import compile
+    from weather_skills_plotting.animate import animate_figure
+
+    menus = [{"type": "buttons", "buttons": [{"label": "Play", "method": "animate"}]}]
+    trace = {"uid": "0", "type": "heatmap", "meta": {"source": {"input": "0"}}}
+    spec = {"data": [trace], "layout": {"updatemenus": menus}}
+    fig = compile(spec, {"0": xr.open_zarr(grid)})
+    gif = animate_figure(fig, user_layout=spec["layout"], controls=False)
+    assert not gif.layout.updatemenus and not gif.layout.sliders
+    html = animate_figure(fig, user_layout=spec["layout"])
+    assert html.layout.updatemenus[0].buttons[0].label == "Play"
+
+
 def test_gif_of_constant_field(tmp_path, animation_fn):
     from PIL import Image
 

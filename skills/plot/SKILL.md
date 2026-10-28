@@ -130,7 +130,7 @@ Done elsewhere, not in `meta`:
 | To | Use |
 | --- | --- |
 | Cut the data to a region, or blank cells outside a polygon | clip-region before plotting |
-| Zoom the map | Plotly `xaxis.range` / `yaxis.range` on each panel's axes (x is longitude) |
+| Zoom the map | Plotly `xaxis.range` / `yaxis.range` on each panel's axes (x is longitude). For H / L marks, run local-extrema on the wider field and zoom with the ranges: a field clipped first has too little room around its centres to find them |
 | Sample a point (mediogram, wind rose) | point-value before plotting |
 | Percentile band | summarize-dim `--method quantile`, then Plotly `"fill": "tonexty"` (see **Lines over time**) |
 | Hide or restyle base-map layers | a data entry with the layer's uid: `{"uid": "rivers", "visible": false}` (uids `coastline`, `borders`, `disputed`, `lakes`, `rivers`, `admin1`) |
