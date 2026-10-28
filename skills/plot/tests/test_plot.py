@@ -219,6 +219,12 @@ def test_meta_text_labels_each_point(tmp_path, plot_fn, capsys):
     spec = _dump(plot_fn, capsys, "-i", str(path), "--spec", json.dumps(user))
     assert compile(spec, {"0": xr.open_zarr(path)}).data[0].text[:3] == ("0", "1", "2")
     run_skill(plot_fn, "-i", str(path), "-o", str(tmp_path / "xy.png"), "--spec", json.dumps(user))
+    # On bars the labels sit above each bar, where Plotly keeps their font size.
+    capsys.readouterr()
+    user["data"][0]["type"] = "bar"
+    user["data"][0]["meta"] = {"x": "year", "y": "precip", "text": "rank"}
+    spec = _dump(plot_fn, capsys, "-i", str(path), "--spec", json.dumps(user))
+    assert compile(spec, {"0": xr.open_zarr(path)}).data[0].textposition == "outside"
 
 
 def test_meta_text_yields_to_the_traces_own_text(tmp_path, plot_fn, capsys):
@@ -236,7 +242,7 @@ def test_meta_text_yields_to_the_traces_own_text(tmp_path, plot_fn, capsys):
 def test_meta_text_errors(tmp_path, plot_fn, capsys):
     path = _enso_rain(tmp_path, n=3)
     for meta, message in (
-        ({"x": "nino34", "y": "precip", "text": "yr"}, "yr"),
+        ({"x": "nino34", "y": "precip", "text": "yr"}, "meta.text 'yr' is not in the data"),
         ({"text": "year", "source": {"variable": "precip"}}, "meta.x / meta.y scatter"),
     ):
         user = {"data": [{"uid": "0", "meta": meta}]}

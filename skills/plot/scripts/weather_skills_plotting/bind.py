@@ -925,6 +925,11 @@ def bind_xy(trace, meta, ctx, loc):
     # sets its own text.
     labelled = meta.get("text") and not (trace.get("text") or trace.get("texttemplate"))
     if labelled:
+        if meta["text"] not in ds.variables:
+            raise UsageError(
+                f"{loc}.text {meta['text']!r} is not in the data; available: "
+                f"{', '.join(sorted(map(str, ds.variables)))}"
+            )
         names.append(meta["text"])
     for name in names:
         # isel / sel reach only the side that has the dim: a county coordinate has no
@@ -985,6 +990,9 @@ def bind_xy(trace, meta, ctx, loc):
     if trace.get("text") or trace.get("texttemplate"):
         # The user's labels on the outermost points stay readable past the axis edge.
         out["cliponaxis"] = False
+    # meta.text labels every point; a short 1-D series of two numbers labels each
+    # point with its year, date or name by default. The trace's own text wins.
+    text = None
     if labelled:
         text_da = picked[2]
         if not set(text_da.dims) <= set(x_da.dims):
@@ -1005,25 +1013,27 @@ def bind_xy(trace, meta, ctx, loc):
                 labels.append("" if np.isnan(v) else f"{v:.3g}")
             else:
                 labels.append(str(v))
-        out["text"] = [label for label, ok in zip(labels, keep, strict=True) if ok]
-        out.update(cliponaxis=False)
-        if not bar:
-            out.update(mode="markers+text", textposition="top center")
-    # A short 1-D series of two numbers labels each point with its year, date or
-    # name, unless the trace sets its own text.
-    if (
+        text = [label for label, ok in zip(labels, keep, strict=True) if ok]
+    elif (
         not bar
         and x_da.ndim == 1
         and xv.dtype.kind == "f"
         and yv.dtype.kind == "f"
         and keep.sum() <= 25
-        and not (trace.get("text") or trace.get("texttemplate") or meta.get("text"))
+        and not (trace.get("text") or trace.get("texttemplate"))
     ):
         labels = [
             str(v) if isinstance(v, (int, np.integer)) else format_plot_date(v)
             for v in x_da[x_da.dims[0]].values
         ]
         text = [label for label, ok in zip(labels, keep, strict=True) if ok]
+    if text is not None and bar:
+        # Above the bar, at full size: Plotly otherwise shrinks a label to the bar width.
+        out.update(text=text, textposition="outside", constraintext="none", cliponaxis=False)
+    elif text is not None and (xv.dtype.kind != "f" or yv.dtype.kind != "f"):
+        # Dates and names have no axis fractions to place by.
+        out.update(mode="markers+text", text=text, textposition="top center", cliponaxis=False)
+    elif text is not None:
         # Greedy placement in axis fractions (a label ~ 0.018 wide per character, 0.05 tall):
         # each label takes the first side that does not cover one already placed.
         x0, y0 = out["x"], out["y"]
