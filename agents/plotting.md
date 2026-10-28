@@ -53,8 +53,7 @@ and transforms when those are available (for example a fetch skill,
   own grid; traces on the same axes are layers. Panels of the same quantity
   share one colorbar and, over the same region, one map window; give a trace
   its own `coloraxis` to split them. Panel titles are annotations named
-  `panel-title-N`, N being the panel's axis number (the trace on `x7` is
-  titled by `panel-title-7`), not its position in `data`. The canvas is sized from the maps; `layout.width` /
+  `panel-title-N`. The canvas is sized from the maps; `layout.width` /
   `height` fix it and the maps shrink to fit.
 - **Keep titles and colorbar labels short.** A title names the subject in a
   few words (`CHIRPS weekly totals`, `Week 1`), not the pipeline that made

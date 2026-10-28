@@ -137,7 +137,7 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
     else:
         data, layout = _assemble_chart(items, user_layout)
     layout.setdefault("template", DEFAULT_TEMPLATE)
-    built = {a.get("name"): a for a in layout.get("annotations") or []}
+    built = {a.get("name") for a in layout.get("annotations") or []}
     for ann in user_layout.get("annotations") or []:
         name = str(ann.get("name") or "")
         if name.startswith("panel-title-") and name not in built:
@@ -145,17 +145,9 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
                 (n for n in built if n and n.startswith("panel-title-")),
                 key=lambda n: int(n.rsplit("-", 1)[1]),
             )
-            # Name each panel by its axis and current title, so a spec that
-            # numbered titles in trace order can see which panel is which.
-            panels = [
-                f"{n} (xaxis{str(built[n].get('xref', 'x')).split()[0][1:]}: "
-                f"{str(built[n].get('text', '')).replace('<br>', ' ')})"
-                for n in have
-            ]
             raise UsageError(
-                f"layout.annotations name {name!r} matches no panel. N in panel-title-N is the "
-                f"panel's axis number (the panel on xaxis7 is panel-title-7), not the trace's "
-                f"position in data; this figure's panels are {', '.join(panels) or 'none'}"
+                f"layout.annotations name {name!r} matches no panel; this figure's panel titles "
+                f"are {', '.join(have) or 'none'} (numbered from 1)"
             )
     out_layout = merge_spec({"layout": layout}, {"layout": user_layout})["layout"]
     try:
