@@ -264,7 +264,7 @@ def write_gif(fig, output, *, duration=DEFAULT_DURATION_MS, scale=1):
     """Write an animated figure's frames as a looping GIF, ``duration`` ms per frame.
 
     Each frame is drawn as a PNG by kaleido (one browser for all of them),
-    then Pillow joins them.
+    then Pillow joins them on one shared 256-colour palette.
     """
     import tempfile
     from pathlib import Path
@@ -295,6 +295,15 @@ def write_gif(fig, output, *, duration=DEFAULT_DURATION_MS, scale=1):
         paths = [Path(tmp) / f"{i}.png" for i in range(len(stills))]
         pio.write_images(stills, paths, scale=scale, validate=False)
         images = [Image.open(p).convert("RGB") for p in paths]
+    # A GIF frame holds 256 colours. Left to Pillow, each frame gets its own palette,
+    # so the same colorbar bands differently from frame to frame. Pick one palette
+    # from all frames stacked together and map every frame onto it.
+    w, h = images[0].size
+    stack = Image.new("RGB", (w, h * len(images)))
+    for i, im in enumerate(images):
+        stack.paste(im, (0, h * i))
+    palette = stack.quantize(256, dither=Image.Dither.NONE)
+    images = [im.quantize(palette=palette, dither=Image.Dither.NONE) for im in images]
     images[0].save(output, save_all=True, append_images=images[1:], duration=duration, loop=0)
     return output
 

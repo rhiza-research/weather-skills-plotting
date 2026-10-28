@@ -131,6 +131,27 @@ def test_gif_one_frame_per_time(grid, animation_fn, tmp_path, capsys):
     assert load_figure_history(out)
 
 
+def test_gif_frames_share_one_palette(tmp_path, animation_fn):
+    from PIL import Image
+
+    # A noisy field needs more than 256 colours per frame, so each frame must be reduced.
+    lat, lon = np.arange(-20.0, 20.0), np.arange(0.0, 40.0)
+    ds = make_gridded(n_time=3, name="t2m", lats=lat, lons=lon)
+    ds["t2m"].values = np.random.default_rng(0).normal(size=ds["t2m"].shape)
+    ds["t2m"].attrs.update(units="degree_Celsius", standard_name="air_temperature")
+    out = tmp_path / "v.gif"
+    run_skill(
+        animation_fn, "--animate", "-i", str(write_zarr(ds, tmp_path / "n.zarr")), "-o", str(out)
+    )
+    colours = set()
+    with Image.open(out) as img:
+        for i in range(img.n_frames):
+            img.seek(i)
+            colours |= {c for _, c in img.convert("RGB").getcolors(1 << 24)}
+    # One palette for all frames, so the colorbar looks the same in every frame.
+    assert len(colours) <= 256
+
+
 def test_gif_of_constant_field(tmp_path, animation_fn):
     from PIL import Image
 
