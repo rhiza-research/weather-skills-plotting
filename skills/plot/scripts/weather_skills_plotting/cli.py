@@ -36,6 +36,8 @@ def split_name(value: str, flag: str) -> tuple[str, str | None]:
     if not sep:
         return str(value), None
     if not path or not _NAME.fullmatch(name):
+        # A valid uid for the example: each run of other characters becomes _, the ends
+        # are trimmed, and "0" (the first input's default uid) stands in if nothing is left.
         uid = re.sub(r"[^A-Za-z0-9_]+", "_", name).strip("_") or "0"
         raise argparse.ArgumentTypeError(
             f"{flag} expects PATH or PATH=UID, UID made of letters, digits and _; got {value!r}. "
