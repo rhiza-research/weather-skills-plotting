@@ -134,7 +134,7 @@ CHIRPS and ECMWF week-1 rainfall side by side over Kenya, each on its own grid, 
   - `palettes`: `{name: {colors, bounds}}` for `meta.palette`; a name like a built-in one replaces it.
   - `defaults`: what a field gets when the spec names no palette, per kind: `precip`, `precip_anomaly`, `precip_poa`, `spi`, `wind_speed`, `diverging`, `sea_level_pressure`, `temperature`, `sequential`. A value is a palette (name, color list or `{colors, bounds}`) or a Plotly colorscale name.
   - `styles`: Plotly settings per drawn element, e.g. `isobars`, `highs` / `lows` (H / L text), `arrows`; anything the spec sets on a trace wins.
-  - `overlays`: line styles per base-map layer, e.g. `{"borders": {"line": {"color": "#333333"}}}`; lakes are filled, so their colour is `{"lakes": {"fillcolor": "…"}}`.
+  - `overlays`: line styles per base-map layer, e.g. `{"borders": {"line": {"color": "#333333"}}}`; lakes are filled, so their color is `{"lakes": {"fillcolor": "…"}}`.
 - Without `--theme-file`, `$WEATHER_SKILLS_PLOT_THEME` or `~/.config/weather-skills/plot.json|toml` is used if present.
 
 ### Verification grid
