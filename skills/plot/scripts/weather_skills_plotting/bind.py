@@ -931,9 +931,20 @@ def bind_xy(trace, meta, ctx, loc):
         picked.append(select(ctx, own, f"{loc}.source", variable=name)[0])
     x_da, y_da = picked
     if set(x_da.dims) != set(y_da.dims):
+        # An x on time (e.g. day of year) against y with an extra dim such as members is
+        # usually a series attempt: point at along / align instead.
+        hint = ""
+        extra = [d for d in y_da.dims if d not in x_da.dims]
+        if "time" in x_da.dims and extra:
+            hint = (
+                f'. To plot y along time, drop {loc}.x and {loc}.y and set "along": {extra[0]!r} '
+                f"for one line per value; to overlay years on one seasonal axis, also set "
+                f'"align": "dayofyear"'
+            )
         raise UsageError(
             f"{loc}: x {meta.get('x')!r} has dims {list(x_da.dims)} but y {meta.get('y')!r} has "
             f"{list(y_da.dims)}; select one value of the extra dims with {loc}.source.isel / sel"
+            f"{hint}"
         )
     y_da = y_da.transpose(*x_da.dims)
     # Numbers and dates draw on a value axis; names (counties, stations, models)

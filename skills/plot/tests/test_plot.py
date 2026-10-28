@@ -57,6 +57,13 @@ def test_inputs_named_on_the_command_line(tmp_path, plot_fn, capsys):
         (["-i", "x.zarr=bad-name"], "PATH=UID"),
         (["-i", "=OBS"], "PATH=UID"),
         (["--layer", "heatmap:x.zarr=a.b"], "PATH=UID"),
+        # The error spells out the fix: an id for -i and the text as the trace's name.
+        (
+            ["-i", "x.zarr=CHIRPS total (mm)"],
+            '=CHIRPS_total_mm and pass --spec {"data": [{"uid": "CHIRPS_total_mm", '
+            '"name": "CHIRPS total (mm)"}]}',
+        ),
+        (["--layer", "heatmap:x.zarr=IMERG Late"], "end it with =IMERG_Late"),
     ],
 )
 def test_bad_input_name(plot_fn, capsys, argv, match):
@@ -224,6 +231,15 @@ def test_errors_are_actionable(tmp_path, plot_fn, capsys):
         ('{"data": [{"uid": "0", "colorscal": "Blues"}]}', "Did you mean"),
         ('{"layout": {"meta": {"geo": {"region": "Kenya"}}}}', "resolve-region"),
         ('{"layout": {"geo": {"showcountries": true}}}', "layout.meta.overlays"),
+        ('{"annotations": [{"text": "n=5"}]}', '{"layout": {"annotations": …}}'),
+        ('{"config": {"displaylogo": false}}', "plot takes none"),
+        ('{"data": [{"uid": "0", "meta": {"variable": "precip"}}]}', '{"source": {"variable"'),
+        # A grid draws as a heatmap: line styling says how to get a line chart.
+        ('{"data": [{"uid": "0", "line": {"color": "red"}}]}', "summarize-dim"),
+        (
+            '{"layout": {"meta": {"overlays": {"lakes": {"color": "#1f4e9c"}}}}}',
+            '{"lakes": {"fillcolor"',
+        ),
     ]
     for spec, match in bad:
         with pytest.raises(SystemExit):
@@ -349,8 +365,12 @@ def test_series_with_no_common_dates_warn(tmp_path, plot_fn, capsys):
     a = _area(make_gridded(n_time=2))
     b = a.assign_coords(time=np.array(["2027-01-01", "2027-01-02"], dtype="datetime64[ns]"))
     pa, pb = write_zarr(a, tmp_path / "a.zarr"), write_zarr(b, tmp_path / "b.zarr")
-    run_skill(plot_fn, "-i", str(pa), "-i", str(pb), "--dump-spec", "-")
-    assert "share no dates" in capsys.readouterr().err
+    c = write_zarr(a.assign_coords(time=a["time"] + np.timedelta64(800, "D")), tmp_path / "c.zarr")
+    run_skill(plot_fn, "-i", str(pa), "-i", str(pb), "-i", str(c), "--dump-spec", "-")
+    err = capsys.readouterr().err
+    # One warning for all three disjoint series, pointing at the seasonal overlay.
+    assert err.count("do not all share dates") == 1
+    assert '"align": "dayofyear"' in err
 
 
 def test_gridded_input_as_a_series_names_the_fix(tmp_path, plot_fn, capsys):
@@ -415,13 +435,11 @@ def test_dumped_animation_replays_as_an_animation(tmp_path, plot_fn, capsys):
 def test_station_picked_by_sel_is_a_line_on_the_shared_axes(tmp_path, plot_fn, capsys):
     pts = write_zarr(make_point_obs(n_points=3), tmp_path / "pts.zarr")
     sid = str(xr.open_zarr(pts)["point_id"].values[1])
-    user = {"data": [{"uid": u, "meta": {"source": {"sel": {"point_id": sid}}}} for u in "AB"]}
-    spec = _dump(plot_fn, capsys, "-i", f"{pts}=A", "-i", f"{pts}=B", "--spec", json.dumps(user))
+    user = {"data": [{"uid": u, "meta": {"source": {"sel": {"point_id": sid}}}} for u in "01"]}
+    spec = _dump(plot_fn, capsys, "-i", str(pts), "-i", str(pts), "--spec", json.dumps(user))
     assert all("bind" not in t["meta"] and "xaxis" not in t for t in spec["data"])
     out = tmp_path / "st.png"
-    run_skill(
-        plot_fn, "-i", f"{pts}=A", "-i", f"{pts}=B", "-o", str(out), "--spec", json.dumps(user)
-    )
+    run_skill(plot_fn, "-i", str(pts), "-i", str(pts), "-o", str(out), "--spec", json.dumps(user))
     assert out.is_file()
 
 
@@ -430,6 +448,24 @@ def test_along_stations_is_lines_not_a_station_map(tmp_path, plot_fn, capsys):
     user = {"data": [{"uid": "0", "meta": {"along": "point_id"}}]}
     spec = _dump(plot_fn, capsys, "-i", str(pts), "--spec", json.dumps(user))
     assert "bind" not in spec["data"][0]["meta"]
+
+
+def test_still_map_refuses_more_than_100_panels(tmp_path, plot_fn, capsys):
+    """Five years of days as panels never finished rendering; stop with a way out."""
+    grid = write_zarr(make_gridded(n_time=101), tmp_path / "grid.zarr")
+    with pytest.raises(SystemExit) as exc:
+        run_skill(plot_fn, "-i", str(grid), "-o", str(tmp_path / "map.png"))
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "101 panels" in err and "--animate" in err and "isel" in err
+    assert not (tmp_path / "map.png").exists()
+
+
+def test_animation_is_not_capped_by_the_still_panel_limit(tmp_path, plot_fn):
+    grid = write_zarr(make_gridded(n_time=101), tmp_path / "grid.zarr")
+    out = tmp_path / "anim.html"
+    run_skill(plot_fn, "--animate", "-i", str(grid), "-o", str(out))
+    assert "Plotly.newPlot" in out.read_text()
 
 
 def test_one_figure_to_several_outputs(tmp_path, plot_fn):
