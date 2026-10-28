@@ -365,8 +365,12 @@ def test_series_with_no_common_dates_warn(tmp_path, plot_fn, capsys):
     a = _area(make_gridded(n_time=2))
     b = a.assign_coords(time=np.array(["2027-01-01", "2027-01-02"], dtype="datetime64[ns]"))
     pa, pb = write_zarr(a, tmp_path / "a.zarr"), write_zarr(b, tmp_path / "b.zarr")
-    run_skill(plot_fn, "-i", str(pa), "-i", str(pb), "--dump-spec", "-")
-    assert "share no dates" in capsys.readouterr().err
+    c = write_zarr(a.assign_coords(time=a["time"] + np.timedelta64(800, "D")), tmp_path / "c.zarr")
+    run_skill(plot_fn, "-i", str(pa), "-i", str(pb), "-i", str(c), "--dump-spec", "-")
+    err = capsys.readouterr().err
+    # One warning for all three disjoint series, pointing at the seasonal overlay.
+    assert err.count("do not all share dates") == 1
+    assert '"align": "dayofyear"' in err
 
 
 def test_gridded_input_as_a_series_names_the_fix(tmp_path, plot_fn, capsys):

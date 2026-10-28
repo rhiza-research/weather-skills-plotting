@@ -353,6 +353,14 @@ def check_trace_meta(meta, loc: str, palettes: dict) -> None:
             raise UsageError(f"plot spec {loc}.{key} must be a variable name")
     if (meta.get("x") is None) != (meta.get("y") is None):
         raise UsageError(f"plot spec {loc}: a scatter of two variables needs both x and y")
+    # x / y draw one point per shared position; the series-over-time keys do not apply.
+    series_only = [k for k in ("along", "align", "band") if meta.get(k) is not None]
+    if meta.get("x") is not None and series_only:
+        raise UsageError(
+            f"plot spec {loc}.{series_only[0]} draws a series over time and does not work with "
+            f"{loc}.x / y. Drop x and y to plot the variable along time; to overlay years on one "
+            f'seasonal axis, set "align": "dayofyear" on each line instead of an x of day numbers'
+        )
     if meta.get("arrows") is not None:
         _check_keys(meta["arrows"], ARROW_KEYS, f"{loc}.arrows")
     if meta.get("along_color") not in (None, "same", "cycle"):
