@@ -101,13 +101,21 @@ def export(fig, output, *, datasets=None, scale=None):
         )
     output.parent.mkdir(parents=True, exist_ok=True)
     if suffix in (".html", ".htm"):
+        import brotli
         import plotly.io as pio
 
         figure = _float32(fig.to_plotly_json())
         # The chat draws this with one shared plotly.js instead of the copy
         # embedded in every HTML artifact. to_json keeps it strict JSON
         # (NaN and Infinity become null) for JSON.parse in the viewer.
-        output.with_suffix(".plotly.json").write_text(pio.to_json(figure))
+        sidecar = output.with_suffix(".plotly.json")
+        body = pio.to_json(figure)
+        sidecar.write_text(body)
+        # The chat serves this to browsers that accept br. Level 11 takes
+        # half a minute on a 60 MB figure; 9 takes a second for most of the gain.
+        sidecar.with_name(sidecar.name + ".br").write_bytes(
+            brotli.compress(body.encode(), quality=9)
+        )
 
         # An animation opens paused on its first frame; the viewer presses Play.
         # The scroll wheel zooms, which Plotly leaves off by default.

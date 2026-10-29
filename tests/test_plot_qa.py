@@ -120,3 +120,16 @@ def test_export_rejects_other_suffixes(tmp_path):
     ds = make_gridded(n_time=1)
     with pytest.raises(UsageError, match=".png, .jpg or .html"):
         export(compile(HEATMAP, {"a": ds}), tmp_path / "map.svg")
+
+
+def test_export_html_writes_brotli_figure_json(tmp_path):
+    import brotli
+
+    from weather_skills_plotting import compile, export
+
+    ds = make_gridded(n_time=1)
+    out = export(compile(HEATMAP, {"a": ds}), tmp_path / "map.html", datasets={"a": ds})
+    sidecar = out.with_suffix(".plotly.json")
+    assert brotli.decompress(sidecar.with_name(sidecar.name + ".br").read_bytes()) == (
+        sidecar.read_bytes()
+    )

@@ -11,6 +11,7 @@
 #   "cartopy",
 #   "shapely>=2.1.2",
 #   "plotly>=7.1",
+#   "brotli>=1.1",
 #   "kaleido>=1.5",
 # ]
 # ///
