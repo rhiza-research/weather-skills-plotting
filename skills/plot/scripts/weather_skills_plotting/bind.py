@@ -937,9 +937,9 @@ def bind_xy(trace, meta, ctx, loc):
         extra = [d for d in y_da.dims if d not in x_da.dims]
         if "time" in x_da.dims and extra:
             hint = (
-                f'. To plot y along time, drop {loc}.x and {loc}.y and set "along": {extra[0]!r} '
-                f"for one line per value; to overlay years on one seasonal axis, also set "
-                f'"align": "dayofyear"'
+                f". To plot y along time, drop {loc}.x and {loc}.y and set {loc}.along to "
+                f"{extra[0]!r} for one line per value; to overlay years on one seasonal axis, "
+                f'also set {loc}.align to "dayofyear"'
             )
         raise UsageError(
             f"{loc}: x {meta.get('x')!r} has dims {list(x_da.dims)} but y {meta.get('y')!r} has "

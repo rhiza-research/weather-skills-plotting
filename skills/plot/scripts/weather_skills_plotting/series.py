@@ -77,7 +77,7 @@ def warn_disjoint_dates(spec: dict, datasets: dict) -> None:
         listed = ", ".join(f"{k} ({str(spans[k][0])[:10]}–{str(spans[k][1])[:10]})" for k in apart)
         warn(
             f"series {listed} do not all share dates, so they sit apart on the time axis; "
-            f'to overlay years on one seasonal axis, set "align": "dayofyear" on each line'
+            f'to overlay years on one seasonal axis, set "meta": {{"align": "dayofyear"}} on each line'
         )
 
 
