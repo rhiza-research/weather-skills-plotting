@@ -34,8 +34,8 @@ uv run pytest
 uv run skills/plot/scripts/plot.py -i /tmp/forecast.zarr -o /tmp/out.png \
   --spec '{"layout": {"title": {"text": "S2S precip"}}}'
 
-# The same figure, interactive. Also writes out.plotly.json beside it, for
-# the chat's shared-library viewer.
+# The same figure, interactive. Also writes out.plotly.json (and a brotli copy,
+# out.plotly.json.br) beside it, for the chat's shared-library viewer.
 uv run skills/plot/scripts/plot.py -i /tmp/forecast.zarr -o /tmp/out.html
 
 # A timeseries overlay of two area means (each from summarize-dim --lat-weighted)
