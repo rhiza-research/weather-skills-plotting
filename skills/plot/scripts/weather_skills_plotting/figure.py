@@ -59,6 +59,7 @@ from weather_skills_plotting.palettes import (
     resolve_default_precip,
 )
 from weather_skills_plotting.spec import (
+    MAP_BINDS,
     deep_merge,
     fill_defaults,
     merge_spec,
@@ -119,6 +120,22 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
                 )
             parts.setdefault(base, {})[part] = trace
     skip = {id(p) for d in parts.values() for p in d.values()}
+    # Map panels have no chart traces; an unbound scatter with a source binds as "series".
+    if any(bind_of(t) in MAP_BINDS for t in traces):
+        for i, trace in enumerate(traces):
+            bind = bind_of(trace)
+            if bind is not None and bind not in MAP_BINDS:
+                unset = not (trace.get("meta") or {}).get("bind")
+                raise UsageError(
+                    f"data[{i}] binds as {bind!r}, a chart, but this figure is a map"
+                    + (
+                        f"; with meta.bind unset a {trace.get('type') or 'scatter'} with "
+                        f"meta.source defaults to {bind!r}"
+                        if unset
+                        else ""
+                    )
+                    + f'; set data[{i}].meta.bind "points" to draw stations as markers'
+                )
     for i, trace in enumerate(traces):
         if id(trace) in skip:
             continue

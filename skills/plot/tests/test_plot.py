@@ -474,6 +474,30 @@ def test_along_stations_is_lines_not_a_station_map(tmp_path, plot_fn, capsys):
     assert "bind" not in spec["data"][0]["meta"]
 
 
+@pytest.mark.parametrize("keep_time", [True, False])
+def test_unbound_station_scatter_on_a_map_says_bind_points(tmp_path, plot_fn, capsys, keep_time):
+    """Unbound, a station scatter was a series: a dims error with time, a KeyError without."""
+    grid = write_zarr(make_gridded(n_time=1).isel(time=0), tmp_path / "grid.zarr")
+    stn = make_point_obs(n_time=1)
+    pts = write_zarr(stn if keep_time else stn.isel(time=0), tmp_path / "pts.zarr")
+    stations = {"uid": "STN", "type": "scatter", "meta": {"source": {"input": "STN"}}}
+    user = {
+        "layout": {"meta": {"inputs": {"GRID": str(grid), "STN": str(pts)}}},
+        "data": [
+            {"uid": "GRID", "type": "heatmap", "meta": {"source": {"input": "GRID"}}},
+            stations,
+        ],
+    }
+    with pytest.raises(SystemExit):
+        run_skill(plot_fn, "-o", str(tmp_path / "map.png"), "--spec", json.dumps(user))
+    err = capsys.readouterr().err
+    assert "data[1]" in err and "defaults to 'series'" in err and 'bind "points"' in err
+
+    stations["meta"]["bind"] = "points"
+    run_skill(plot_fn, "-o", str(tmp_path / "map.png"), "--spec", json.dumps(user))
+    assert (tmp_path / "map.png").is_file()
+
+
 def test_still_map_refuses_more_than_100_panels(tmp_path, plot_fn, capsys):
     """Five years of days as panels never finished rendering; stop with a way out."""
     grid = write_zarr(make_gridded(n_time=101), tmp_path / "grid.zarr")
