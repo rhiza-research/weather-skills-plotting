@@ -271,6 +271,19 @@ def plot(
         cli = dict(zip(input_ids([x.name for x in inputs]), files, strict=True))
         datasets = spec_datasets(spec, cli)
         user = {t.get("uid"): t for t in (spec.data.get("data") or [])} if spec else {}
+        new = [str(u) for u in user if u not in datasets]
+        for key in cli:
+            ds = datasets[key]
+            fields = [v for v in ds.data_vars if "grid_mapping_name" not in ds[v].attrs]
+            if new and key not in user and len(fields) > 1:
+                # The spec's traces sit beside the input's own trace, which can't pick a field.
+                raise UsageError(
+                    f"-i input {key!r} holds {', '.join(map(str, fields))}, so its own trace "
+                    f"(uid {key!r}) needs meta.source.variable. The --spec traces "
+                    f"{', '.join(repr(u) for u in new)} match no input's uid, so they are added "
+                    f"beside it rather than replacing it; give one of them uid {key!r} to "
+                    "restyle the input's trace"
+                )
         drawn = {key: _as_drawn(d, user.get(key)) for key, d in datasets.items()}
         data = [_default_trace(key, d, user.get(key)) for key, d in drawn.items()]
         # 1-D series share one x/y axis, one legend entry per file.
