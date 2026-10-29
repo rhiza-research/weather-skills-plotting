@@ -79,6 +79,7 @@ Every row below assumes `-i ecmwf.zarr=FC`.
 | Set the title | `{"layout": {"title": {"text": "Week 1"}}}` |
 | Add a second title line | `{"layout": {"title": {"text": "ECMWF rainfall", "subtitle": {"text": "Week 1: 16–22 Oct"}}}}` or `<br>` in `text` |
 | Title a panel | `{"layout": {"annotations": [{"name": "panel-title-2", "text": "ECMWF"}]}}` |
+| Arrange side-by-side maps | `{"layout": {"grid": {"subplots": [["xy", "x3y3"], ["x2y2", ""]]}}}` |
 | Pick one step | `{"data": [{"uid": "FC", "meta": {"source": {"isel": {"step": 0}}}}]}` |
 | Pick the variable to draw | `{"data": [{"uid": "FC", "meta": {"z": "tp"}}]}` (`y` for a line, `marker.color` for stations) |
 | Set the color range | `{"data": [{"uid": "FC", "zmin": 0, "zmax": 100}]}` |
@@ -107,6 +108,8 @@ CHIRPS and ECMWF week-1 rainfall side by side over Kenya, each on its own grid, 
 
 ### Panels and layers
 - A file with several times or steps gets one panel each, titled with its date. `layout.grid.rows` / `columns` set the grid; `xgap` / `ygap` the spacing, as a fraction of a panel. A still image takes at most 100 panels and stops with an error past that: pick times with `meta.source.isel` / `sel` (or the select skill), aggregate first, or use `--animate`, which has no limit.
+- Side-by-side files (`-i a -i b …`) are maps `xy`, `x2y2`, … in `-i` order. To arrange them, for example one column per model and one row per week, list each cell's map in Plotly's `layout.grid.subplots`, row by row, with `""` for an empty cell: `{"layout": {"grid": {"subplots": [["xy", "x3y3", "x5y5"], ["x2y2", "x4y4", ""]]}}}` puts files 1–2 down the first column, 3–4 down the second, and file 5 alone in the third. Every map needs a cell; the traces and their `--layer outline:` copies keep their axes, so leave them out of the spec.
+- Maps of the same window label longitude and latitude only on the outer panels; set `showticklabels` on a panel's `xaxisN` / `yaxisN` to change it. A side-by-side title (`name · dates`) too wide for its column goes on two lines.
 - Panels showing the same quantity share one colorbar. To split one off: `{"data": [{"uid": "FC", "coloraxis": "coloraxis2"}]}`.
 - Panels are numbered 1, 2, … left to right along the top row, then on along each row below. A trace's `xaxis` / `yaxis` put it in a panel: `"x"` / `"y"` is panel 1, `"x2"` / `"y2"` panel 2, and so on. In a grid of C columns, row r, column c is panel (r − 1) × C + c: with `"grid": {"rows": 4, "columns": 6}`, row 1 is panels 1–6, row 2 is panels 7–12, and a trace on `"x7"` / `"y7"` sits in row 2, column 1. The numbers follow grid position, not the order of traces in `data`.
 - Panel N's title is the annotation named `panel-title-N`; set its text with `{"layout": {"annotations": [{"name": "panel-title-2", "text": "GEFS · hit 78% · BER 15%"}]}}`. The text takes any characters, and `<br>` for a second line. Side-by-side files default to their `-i` UID (else the file name) as the title, but UID is an id of letters, digits and `_`: put title text in the annotation, not in UID.

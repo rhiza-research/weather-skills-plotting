@@ -48,6 +48,7 @@ from weather_skills_plotting.layout import (
     map_layout,
     panel_title_annotation,
     place_colorbars,
+    subplot_cells,
     title_lines,
 )
 from weather_skills_plotting.palettes import (
@@ -674,7 +675,18 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     # under the columns they colour when the panels split that way.
     aspect = float(np.median([(e[1] - e[0]) / max(e[3] - e[2], 1e-6) for e in extents if e]))
     grid_in = user_layout.pop("grid", None) or {}
-    rows, cols = choose_grid(n, aspect, grid_in.get("rows"), grid_in.get("columns"))
+    if grid_in.get("subplots") is not None:
+        # Plotly's grid.subplots: the map whose axes sit in each cell, "" for an empty one.
+        rows, cols, cells = subplot_cells(
+            grid_in["subplots"],
+            n,
+            [e is not None for e in extents],
+            grid_in.get("rows"),
+            grid_in.get("columns"),
+        )
+    else:
+        rows, cols = choose_grid(n, aspect, grid_in.get("rows"), grid_in.get("columns"))
+        cells = list(range(n))
     # Trace-level colorbar / showscale lift onto the trace's color axis, under the
     # spec's layout.<coloraxis>. On a shared axis one trace asking for the bar shows
     # it: showscale false on the other traces only means "not drawn from me".
@@ -700,7 +712,9 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     placed = {name for name in panels_of if {"x", "y"} & (asked[name].get("colorbar") or {}).keys()}
     auto_of = {name: ps for name, ps in panels_of.items() if name not in placed}
     placed_h = {name for name in placed if asked[name]["colorbar"].get("orientation") == "h"}
-    mode = colorbar_mode(auto_of, cols)
+    # Bars go beside the rows or under the columns of the cells their maps sit in.
+    auto_cells = {name: [cells[p] for p in ps] for name, ps in auto_of.items()}
+    mode = colorbar_mode(auto_cells, cols)
     if mode in ("right", "rows") and aspect > WIDE_MAP:
         # A strip (a Pacific band, a polar belt) is too short for a vertical bar's title.
         mode = "below"
@@ -709,17 +723,29 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     ):
         # A horizontal bar asked for in the spec gets room under the maps.
         mode = "below"
-    layout, domains = map_layout(
-        rows,
-        cols,
-        aspect,
-        titled=title_lines(user_layout.get("title")),
-        panel_titles=any(panel_titles),
-        right=(bool(auto_of) and mode in ("right", "rows")) or bool(placed - placed_h),
-        below=(bool(auto_of) and mode in ("columns", "below")) or bool(placed_h),
-        user={**user_layout, "grid": grid_in},
+    # Maps of one window share their lon/lat: only the outer ones need tick labels.
+    drawn = {c for c, e in zip(cells, extents, strict=True) if c is not None and e is not None}
+    outer_ticks = len(drawn) > 1 and len({tuple(e) for e in extents if e}) == 1
+    sizing = {
+        "titled": title_lines(user_layout.get("title")),
+        "right": (bool(auto_of) and mode in ("right", "rows")) or bool(placed - placed_h),
+        "below": (bool(auto_of) and mode in ("columns", "below")) or bool(placed_h),
+        "outer_ticks": outer_ticks,
+        "user": {**user_layout, "grid": grid_in},
+    }
+    layout, cell_domains = map_layout(
+        rows, cols, aspect, panel_titles=int(any(panel_titles)), **sizing
     )
-    slots = place_colorbars(mode, auto_of, domains)
+    # A "name · dates" title wider than a column runs into the next panel's title:
+    # put the dates on a second line.
+    em = float(layout_value(user_layout, "font.size") or 12)
+    plot_w = layout["width"] - layout["margin"]["l"] - layout["margin"]["r"]
+    column_w = (cell_domains[1][0] - cell_domains[0][0] if cols > 1 else 1.0) * plot_w
+    if any(t and " · " in t and len(t) * 0.5 * em > column_w for t in panel_titles):
+        panel_titles = [t.replace(" · ", "<br>", 1) if t else t for t in panel_titles]
+        layout, cell_domains = map_layout(rows, cols, aspect, panel_titles=2, **sizing)
+    slots = place_colorbars(mode, auto_cells, cell_domains)
+    domains = [cell_domains[c] if c is not None else None for c in cells]
     # No-data cells show the plot background (the theme's maps style): a neutral grey,
     # not the template's tint, darker than a diverging zero or a dry class, so a missing
     # cell never reads as zero.
@@ -727,6 +753,8 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     layout["annotations"] = []
     for p in range(n):
         s = axis_suffix(p)
+        if cells[p] is None:
+            continue
         if extents[p] is None:
             # An empty cell keeps a hidden axis so annotations can still target it,
             # painted with the page colour so the template's panel background
@@ -750,7 +778,14 @@ def _assemble_map(items, user_layout, lmeta, ctx):
                 }
             )
             continue
-        layout[f"xaxis{s}"], layout[f"yaxis{s}"] = map_axes(p, extents[p], domains[p])
+        xaxis, yaxis = map_axes(p, extents[p], domains[p])
+        if outer_ticks:
+            # A map below or to the left already labels these longitudes / latitudes.
+            if cells[p] + cols in drawn:
+                xaxis["showticklabels"] = False
+            if cells[p] % cols and cells[p] - 1 in drawn:
+                yaxis["showticklabels"] = False
+        layout[f"xaxis{s}"], layout[f"yaxis{s}"] = xaxis, yaxis
         if panel_titles[p]:
             layout["annotations"].append(panel_title_annotation(p, panel_titles[p]))
     for name, members in axis_members.items():
@@ -785,6 +820,8 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     data = []
     for p in range(n):
         s = axis_suffix(p)
+        if cells[p] is None:
+            continue
         if extents[p] is None:
             # plotly.js only builds axes a trace uses; keep the empty cell's axis alive.
             data.append(
