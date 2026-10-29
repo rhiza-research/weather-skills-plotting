@@ -187,14 +187,12 @@ def test_scatter_of_two_variables(tmp_path, plot_fn, capsys):
     run_skill(plot_fn, "-i", str(path), "-o", str(tmp_path / "xy.png"), "--spec", json.dumps(user))
     assert "data: not null (0 3/3 finite)" in capsys.readouterr().out
 
-    # New uids sit beside the input's own trace, which can't pick between dmi and precip.
+    # A new uid that reads the input draws it in place of the input's own trace.
     user = {"data": [{"uid": "rain", "meta": {"x": "dmi", "y": "precip"}}]}
-    with pytest.raises(SystemExit):
-        run_skill(
-            plot_fn, "-i", str(path), "-o", str(tmp_path / "xy.png"), "--spec", json.dumps(user)
-        )
-    err = capsys.readouterr().err
-    assert "its own trace (uid '0')" in err and "give one of them uid '0'" in err
+    spec = _dump(plot_fn, capsys, "-i", str(path), "--spec", json.dumps(user))
+    assert [t["uid"] for t in spec["data"]] == ["rain"]
+    run_skill(plot_fn, "-i", str(path), "-o", str(tmp_path / "xy.png"), "--spec", json.dumps(user))
+    assert "data: not null (rain 3/3 finite)" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("kind", ["scatter", "bar"])

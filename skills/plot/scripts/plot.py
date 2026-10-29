@@ -271,20 +271,19 @@ def plot(
         cli = dict(zip(input_ids([x.name for x in inputs]), files, strict=True))
         datasets = spec_datasets(spec, cli)
         user = {t.get("uid"): t for t in (spec.data.get("data") or [])} if spec else {}
-        new = [str(u) for u in user if u not in datasets]
-        for key in cli:
-            ds = datasets[key]
-            fields = [v for v in ds.data_vars if "grid_mapping_name" not in ds[v].attrs]
-            if new and key not in user and len(fields) > 1:
-                # The spec's traces sit beside the input's own trace, which can't pick a field.
-                raise UsageError(
-                    f"-i input {key!r} holds {', '.join(map(str, fields))}, so its own trace "
-                    f"(uid {key!r}) needs meta.source.variable. The --spec traces "
-                    f"{', '.join(repr(u) for u in new)} match no input's uid, so they are added "
-                    f"beside it rather than replacing it; give one of them uid {key!r} to "
-                    "restyle the input's trace"
-                )
-        drawn = {key: _as_drawn(d, user.get(key)) for key, d in datasets.items()}
+        # A new spec trace that reads an input (meta.x / y or meta.source) draws it instead
+        # of the input's own trace; plain Plotly traces such as map markers keep it.
+        read = set()
+        for uid, t in user.items():
+            meta = t.get("meta") or {}
+            source = meta.get("source") or {}
+            if uid not in datasets and (meta.get("x") or (source and "geojson" not in source)):
+                read.add(source.get("input", next(iter(datasets), None)))
+        drawn = {
+            key: _as_drawn(d, user.get(key))
+            for key, d in datasets.items()
+            if key in user or key not in read
+        }
         data = [_default_trace(key, d, user.get(key)) for key, d in drawn.items()]
         # 1-D series share one x/y axis, one legend entry per file.
         series = bool(data) and all(
@@ -296,8 +295,8 @@ def plot(
                     f"--input may be passed at most {MAX_INPUTS} times for series; got "
                     f'{len(data)}. For ensemble members use meta.along "number" on one input'
                 )
-            for i, (key, d) in enumerate(datasets.items()):
-                data[i]["name"] = trace_label(d, i, key)
+            for i, key in enumerate(drawn):
+                data[i]["name"] = trace_label(datasets[key], i, key)
         elif cli:
             data = [
                 _default_trace(key, d, user.get(key), xaxis=None if i == 0 else f"x{i + 1}")
