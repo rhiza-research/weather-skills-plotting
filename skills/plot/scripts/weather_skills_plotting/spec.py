@@ -362,7 +362,7 @@ def check_trace_meta(meta, loc: str, palettes: dict) -> None:
         raise UsageError(
             f"plot spec {loc}.{series_only[0]} draws a series over time and does not work with "
             f"{loc}.x / y. Drop x and y to plot the variable along time; to overlay years on one "
-            f'seasonal axis, set "align": "dayofyear" on each line instead of an x of day numbers'
+            f'seasonal axis, set "meta": {{"align": "dayofyear"}} on each line instead of an x of day numbers'
         )
     if meta.get("arrows") is not None:
         _check_keys(meta["arrows"], ARROW_KEYS, f"{loc}.arrows")

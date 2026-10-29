@@ -602,7 +602,7 @@ def test_xy_against_time_points_to_along_and_align():
         coords={"time": time, "number": np.arange(4)},
     )
     spec = {"data": [{"uid": "0", "type": "scatter", "meta": {"x": "doy", "y": "tp"}}]}
-    with pytest.raises(UsageError, match='"along": \'number\'.*"align": "dayofyear"'):
+    with pytest.raises(UsageError, match=r"meta\.along to 'number'.*meta\.align to \"dayofyear\""):
         compile(spec, {"0": ds})
 
 

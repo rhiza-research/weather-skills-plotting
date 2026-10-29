@@ -112,14 +112,14 @@ CHIRPS and ECMWF week-1 rainfall side by side over Kenya, each on its own grid, 
 - The canvas fits the maps (up to 760×560 px for one map, 340×340 px per panel in a grid). `layout.width` / `height` fix it.
 
 ### Lines over time
-- A series runs along `time`, or for a forecast along its valid date (init time + `step`). Every other dim must go: pick one value with `isel` / `sel`, draw one line per value with `"along": "number"` (or `"station_id"`: a station file is a map until you pick or `along` its stations), or average it first with summarize-dim (for an area mean, `--dim latitude --dim longitude --method mean --lat-weighted`).
+- A series runs along `time`, or for a forecast along its valid date (init time + `step`). Every other dim must go: pick one value with `isel` / `sel`, draw one line per value with `"meta": {"along": "number"}` (or `"station_id"`: a station file is a map until you pick or `along` its stations), or average it first with summarize-dim (for an area mean, `--dim latitude --dim longitude --method mean --lat-weighted`).
 - Each 1-D file is one line on one shared axis (up to 26 files). The legend names it after its file, or its station id; `"name"` renames it. With two or more lines the legend sits in rows above the plot; one line has none.
-- Each line uses only its own settings, as in Plotly: set `along`, `band`, `align` or `source.variable` on every line that needs it.
+- Each line uses only its own settings, as in Plotly: set `along`, `band`, `align` or `source.variable` in the `meta` of every line that needs it.
 - `"along": "number"` draws one line per member under one legend entry; `"along_color": "cycle"` gives each its own color and entry. `"band": [10, 90]` shades that percentile range (`[0, 100]` is min–max) and draws the mean bold; `"members": false` hides the members. A band trace draws three parts, each styled as its own trace: its uid is the mean line (`name`, `line`), `UID-members` the member lines and `UID-band` the shading (`name`, `fillcolor`): `{"data": [{"uid": "FC", "name": "Mean", "line": {"color": "red", "width": 4}, "meta": {"along": "number", "band": [0, 100]}}, {"uid": "FC-members", "line": {"color": "grey"}, "opacity": 0.3}, {"uid": "FC-band", "name": "Range"}]}`. With `"type": "bar"`, `along` gives one bar series per value.
 - Two variables of one file are two `-i` of the same path, each with its own `"meta": {"source": {"variable": …}}`.
 - One panel per line, as in Plotly: put each line on its own axes and lay them out with a grid: `{"data": [{"uid": "1", "xaxis": "x2", "yaxis": "y2"}], "layout": {"grid": {"rows": 2, "columns": 1, "pattern": "coupled"}}}`. A right-hand axis: `{"data": [{"uid": "1", "yaxis": "y2"}], "layout": {"yaxis2": {"overlaying": "y", "side": "right"}}}`.
 - Lines on one axis with different units, or with no dates in common, print a warning and still draw.
-- `"align": "dayofyear"` on each line puts every year on one calendar, labelled `1 Oct`, `15 Nov`, … (29 Feb joins 28 Feb). Pass one file per year, each a single season; a season across New Year (DJF) puts Jan–Feb at the left.
+- `"meta": {"align": "dayofyear"}` on each line puts every year on one calendar, labelled `1 Oct`, `15 Nov`, … (29 Feb joins 28 Feb). Pass one file per year, each a single season; a season across New Year (DJF) puts Jan–Feb at the left.
 - The y-axis label is the variable's `long_name` and units. A rainfall axis does not go below zero.
 
 ### Colors
