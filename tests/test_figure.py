@@ -1311,3 +1311,105 @@ def test_xy_isel_picks_only_where_the_dim_is():
     meta["source"] = {"isel": {"step": 0}}
     with pytest.raises(UsageError, match="isel dimension 'step' is not in the data"):
         compile({"data": [{"uid": "0", "meta": meta}]}, {"0": ds})
+
+
+def _three_side_by_side(**layout):
+    data = {k: make_gridded(n_time=1, fill=f) for k, f in (("A", 1.0), ("B", 2.0), ("C", 3.0))}
+    spec = {
+        "data": [
+            _trace("A"),
+            _trace("B", xaxis="x2", yaxis="y2"),
+            _trace("C", xaxis="x3", yaxis="y3"),
+        ],
+        "layout": layout,
+    }
+    return compile(spec, data)
+
+
+def test_grid_subplots_puts_each_map_in_its_cell():
+    fig = _three_side_by_side(grid={"subplots": [["x3y3", "xy"], ["", "x2y2"]]})
+    lay = _layout(fig)
+    left, right = lay["xaxis3"]["domain"], lay["xaxis"]["domain"]
+    assert left[1] < right[0]  # C in the left column, A to its right
+    assert lay["xaxis2"]["domain"] == right  # B under A
+    assert lay["yaxis2"]["domain"][1] < lay["yaxis"]["domain"][0]
+    assert "grid" not in lay  # the plotter places the panels; Plotly gets explicit domains
+    # Each map keeps its own axes, so its traces need no xaxis of their own.
+    heat = {t["uid"]: t["xaxis"] for t in _data(fig, "heatmap")}
+    assert heat == {"A-p1": "x", "B-p2": "x2", "C-p3": "x3"}
+
+
+def test_grid_subplots_empty_panel_left_out_draws_nothing():
+    # x, x3: panel 2 has no map; subplots need not name it.
+    data = {k: make_gridded(n_time=1) for k in ("A", "C")}
+    spec = {
+        "data": [_trace("A"), _trace("C", xaxis="x3", yaxis="y3")],
+        "layout": {"grid": {"subplots": [["xy", "x3y3"]]}},
+    }
+    fig = compile(spec, data)
+    lay = _layout(fig)
+    assert "xaxis2" not in lay
+    assert not [t for t in fig.data if t["uid"].startswith("empty")]
+
+
+@pytest.mark.parametrize(
+    "grid, match",
+    [
+        ({"subplots": [["xy", "x2y2"]]}, "leaves out x3y3"),
+        ({"subplots": [["xy", "x2y2", "x3y3", "x4y4"]]}, "'x4y4' names no map"),
+        ({"subplots": [["xy", "xy", "x2y2", "x3y3"]]}, "names 'xy' twice"),
+        ({"subplots": [["xy", "x2y3", "x3y3"]]}, "must name one map's axes"),
+        ({"subplots": [["xy", "x2y2"], ["x3y3"]]}, "same length"),
+        ({"subplots": "xy"}, "subplots. property"),
+        ({"subplots": [["xy", "x2y2", "x3y3"]], "rows": 2}, "grid.rows is 2"),
+    ],
+)
+def test_grid_subplots_errors_say_what_to_fix(grid, match):
+    with pytest.raises(UsageError, match=match):
+        _three_side_by_side(grid=grid)
+
+
+def test_maps_of_one_window_label_only_the_outer_axes():
+    fig = compile({"data": [_trace("a")]}, {"a": make_gridded(n_time=4)})
+    lay = _layout(fig)  # 2 x 2: x1 x2 / x3 x4
+    hidden_x = [
+        a for a in ("xaxis", "xaxis2", "xaxis3", "xaxis4") if lay[a].get("showticklabels") is False
+    ]
+    hidden_y = [
+        a for a in ("yaxis", "yaxis2", "yaxis3", "yaxis4") if lay[a].get("showticklabels") is False
+    ]
+    assert hidden_x == ["xaxis", "xaxis2"]
+    assert hidden_y == ["yaxis2", "yaxis4"]
+
+
+def test_maps_of_different_windows_keep_every_tick_label():
+    a = make_gridded(n_time=1)
+    b = make_gridded(n_time=1, lats=(40.0, 41.0, 42.0), lons=(100.0, 101.0, 102.0, 103.0))
+    spec = {"data": [_trace("a"), _trace("b", xaxis="x2", yaxis="y2")]}
+    lay = _layout(compile(spec, {"a": a, "b": b}))
+    assert all("showticklabels" not in lay[k] for k in ("xaxis", "yaxis", "xaxis2", "yaxis2"))
+
+
+def test_a_map_above_an_empty_cell_keeps_its_longitudes():
+    fig = _three_side_by_side(grid={"subplots": [["xy", "x2y2"], ["x3y3", ""]]})
+    lay = _layout(fig)
+    assert lay["xaxis"].get("showticklabels") is False  # C labels the column below A
+    assert "showticklabels" not in lay["xaxis2"]  # nothing under B
+    assert lay["yaxis2"].get("showticklabels") is False
+
+
+def test_narrow_panels_put_name_and_dates_on_two_lines():
+    names = ["KMSA downscaled", "ECMWF AIFS ENS", "WeatherNext 2", "Cumulus AI"]
+    data = {n: make_gridded(n_time=1, start=f"2026-10-{26 + i:02d}") for i, n in enumerate(names)}
+    traces = [
+        _trace(n, **({"xaxis": f"x{i + 1}", "yaxis": f"y{i + 1}"} if i else {}))
+        for i, n in enumerate(names)
+    ]
+    wide = _layout(compile({"data": traces}, data))
+    narrow = _layout(
+        compile({"data": traces, "layout": {"grid": {"columns": 4}, "width": 700}}, data)
+    )
+    title = lambda lay: next(a["text"] for a in lay["annotations"] if a["name"] == "panel-title-1")  # noqa: E731
+    assert " · " in title(wide)
+    assert title(narrow).startswith("KMSA downscaled<br>")
+    assert narrow["margin"]["t"] > wide["margin"]["t"]

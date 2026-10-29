@@ -65,6 +65,58 @@ def grid_shape(n, rows=None, columns=None):
     return rows, math.ceil(n / rows) or 1
 
 
+def subplot_cells(subplots, n: int, filled: list[bool], rows=None, columns=None):
+    """``(rows, columns, cells)`` from Plotly's ``layout.grid.subplots``.
+
+    ``subplots`` is a list of rows of ``"xNyN"`` names (``"xy"`` for the first
+    map) and ``""`` for an empty cell. ``cells[p]`` is the row-major cell of map
+    panel ``p`` (axes ``x{p+1}`` / ``y{p+1}``), or None for an empty panel the
+    array leaves out. ``filled[p]`` says panel ``p`` draws something.
+    """
+    if (
+        not isinstance(subplots, list)
+        or not subplots
+        or not all(isinstance(row, list) and row for row in subplots)
+    ):
+        raise UsageError(
+            'layout.grid.subplots must be a list of rows, such as [["xy", "x2y2"], ["x3y3", ""]]'
+        )
+    n_cols = len(subplots[0])
+    if any(len(row) != n_cols for row in subplots):
+        raise UsageError("layout.grid.subplots rows must all have the same length")
+    for value, name, size in ((rows, "rows", len(subplots)), (columns, "columns", n_cols)):
+        if value is not None and value != size:
+            raise UsageError(
+                f"layout.grid.{name} is {value!r} but layout.grid.subplots has {size}; "
+                "drop grid.rows / grid.columns, subplots sets the shape"
+            )
+    cells = [None] * n
+    for i, name in enumerate(cell for row in subplots for cell in row):
+        if name == "":
+            continue
+        match = re.fullmatch(r"x(\d*)y(\d*)", str(name))
+        if not match or match[1] != match[2] or match[1] in ("0", "1"):
+            raise UsageError(
+                f"layout.grid.subplots entry {name!r} must name one map's axes, such as "
+                '"xy", "x2y2", "x3y3", or be "" for an empty cell'
+            )
+        p = int(match[1] or 1) - 1
+        if p >= n:
+            names = f"xy … x{n}y{n}" if n > 1 else "xy"
+            raise UsageError(
+                f"layout.grid.subplots entry {name!r} names no map; this figure's maps use {names}"
+            )
+        if cells[p] is not None:
+            raise UsageError(f"layout.grid.subplots names {name!r} twice")
+        cells[p] = i
+    missing = [
+        "xy" if p == 0 else f"x{p + 1}y{p + 1}" for p in range(n) if cells[p] is None and filled[p]
+    ]
+    if missing:
+        raise UsageError(f"layout.grid.subplots leaves out {', '.join(missing)}; give each a cell")
+    return len(subplots), n_cols, cells
+
+
 def choose_grid(n: int, aspect: float, rows=None, columns=None) -> tuple[int, int]:
     """``(rows, columns)`` for ``n`` map panels of lon/lat ``aspect``.
 
@@ -132,11 +184,24 @@ def title_lines(title) -> int:
 
 
 def map_layout(
-    rows, cols, aspect, *, titled, panel_titles, right=False, below=False, below_lines=0, user=None
+    rows,
+    cols,
+    aspect,
+    *,
+    titled,
+    panel_titles,
+    right=False,
+    below=False,
+    below_lines=0,
+    outer_ticks=False,
+    user=None,
 ) -> tuple[dict, list[tuple[float, float, float, float]]]:
     """Canvas, margins and per-panel ``(x0, x1, y0, y1)`` domains for a map grid.
 
-    ``titled`` is how many lines the figure title takes (``title_lines``).
+    ``titled`` is how many lines the figure title takes (``title_lines``);
+    ``panel_titles`` how many each panel title takes (0 for none).
+    ``outer_ticks`` says only the outer maps carry tick labels, so the gaps
+    between panels need no room for them.
 
     ``right`` / ``below`` say a colorbar stands there; ``below_lines`` is more
     room under the maps, in lines of text. ``user`` is the spec layout: its
@@ -154,7 +219,10 @@ def map_layout(
         box_w, box_h = MAP_BOX_PANEL
         w = min(MAP_BOX_SINGLE[0], (box_w * box_h * aspect) ** 0.5, PANEL_MAX_H * aspect)
     h = w / aspect
-    title_lines = LINE if panel_titles else 0
+    title_lines = LINE * int(panel_titles)
+    # Outer ticks: the bottom row's end labels ("42°", "34°") still meet in the gap.
+    tick_room = LINE if outer_ticks else TICK_ROOM
+    tick_line = 0 if outer_ticks else LINE
     ml = TICK_ROOM * em
     mr = (COLORBAR_ROOM if right else 1) * em
     # A subtitle takes a line plus a little air above the panel titles.
@@ -162,8 +230,10 @@ def map_layout(
     mb = (LINE + (COLORBAR_ROOM if below else 0) + below_lines) * em
 
     def gaps(w, h):
-        gx = grid["xgap"] * w if grid.get("xgap") is not None else (TICK_ROOM + 1) * em
-        gy = grid["ygap"] * h if grid.get("ygap") is not None else (LINE + title_lines + 1) * em
+        gx = grid["xgap"] * w if grid.get("xgap") is not None else (tick_room + 1) * em
+        gy = (
+            grid["ygap"] * h if grid.get("ygap") is not None else (tick_line + title_lines + 1) * em
+        )
         return gx, gy
 
     gx, gy = gaps(w, h)
