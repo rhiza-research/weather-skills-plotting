@@ -46,6 +46,7 @@ TRACE_META_KEYS = frozenset(
         "source",
         "x",
         "y",
+        "text",
         "facet",
         "along",
         "along_color",
@@ -351,11 +352,16 @@ def check_trace_meta(meta, loc: str, palettes: dict) -> None:
         raise UsageError(f"plot spec {loc}.bind {bind!r} must be one of {', '.join(sorted(BINDS))}")
     if meta.get("source") is not None:
         _check_source(meta["source"], f"{loc}.source")
-    for key in ("x", "y"):
+    for key in ("x", "y", "text"):
         if meta.get(key) is not None and not isinstance(meta[key], str):
             raise UsageError(f"plot spec {loc}.{key} must be a variable name")
     if (meta.get("x") is None) != (meta.get("y") is None):
         raise UsageError(f"plot spec {loc}: a scatter of two variables needs both x and y")
+    if meta.get("text") is not None and meta.get("x") is None:
+        raise UsageError(
+            f"plot spec {loc}.text labels the points of a meta.x / meta.y scatter; set both, "
+            "or put a list of labels in the trace's own text"
+        )
     # x / y draw one point per shared position; the series-over-time keys do not apply.
     series_only = [k for k in ("along", "align", "band") if meta.get(k) is not None]
     if meta.get("x") is not None and series_only:

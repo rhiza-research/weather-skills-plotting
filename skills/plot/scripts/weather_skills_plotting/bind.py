@@ -920,7 +920,18 @@ def bind_xy(trace, meta, ctx, loc):
     source = meta.get("source") or {}
     ds = _dataset(ctx, source, f"{loc}.source")
     picked = []
-    for name in (meta.get("x"), meta.get("y")):
+    names = [meta.get("x"), meta.get("y")]
+    # meta.text names a variable whose values label the points, unless the trace
+    # sets its own text.
+    labelled = meta.get("text") and not (trace.get("text") or trace.get("texttemplate"))
+    if labelled:
+        if meta["text"] not in ds.variables:
+            raise UsageError(
+                f"{loc}.text {meta['text']!r} is not in the data; available: "
+                f"{', '.join(sorted(map(str, ds.variables)))}"
+            )
+        names.append(meta["text"])
+    for name in names:
         # isel / sel reach only the side that has the dim: a county coordinate has no
         # time to pick. A dim the file lacks stays, so its "not in the data" error shows.
         dims = ds[name].dims if name in ds.variables else ds.dims
@@ -929,7 +940,7 @@ def bind_xy(trace, meta, ctx, loc):
             if source.get(key):
                 own[key] = {d: v for d, v in source[key].items() if d in dims or d not in ds.dims}
         picked.append(select(ctx, own, f"{loc}.source", variable=name)[0])
-    x_da, y_da = picked
+    x_da, y_da = picked[:2]
     if set(x_da.dims) != set(y_da.dims):
         # An x on time (e.g. day of year) against y with an extra dim such as members is
         # usually a series attempt: point at along / align instead.
@@ -979,9 +990,31 @@ def bind_xy(trace, meta, ctx, loc):
     if trace.get("text") or trace.get("texttemplate"):
         # The user's labels on the outermost points stay readable past the axis edge.
         out["cliponaxis"] = False
-    # A short 1-D series of two numbers labels each point with its year, date or
-    # name, unless the trace sets its own text.
-    if (
+    # meta.text labels every point; a short 1-D series of two numbers labels each
+    # point with its year, date or name by default. The trace's own text wins.
+    text = None
+    if labelled:
+        text_da = picked[2]
+        if not set(text_da.dims) <= set(x_da.dims):
+            raise UsageError(
+                f"{loc}.text {meta['text']!r} has dims {list(text_da.dims)}, which x "
+                f"{meta.get('x')!r} ({list(x_da.dims)}) lacks; select one value of the extra "
+                f"dims with {loc}.source.isel / sel"
+            )
+        labels = []
+        for v in np.asarray(text_da.broadcast_like(x_da).transpose(*x_da.dims).values).ravel():
+            if isinstance(v, (np.datetime64, np.timedelta64)) or hasattr(v, "calendar"):
+                labels.append(format_plot_date(v))
+            elif isinstance(v, (int, np.integer)) or (
+                isinstance(v, (float, np.floating)) and np.isfinite(v) and float(v).is_integer()
+            ):
+                labels.append(str(int(v)))
+            elif isinstance(v, (float, np.floating)):
+                labels.append("" if np.isnan(v) else f"{v:.3g}")
+            else:
+                labels.append(str(v))
+        text = [label for label, ok in zip(labels, keep, strict=True) if ok]
+    elif (
         not bar
         and x_da.ndim == 1
         and xv.dtype.kind == "f"
@@ -994,7 +1027,19 @@ def bind_xy(trace, meta, ctx, loc):
             for v in x_da[x_da.dims[0]].values
         ]
         text = [label for label, ok in zip(labels, keep, strict=True) if ok]
-        # Greedy placement in axis fractions (a label ~ 0.018 wide per character, 0.05 tall):
+    # Point labels default a little under the axis font; the trace's textfont.size wins.
+    size = (trace.get("textfont") or {}).get("size") or 10
+    if text is not None:
+        out["textfont"] = {"size": size}
+    if text is not None and bar:
+        # Above the bar, at full size: Plotly otherwise shrinks a label to the bar width.
+        out.update(text=text, textposition="outside", constraintext="none", cliponaxis=False)
+    elif text is not None and (xv.dtype.kind != "f" or yv.dtype.kind != "f"):
+        # Dates and names have no axis fractions to place by.
+        out.update(mode="markers+text", text=text, textposition="top center", cliponaxis=False)
+    elif text is not None:
+        # Greedy placement in axis fractions (at 12 px a label is ~ 0.018 wide per character
+        # and 0.05 tall):
         # each label takes the first side that does not cover one already placed.
         x0, y0 = out["x"], out["y"]
         fx = (x0 - x0.min()) / max(float(np.ptp(x0)), 1e-12)
@@ -1009,7 +1054,7 @@ def bind_xy(trace, meta, ctx, loc):
         }
         boxes, positions = [], []
         for px, py, label in zip(fx, fy, text, strict=True):
-            w, h = 0.018 * len(label), 0.05
+            w, h = 0.018 * len(label) * size / 12, 0.05 * size / 12
             candidates = []
             for name, (dx, dy) in sides.items():
                 bx = px + 0.01 + dx * (w + 0.02)
