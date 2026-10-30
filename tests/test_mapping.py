@@ -127,7 +127,9 @@ def test_forecast_line_on_time_points_to_step():
 
 def test_source_variable_alone_points_to_the_mapping():
     spec = {"data": [{"uid": "0", "type": "heatmap", "meta": {"source": {"variable": "precip"}}}]}
-    with pytest.raises(UsageError, match=r"names data 'precip'.*in place of meta.source.variable"):
+    with pytest.raises(
+        UsageError, match=r'set data\[0\]\.meta\.z "precip" in place of meta.source.variable'
+    ):
         compile(spec, {"0": make_gridded()})
 
 
@@ -162,7 +164,7 @@ def test_heatmap_with_no_z_lists_the_variables():
     ds = make_gridded(n_time=1).isel(time=0)
     ds["t2m"] = ds["precip"] * 0
     spec = {"data": [{"uid": "0", "type": "heatmap", "meta": {"source": {"input": "0"}}}]}
-    with pytest.raises(UsageError, match=r"set data\[0\]\.meta\.z; the data holds precip, t2m"):
+    with pytest.raises(UsageError, match=r"set data\[0\]\.meta\.z one of precip, t2m"):
         compile(spec, {"0": ds})
 
 
@@ -235,3 +237,32 @@ def test_long_axis_title_goes_on_two_lines():
     ds["tp"].attrs.update(long_name="Sum of Total precipitation across step", units="mm")
     fig = compile({"data": [{"uid": "0", "meta": {"x": "time", "y": "tp"}}]}, {"0": ds})
     assert "<br>" in fig.layout.yaxis.title.text
+
+
+def _section():
+    ds = xr.Dataset(
+        {"r": (("vertical", "longitude"), np.arange(20.0).reshape(4, 5))},
+        coords={"vertical": [1000.0, 925.0, 850.0, 700.0], "longitude": np.linspace(30, 40, 5)},
+    )
+    ds["r"].attrs.update(units="%", long_name="Relative humidity")
+    ds["vertical"].attrs.update(units="hPa", long_name="Pressure")
+    return ds
+
+
+def test_cross_section_contour_over_pressure_and_longitude():
+    meta = {"x": "longitude", "y": "vertical", "z": "r"}
+    fig = compile({"data": [{"uid": "0", "type": "contour", "meta": meta}]}, {"0": _section()})
+    (trace,) = fig.data
+    assert trace.type == "contour" and np.asarray(trace.z).shape == (4, 5)
+    assert fig.layout.yaxis.autorange == "reversed"  # 1000 hPa at the bottom
+    assert fig.layout.coloraxis.colorbar.title.text  # the theme's color axis, titled
+
+
+def test_cross_section_needs_both_axes_and_no_extra_dims():
+    one = {"x": "longitude", "z": "r"}
+    with pytest.raises(UsageError, match="names both axes"):
+        compile({"data": [{"uid": "0", "type": "heatmap", "meta": one}]}, {"0": _section()})
+    ds = _section().expand_dims(time=2)
+    both = {"x": "longitude", "y": "vertical", "z": "r"}
+    with pytest.raises(UsageError, match=r"dims \['time'\] besides x 'longitude' and y 'vertical'"):
+        compile({"data": [{"uid": "0", "type": "heatmap", "meta": both}]}, {"0": ds})

@@ -15,7 +15,8 @@ from weather_skills_plotting.themes import DEFAULT_THEME_FILE
 
 _MAPPING = {
     "z": "heatmap / contour: the lat/lon grid variable (x / y are its longitude / latitude); "
-    "panels the time/step dim",
+    "panels the time/step dim. With x / y naming two other dims of z (vertical, longitude): "
+    "a cross-section chart, pressure axes 1000 hPa at the bottom",
     "x / y": 'other types. x "longitude" with y "latitude": stations on a map. x "time" or '
     '"step": y as a line along it. x and y two variables (or a coordinate such as county): '
     'one point per shared position, or bars with type "bar"',

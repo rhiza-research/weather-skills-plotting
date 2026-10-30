@@ -271,23 +271,39 @@ def plot(
         if inputs or layers:
             raise UsageError("--obs/--forecast/--verify make a verification grid; drop -i/--layer")
         merged, datasets = build_verify_spec(obs, forecast, verify, spec)
-        return run(merged, None, datasets, output, dump_spec, theme_file=theme_file)
+        return run(
+            merged,
+            None,
+            datasets,
+            output,
+            dump_spec,
+            theme_file=theme_file,
+            spec_as_written=spec.data if spec else None,
+        )
     if mediogram:
         if layers:
             raise UsageError("--mediogram takes two -i inputs (forecast, m-climate), not --layer")
         merged, datasets = build_mediogram_spec(files, spec)
-        return run(merged, None, datasets, output, dump_spec, theme_file=theme_file)
+        return run(
+            merged,
+            None,
+            datasets,
+            output,
+            dump_spec,
+            theme_file=theme_file,
+            spec_as_written=spec.data if spec else None,
+        )
     if replayed in ("plot --verify", "plot --mediogram") and not files and not layers:
         # The dumped spec already holds every trace and its layout.
         return run(spec.data, None, spec.opened(), output, dump_spec, theme_file=theme_file)
-    # Boundaries and masks go on -i maps too: an outline on every panel.
-    shapes = [x for x in layers if x.kind in ("outline", "mask")] if inputs else []
+    # Boundaries, masks and stations go on -i maps too: drawn on every panel.
+    shapes = [x for x in layers if x.kind in ("outline", "mask", "scatter")] if inputs else []
     if shapes and len(shapes) == len(layers):
         layers = []
     if inputs and layers:
         raise UsageError(
-            "pass -i/--input or --layer, not both (-i takes only outline: and mask: layers; "
-            "with --layer, a GeoJSON goes in as outline:PATH)"
+            "pass -i/--input or --layer, not both (-i takes only outline:, mask: and scatter: "
+            "layers; with --layer, a GeoJSON goes in as outline:PATH)"
         )
     if animate and len(files) > 1:
         raise UsageError(
@@ -310,9 +326,12 @@ def plot(
         outlines = [
             (uid, x.path) for uid, x in zip(ids[: len(inputs)], inputs, strict=True) if x.ds is None
         ]
+        stations = {}  # station layers: one trace each, drawn on every -i map
         for uid, shape in zip(ids[len(inputs) :], shapes, strict=True):
             if shape.kind == "mask":
                 layout["meta"] = {"geo": {"mask_geojson": shape.path}}
+            elif shape.kind == "scatter":
+                stations[uid] = shape.ds
             else:
                 outlines.append((uid, shape.path))
         datasets = spec_datasets(spec, cli)
@@ -331,6 +350,7 @@ def plot(
             for key, d in datasets.items()
             if key in user or not own
         }
+        datasets = {**datasets, **stations}
         data = [_default_trace(key, d, user.get(key)) for key, d in drawn.items()]
         # Lines along time share one x/y axis, one legend entry per file.
         series = bool(data) and all(
@@ -349,12 +369,21 @@ def plot(
             for i, key in enumerate(drawn):
                 data[i]["name"] = trace_label(datasets[key], i, key)
         elif cli:
+            # Side by side, every map names its axes, so a trace with none (an outline, a
+            # station layer) is drawn on each of them.
             data = [
-                _default_trace(key, d, user.get(key), xaxis=None if i == 0 else f"x{i + 1}")
+                _default_trace(
+                    key,
+                    d,
+                    user.get(key),
+                    xaxis=(f"x{i + 1}" if i else "x") if len(drawn) > 1 else None,
+                )
                 for i, (key, d) in enumerate(drawn.items())
             ]
         else:
             data = []
+        for uid, ds in stations.items():
+            data.append(_default_trace(uid, _as_drawn(ds, user.get(uid)), user.get(uid)))
         # A GeoJSON is an outline: one trace with no axis of its own, drawn on every map.
         for uid, path in outlines:
             data.append(
@@ -376,7 +405,16 @@ def plot(
     if series:
         warn_mixed_units(merged, datasets)
         warn_disjoint_dates(merged, datasets)
-    return run(merged, None, datasets, output, dump_spec, theme_file=theme_file, animate=animate)
+    return run(
+        merged,
+        None,
+        datasets,
+        output,
+        dump_spec,
+        theme_file=theme_file,
+        animate=animate,
+        spec_as_written=spec.data if spec else None,
+    )
 
 
 install_spec_help(plot)

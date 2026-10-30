@@ -243,9 +243,16 @@ def merge_traces(base: list, overlay: list) -> list:
                     # Only styling for a uid nothing has: a typo, not a new trace.
                     have = [str(t.get("uid")) for t in out if t.get("uid") is not None]
                     near = [h for h in have if h.lower() == str(uid).lower()]
+                    # Say what each uid draws, so an outline's number is plain to see.
+                    kinds = [
+                        f"{t.get('uid')} ({'outline' if (t.get('meta') or {}).get('bind') == 'geojson' else t.get('type') or 'scatter'})"
+                        for t in out
+                        if t.get("uid") is not None
+                    ]
                     raise UsageError(
                         f"--spec data[{i}] uid {uid!r} matches no trace (uids: "
-                        f"{', '.join(have) or 'none'})"
+                        f"{', '.join(kinds) or 'none'}; inputs and layers, outlines included, "
+                        "are numbered by position, or named with PATH=NAME)"
                         + (f"; did you mean {near[0]!r}?" if near else "")
                         + "; a new trace needs data of its own (x / y, or meta.source)"
                         + (
@@ -289,6 +296,21 @@ def merge_traces(base: list, overlay: list) -> list:
     return out
 
 
+def spec_locs(merged: dict, user: dict | None) -> list[str]:
+    """How errors name each trace of ``merged``: ``data[j]`` at its place in the user's own
+    --spec, or ``data[uid="0"]`` for a trace the command built (-i, --layer) and the spec
+    left alone, whose uid is what a spec writes to restyle it."""
+    user_data = (user or {}).get("data") or []
+    by_uid = {t.get("uid"): j for j, t in enumerate(user_data) if t.get("uid") is not None}
+    locs = []
+    for i, trace in enumerate(merged.get("data") or []):
+        j = by_uid.get(trace.get("uid"))
+        if j is None and i < len(user_data) and user_data[i].get("uid") is None:
+            j = i  # a trace with no uid restyles the trace at its own position
+        locs.append(f"data[{j}]" if j is not None else f"data[uid={trace.get('uid')!r}]")
+    return locs
+
+
 def merge_spec(base: dict, overlay: dict | None) -> dict:
     """Deep-merge ``overlay`` onto ``base``; the overlay wins."""
     base = copy.deepcopy(base or {})
@@ -321,8 +343,13 @@ def _check_keys(obj, allowed, loc: str) -> None:
             hint = f'; a dotted name is a nested path: write {{"{head}": {{"{rest}": …}}}}'
         elif key == "theme":
             hint = _THEME_HINT
+        elif key == "variable" and "z" in allowed:
+            hint = (
+                "; name the variable in meta.z (maps), meta.y (lines) or meta.marker.color "
+                "(stations)"
+            )
         elif key in SOURCE_KEYS and "source" in allowed:
-            # meta.variable / meta.isel / …: the data keys live one level down.
+            # meta.isel / meta.input / …: the data keys live one level down.
             hint = f'; the data to draw is chosen in meta.source: {{"source": {{"{key}": …}}}}'
         elif loc.endswith("geo") and key in _PLACE_NAME_KEYS:
             hint = (
@@ -465,10 +492,12 @@ def check_layout_meta(meta) -> None:
                 )
 
 
-def check_meta(spec: dict, palettes: dict) -> None:
-    """Check every ``meta`` block (Plotly does not look inside them)."""
+def check_meta(spec: dict, palettes: dict, locs: list[str] | None = None) -> None:
+    """Check every ``meta`` block (Plotly does not look inside them). ``locs`` name each
+    trace as the user's spec does (``spec_locs``); by default ``data[i]``."""
     seen = set()
     for i, trace in enumerate(spec.get("data") or []):
+        loc = locs[i] if locs else f"data[{i}]"
         uid = trace.get("uid")
         if uid is not None:
             if uid in seen:
@@ -478,13 +507,13 @@ def check_meta(spec: dict, palettes: dict) -> None:
             ("scattergeo", "scattermap", "choropleth", "densitymap")
         ):
             raise UsageError(
-                f"plot spec data[{i}].type {trace['type']!r}: maps here are plain x/y axes "
+                f"plot spec {loc}.type {trace['type']!r}: maps here are plain x/y axes "
                 '(x = longitude, y = latitude). Use "type": "scatter" with x / y for markers '
                 "and lines, and layout.shapes for boxes"
             )
         meta = trace.get("meta")
         if meta is not None:
-            check_trace_meta(meta, f"data[{i}].meta", palettes)
+            check_trace_meta(meta, f"{loc}.meta", palettes)
     for key in spec.get("layout") or {}:
         if re.fullmatch(r"geo\d*", key):
             raise UsageError(
@@ -509,6 +538,10 @@ def plotly_error(exc: Exception, loc: str = "") -> UsageError:
     names = [m.group(1) for line in tail.splitlines() if (m := _VALID_PROP_RE.match(line))]
     lines = [line for line in head.splitlines() if line.strip()]
     msg = "\n".join(lines[:12])
+    bad = re.search(r"Invalid property specified for object of type \S+: '(\w+)'", head)
+    if bad and bad.group(1) in TRACE_META_KEYS:
+        # align, along, palette …: the plotter's own keys, which Plotly does not know.
+        msg += f'\n{bad.group(1)!r} is a meta key: write {{"meta": {{"{bad.group(1)}": …}}}}'
     if names:
         msg += f"\nAllowed here: {', '.join(names)}"
     elif len(lines) > 12:
@@ -533,7 +566,7 @@ def plotly_error(exc: Exception, loc: str = "") -> UsageError:
     )
 
 
-def validate(spec: dict, theme: dict | None = None) -> dict:
+def validate(spec: dict, theme: dict | None = None, locs: list[str] | None = None) -> dict:
     """Check the meta blocks, then let Plotly validate everything else.
 
     ``theme`` is ``load_theme()``'s (read here when None): palette names resolve in
@@ -546,7 +579,7 @@ def validate(spec: dict, theme: dict | None = None) -> dict:
 
     theme = theme or load_theme()
     check_shape(spec)
-    check_meta(spec, theme["palettes"])
+    check_meta(spec, theme["palettes"], locs)
     # Our template names must exist before Plotly checks layout.template.
     register_templates(theme)
     try:

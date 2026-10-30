@@ -14,6 +14,7 @@ from weather_skills_plotting.spec import (
     dump_spec,
     dump_spec_dest,
     merge_spec,
+    spec_locs,
     validate,
 )
 
@@ -111,6 +112,7 @@ def run(
     theme_file=None,
     scale=None,
     animate=False,
+    spec_as_written=None,
 ):
     """Merge, then either dump the spec or draw it. Returns the output path(s) or ``None``.
 
@@ -124,8 +126,10 @@ def run(
 
     user = user_spec.data if isinstance(user_spec, SpecArg) else (user_spec or {})
     merged = merge_spec(skill_spec, user)
+    # Errors name traces as the user's spec does, not by their place among -i / --layer ones.
+    locs = spec_locs(merged, spec_as_written or user)
     theme = load_theme(theme_file)
-    validate(merged, theme)
+    validate(merged, theme, locs)
     dest = dump_spec_dest(dump)
     if dest is not None:
         # A band trace's other parts are traces of their own: list their uids to style.
@@ -155,7 +159,7 @@ def run(
                 f"output {path.name!r}: a GIF plays an animation; add --animate, or write a "
                 "still map to .png"
             )
-    fig = panels = compile(merged, datasets, theme=theme)
+    fig = panels = compile(merged, datasets, theme=theme, locs=locs)
     # An animation draws one panel per frame, so only still images are capped.
     n_panels = len(list(fig.select_xaxes()))
     if not animate and n_panels > MAX_PANELS:

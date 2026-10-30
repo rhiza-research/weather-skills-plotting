@@ -29,6 +29,7 @@ from weather_skills_plotting.geodata import (
     geoms_to_xy,
     overlay_geoms,
     overlay_settings,
+    point_dim,
 )
 from weather_skills_plotting.kinds import (
     ISOBAR_INTERVAL_HPA,
@@ -77,12 +78,13 @@ _TRACE_LIMIT_KEYS = {"zmin": "cmin", "zmax": "cmax", "zmid": "cmid"}
 _MARKER_LIMIT_KEYS = {"cmin": "cmin", "cmax": "cmax", "cmid": "cmid"}
 
 
-def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
+def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None, locs=None):
     """Return a validated ``plotly.graph_objects.Figure``."""
     import plotly.graph_objects as go
 
     theme = theme or load_theme()
-    spec = validate(copy.deepcopy(spec), theme)
+    spec = validate(copy.deepcopy(spec), theme, locs)
+    locs = locs or [f"data[{i}]" for i in range(len(spec.get("data") or []))]
     user_layout = copy.deepcopy(spec.get("layout") or {})
     lmeta = user_layout.pop("meta", None) or {}
     geo = lmeta.get("geo") or {}
@@ -129,24 +131,26 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
         bound = None
         source = (trace.get("meta") or {}).get("source")
         if not bind_of(trace) and source:
-            named = f" {source['variable']!r}" if source.get("variable") else ""
-            where = (
-                f"data[{i}].meta.z"
-                if trace.get("type") in ("heatmap", "contour")
-                else f'data[{i}].meta.x / y (e.g. "x": "time" for a line)'
-            )
             ds = datasets.get(str(source.get("input"))) or (
                 next(iter(datasets.values())) if len(datasets) == 1 else None
             )
             fields = [str(v) for v in ds.data_vars] if ds is not None else []
+            # The variable to name: the one source.variable gave, else the file's only one.
+            name = source.get("variable") or (fields[0] if len(fields) == 1 else None)
+            var = f'"{name}"' if name else f"one of {', '.join(fields)}"
+            loc = f"{locs[i]}.meta"
+            if trace.get("type") in ("heatmap", "contour"):
+                where = f"{loc}.z {var}"
+            elif ds is not None and point_dim(ds) is not None:
+                where = f'{loc}.x "longitude", y "latitude" and marker.color {var} (stations)'
+            else:
+                where = f'{loc}.x (a dim such as "time") and y {var}'
             raise UsageError(
-                f"data[{i}].meta.source names data{named} but nothing says where it goes: set "
-                f"{where}"
-                + (" in place of meta.source.variable" if named else "")
-                + (f"; the data holds {', '.join(fields)}" if len(fields) > 1 else "")
+                f"{loc}.source names data but nothing says where it goes: set {where}"
+                + (" in place of meta.source.variable" if source.get("variable") else "")
             )
         if bind_of(trace):
-            bound = bind_trace(trace, ctx, f"data[{i}]", color=colorway[n_colored % len(colorway)])
+            bound = bind_trace(trace, ctx, locs[i], color=colorway[n_colored % len(colorway)])
             n_colored += 1
         items.append((i, trace, bound))
     if not items:
@@ -156,12 +160,12 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
         charts = [i for i, _, b in items if b is not None and not b.is_map]
         if charts:
             raise UsageError(
-                f"data[{charts[0]}] is a chart but this figure is a map (a heatmap, or x "
+                f"{locs[charts[0]]} is a chart but this figure is a map (a heatmap, or x "
                 "longitude with y latitude); draw the chart in its own plot"
             )
         data, layout = _assemble_map(items, user_layout, lmeta, ctx)
     else:
-        data, layout = _assemble_chart(items, user_layout)
+        data, layout = _assemble_chart(items, user_layout, ctx)
     layout.setdefault("template", DEFAULT_TEMPLATE)
     built = {a.get("name"): a for a in layout.get("annotations") or []}
     for ann in user_layout.get("annotations") or []:
@@ -447,9 +451,13 @@ def _input_label(ctx, trace):
 def _assemble_map(items, user_layout, lmeta, ctx):
     groups: dict[int, list] = {}
     # A plain Plotly trace (city markers, a box) or a static layer (an outline) with no axis of
-    # its own goes on every map.
+    # its own goes on every map; side by side (some trace names its axes), stations too.
+    placed = any(item[1].get("xaxis") for item in items)
     floating = [
-        item for item in items if (item[2] is None or item[2].static) and not item[1].get("xaxis")
+        item
+        for item in items
+        if not item[1].get("xaxis")
+        and (item[2] is None or item[2].static or (placed and item[2].kind == "points"))
     ]
     for item in items:
         if not any(item is f for f in floating):
@@ -931,10 +939,11 @@ def _two_lines(text: str) -> str:
     return f"{text[:cut]}<br>{text[cut + 1 :]}"
 
 
-def _assemble_chart(items, user_layout):
+def _assemble_chart(items, user_layout, ctx):
     data = []
     layout = {}
     axis_titles: dict[str, dict] = {}
+    axis_members: dict[str, list] = {}  # color axis -> (spec_trace, bound, concrete traces)
     for i, spec_trace, bound in items:
         uid = spec_trace.get("uid") or f"trace{i}"
         xa, ya = spec_trace.get("xaxis") or "x", spec_trace.get("yaxis") or "y"
@@ -947,6 +956,11 @@ def _assemble_chart(items, user_layout):
             tr = _concrete(spec_trace, gen, uid if j == 0 or "uid_suffix" in gen else f"{uid}-{j}")
             if tr.get("type") != "barpolar":
                 tr["xaxis"], tr["yaxis"] = xa, ya
+            if bound.color_key == "z" and "z" in tr:
+                # A chart heatmap / contour (a cross-section) takes the theme's colors.
+                name = spec_trace.get("coloraxis") or "coloraxis"
+                tr["coloraxis"] = name
+                axis_members.setdefault(name, []).append((spec_trace, bound, [tr]))
             data.append(tr)
         layout = deep_merge(layout, bound.layout)
         xs, ys = xa[1:], ya[1:]
@@ -956,6 +970,8 @@ def _assemble_chart(items, user_layout):
         if bound.axis_titles.get("y") is not None:
             text = _two_lines(bound.axis_titles["y"])
             axis_titles.setdefault(f"yaxis{ys}", {"title": {"text": text}})
+        if bound.axis_titles.get("y_reversed"):
+            axis_titles.setdefault(f"yaxis{ys}", {}).setdefault("autorange", "reversed")
         if bound.axis_titles.get("y_nonnegative"):
             axis_titles.setdefault(f"yaxis{ys}", {}).setdefault("rangemode", "nonnegative")
         if bound.x_tickformat:
@@ -966,6 +982,13 @@ def _assemble_chart(items, user_layout):
         if bound.title:
             layout.setdefault("title", {"text": bound.title})
     layout.update(axis_titles)
+    for name, members in axis_members.items():
+        contours = [tr for _, _, trs in members for tr in trs if tr.get("type") == "contour"]
+        for tr in contours:
+            fill_defaults(tr, {"contours": {"coloring": "fill"}})
+        layout[name] = _resolve_coloraxis(
+            name, members, user_layout.get(name), ctx, contour_traces=contours
+        )
     # Room above the plot only for what is there: a title, a legend row.
     lines = title_lines(user_layout.get("title") or layout.get("title"))
     named = [tr for tr in data if tr.get("name") and tr.get("showlegend") is not False]

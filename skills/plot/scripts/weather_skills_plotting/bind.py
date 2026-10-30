@@ -1206,6 +1206,47 @@ def bind_windrose(trace, meta, ctx, loc):
     return Bound([Panel(traces)], layout=layout)
 
 
+def bind_section(trace, meta, ctx, loc, *, variable, x, y):
+    """``variable`` over two dims that are not a lat/lon map (pressure x longitude, lead x
+    member): a chart heatmap or contour with ``x`` / ``y`` along those dims."""
+    source = meta.get("source") or {}
+    da, _ = select(ctx, source, f"{loc}.source", variable=variable)
+    for key, dim in (("x", x), ("y", y)):
+        if dim not in da.dims:
+            raise UsageError(
+                f"{loc}.{key} {dim!r} is not a dim of {variable!r} (dims: {list(da.dims)})"
+            )
+    extra = [d for d in da.dims if d not in (x, y)]
+    if extra:
+        raise UsageError(
+            f"{loc}: z {variable!r} has dims {extra} besides x {x!r} and y {y!r}; pick one value "
+            f"with {loc}.source.isel / sel, or average them first with summarize-dim"
+        )
+    da = da.transpose(y, x)
+    z = np.asarray(da.values, dtype=float)
+    units = format_units_for_display(variable_units(da))
+    hover = f"{x} %{{x}}, {y} %{{y}}: %{{z:.4g}}{' ' + units if units else ''}<extra></extra>"
+    out = {"x": da[x].values, "y": da[y].values, "z": z, "hovertemplate": hover}
+    pressure = False
+    try:
+        # A pressure axis (hPa, Pa) runs from the surface up: 1000 hPa at the bottom.
+        pressure = ureg.Quantity(1, variable_units(da[y])).check("[pressure]")
+    except Exception:  # noqa: BLE001 — no or unparseable units
+        pass
+    return Bound(
+        [Panel([out])],
+        color_values=[z],
+        color_key="z",
+        color_da=da,
+        color_title=variable_label_for_display(da),
+        axis_titles={
+            "x": variable_label_for_display(da[x]) if da[x].attrs else x,
+            "y": variable_label_for_display(da[y]) if da[y].attrs else y,
+            "y_reversed": pressure,
+        },
+    )
+
+
 def _named(meta, key, ds, loc):
     """``meta[key]``, the variable a trace draws; unset is an error that lists the choices."""
     if not meta.get(key):
@@ -1228,11 +1269,18 @@ def bind_mapping(trace, meta, ctx, loc, *, color=None):
     ds = _dataset(ctx, source, f"{loc}.source")
     ttype = trace.get("type") or "scatter"
     if ttype in ("heatmap", "contour"):
-        if meta.get("x") or meta.get("y"):
+        z = _named(meta, "z", ds, loc)
+        lon, lat = cf_dim(ds, "longitude"), cf_dim(ds, "latitude")
+        roles = {"longitude": lon, "latitude": lat}
+        x, y = roles.get(meta.get("x")) or meta.get("x"), roles.get(meta.get("y")) or meta.get("y")
+        if (x, y) == (None, None) or (lon and lat and (x, y) == (lon, lat)):
+            return bind_field(trace, meta, ctx, loc, variable=z)
+        if not (x and y):
             raise UsageError(
-                f"{loc}: a {ttype} takes x and y from z's longitude / latitude; drop {loc}.x / y"
+                f"{loc}: a {ttype} off the map names both axes: set {loc}.x and {loc}.y to two "
+                f"dims of {z!r}, or neither for a lat/lon map"
             )
-        return bind_field(trace, meta, ctx, loc, variable=_named(meta, "z", ds, loc))
+        return bind_section(trace, meta, ctx, loc, variable=z, x=x, y=y)
     if meta.get("z"):
         raise UsageError(f"{loc}.z fills a heatmap or contour, not a {ttype}; set {loc}.x / y")
     x = meta.get("x")
