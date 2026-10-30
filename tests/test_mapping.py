@@ -129,3 +129,44 @@ def test_source_variable_alone_points_to_the_mapping():
     spec = {"data": [{"uid": "0", "type": "heatmap", "meta": {"source": {"variable": "precip"}}}]}
     with pytest.raises(UsageError, match=r"names data 'precip'.*in place of meta.source.variable"):
         compile(spec, {"0": make_gridded()})
+
+
+def test_mapped_trace_with_no_uid_restyles_the_input():
+    # Positional restyle: a trace with no uid merges onto input 0, mapped or not.
+    from weather_skills_plotting.spec import merge_spec
+
+    base = {"data": [{"uid": "0", "type": "heatmap", "meta": {"source": {"input": "0"}}}]}
+    merged = merge_spec(base, {"data": [{"type": "contour", "meta": {"z": "precip"}}]})
+    fig = compile(merged, {"0": make_gridded(n_time=1).isel(time=0)})
+    assert any(t.type == "contour" for t in fig.data)
+
+
+def test_outline_alone_frames_its_own_map():
+    import json
+    import tempfile
+    from pathlib import Path
+
+    path = Path(tempfile.mkdtemp()) / "box.geojson"
+    path.write_text(
+        json.dumps(
+            {"type": "Polygon", "coordinates": [[[30, -5], [40, -5], [40, 5], [30, 5], [30, -5]]]}
+        )
+    )
+    meta = {"bind": "geojson", "source": {"geojson": str(path)}}
+    fig = compile({"data": [{"uid": "0", "type": "scatter", "meta": meta}]}, {})
+    xr_ = fig.layout.xaxis.range
+    assert xr_[0] < 30 and xr_[1] > 40
+
+
+def test_heatmap_with_no_z_lists_the_variables():
+    ds = make_gridded(n_time=1).isel(time=0)
+    ds["t2m"] = ds["precip"] * 0
+    spec = {"data": [{"uid": "0", "type": "heatmap", "meta": {"source": {"input": "0"}}}]}
+    with pytest.raises(UsageError, match=r"set data\[0\]\.meta\.z; the data holds precip, t2m"):
+        compile(spec, {"0": ds})
+
+
+def test_x_not_in_the_input_says_which_key_and_one_input():
+    spec = {"data": [{"uid": "0", "meta": {"source": {"input": "0"}, "x": "dmi", "y": "precip"}}]}
+    with pytest.raises(UsageError, match=r"meta\.x 'dmi' is not in input '0'.*merge two files"):
+        compile(spec, {"0": make_gridded()})

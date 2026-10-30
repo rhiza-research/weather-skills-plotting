@@ -540,3 +540,31 @@ def test_geojson_input_is_an_outline_on_every_map(tmp_path, plot_fn, capsys):
     # One restyle reaches the outline on both maps.
     assert {t.xaxis for t in lines} == {"x", "x2"}
     assert all(t.line.color == "red" for t in lines)
+
+
+def test_one_dim_file_along_years_draws_with_no_spec(tmp_path, plot_fn, capsys):
+    import numpy as np
+
+    ds = xr.Dataset({"dmi": ("year", np.arange(5.0))}, coords={"year": np.arange(2000, 2005)})
+    path = write_zarr(ds, tmp_path / "year.zarr")
+    spec = _dump(plot_fn, capsys, "-i", str(path))
+    assert spec["data"][0]["meta"] == {"source": {"input": "0"}, "x": "year", "y": "dmi"}
+    run_skill(plot_fn, "-i", str(path), "-o", str(tmp_path / "year.png"))
+
+
+def test_outline_only_input_draws(tmp_path, plot_fn):
+    edge = tmp_path / "edge.geojson"
+    edge.write_text(
+        json.dumps({"type": "Polygon", "coordinates": [[[9, 0], [14, 0], [14, 4], [9, 4], [9, 0]]]})
+    )
+    run_skill(plot_fn, "-i", str(edge), "-o", str(tmp_path / "edge.png"))
+    run_skill(plot_fn, "--layer", f"outline:{edge}", "-o", str(tmp_path / "edge2.png"))
+
+
+def test_spec_trace_with_no_uid_restyles_input_zero(tmp_path, plot_fn, capsys):
+    ds = make_gridded(n_time=1)
+    ds["t2m"] = ds["precip"] * 0 + 290.0
+    path = write_zarr(ds, tmp_path / "multi.zarr")
+    spec = _dump(plot_fn, capsys, "-i", str(path), "--spec", '{"data": [{"meta": {"z": "t2m"}}]}')
+    assert [t["uid"] for t in spec["data"]] == ["0"]
+    assert spec["data"][0]["meta"]["z"] == "t2m"

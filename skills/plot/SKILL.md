@@ -81,7 +81,7 @@ Every row below assumes `-i ecmwf.zarr=FC`.
 | Title a panel | `{"layout": {"annotations": [{"name": "panel-title-2", "text": "ECMWF"}]}}` |
 | Arrange side-by-side maps | `{"layout": {"grid": {"subplots": [["xy", "x3y3"], ["x2y2", ""]]}}}` |
 | Pick one step | `{"data": [{"uid": "FC", "meta": {"source": {"isel": {"step": 0}}}}]}` |
-| Pick the variable to draw | `{"data": [{"uid": "FC", "meta": {"z": "tp"}}]}` (`y` for a line, `marker.color` for stations) |
+| Pick the variable to draw | `{"data": [{"uid": "FC", "meta": {"z": "tp"}}]}` (`meta.y` for a line, `meta.marker.color` for stations) |
 | Set the color range | `{"data": [{"uid": "FC", "zmin": 0, "zmax": 100}]}` |
 | Set the map window | `{"layout": {"meta": {"geo": {"bbox": [5.5, 33.5, -5, 42.5]}}}}` |
 | Draw contours | `{"data": [{"uid": "FC", "type": "contour"}]}` |
@@ -92,7 +92,7 @@ Every row below assumes `-i ecmwf.zarr=FC`.
 The figure at `-o`. PNG/JPG also print `data: NULL` when every value drawn is NaN.
 
 ### Notes
-- A file with more than one data variable needs the trace to name the one to draw: `z` on a map, `y` for a line, `marker.color` for stations. Plot stops rather than guess; inspect-zarr lists the variables.
+- A file with more than one data variable needs the trace to name the one to draw: `meta.z` on a map, `meta.y` for a line, `meta.marker.color` for stations. The trace's own `marker.color` stays Plotly's: a color such as `"red"`, not a variable. Plot stops rather than guess; inspect-zarr lists the variables.
 - A map shows one value per cell: pick one value of any extra dim (`number`, `vertical`) with `isel` / `sel`, panel it with `"meta": {"facet": "number"}`, or average it first with summarize-dim.
 - Plot draws the values in the file, in its units (K stays K, Pa stays Pa; run unit-convert for °C or hPa), so `zmin`, contour levels and palette edges are in those units. A precip rate stays a rate (mm/day); for period totals (mm) run aggregate-temporal, then convert-to-totals.
 
@@ -121,7 +121,7 @@ CHIRPS and ECMWF week-1 rainfall side by side over Kenya, each on its own grid, 
 - A line is `"meta": {"x": "time", "y": "precip"}`; a forecast takes `"x": "step"` and runs along its valid date (init time + `step`). Every other dim must go: pick one value with `isel` / `sel`, draw one line per value with `"along": "number"` (or `"station_id"`: a station file is a map until you pick or `along` its stations), or average it first with summarize-dim (for an area mean, `--dim latitude --dim longitude --method mean --lat-weighted`).
 - Each 1-D file is one line on one shared axis (up to 26 files). The legend names it after its file, or its station id; `"name"` renames it. With two or more lines the legend sits in rows above the plot; one line has none.
 - Each line uses only its own settings, as in Plotly: set `y`, `along`, `band` or `align` on every line that needs it.
-- `"along": "number"` draws one line per member under one legend entry; `"along_color": "cycle"` gives each its own color and entry. `"band": [10, 90]` shades that percentile range (`[0, 100]` is min–max) and draws the mean bold; `"members": false` hides the members. A band trace draws three parts, each styled as its own trace: its uid is the mean line (`name`, `line`), `UID-members` the member lines and `UID-band` the shading (`name`, `fillcolor`): `{"data": [{"uid": "FC", "name": "Mean", "line": {"color": "red", "width": 4}, "meta": {"along": "number", "band": [0, 100]}}, {"uid": "FC-members", "line": {"color": "grey"}, "opacity": 0.3}, {"uid": "FC-band", "name": "Range"}]}`. With `"type": "bar"`, `along` gives one bar series per value.
+- `"along": "number"` draws one line per member under one legend entry; `"along_color": "cycle"` gives each its own color and entry, as wanted for one line per station: `{"meta": {"x": "time", "y": "precip", "along": "station_id", "along_color": "cycle"}}`. `"band": [10, 90]` shades that percentile range (`[0, 100]` is min–max) and draws the mean bold; `"members": false` hides the members. A band trace draws three parts, each styled as its own trace: its uid is the mean line (`name`, `line`), `UID-members` the member lines and `UID-band` the shading (`name`, `fillcolor`): `{"data": [{"uid": "FC", "name": "Mean", "line": {"color": "red", "width": 4}, "meta": {"along": "number", "band": [0, 100]}}, {"uid": "FC-members", "line": {"color": "grey"}, "opacity": 0.3}, {"uid": "FC-band", "name": "Range"}]}`. With `"type": "bar"`, `along` gives one bar series per value.
 - Two variables of one file: one `-i`, and one trace per variable, each with its own `y`: `{"data": [{"uid": "P", "meta": {"source": {"input": "0"}, "x": "time", "y": "precip"}}, {"uid": "T", "yaxis": "y2", "meta": {"source": {"input": "0"}, "x": "time", "y": "t2m"}}]}`.
 - One panel per line, as in Plotly: put each line on its own axes and lay them out with a grid: `{"data": [{"uid": "1", "xaxis": "x2", "yaxis": "y2"}], "layout": {"grid": {"rows": 2, "columns": 1, "pattern": "coupled"}}}`. A right-hand axis: `{"data": [{"uid": "1", "yaxis": "y2"}], "layout": {"yaxis2": {"overlaying": "y", "side": "right"}}}`.
 - Lines on one axis with different units, or with no dates in common, print a warning and still draw.

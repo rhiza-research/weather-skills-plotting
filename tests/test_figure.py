@@ -700,7 +700,7 @@ def test_xy_against_time_points_to_along_and_align():
 
 @pytest.mark.parametrize("key, value", [("along", "number"), ("align", "dayofyear")])
 def test_xy_rejects_series_keys(key, value):
-    meta = {"x": "a", "y": "b", key: value}
+    meta = {"x": "latitude", "y": "precip", key: value}
     with pytest.raises(UsageError, match=f"{key} needs x to be the time or step dimension"):
         compile({"data": [{"uid": "0", "type": "scatter", "meta": meta}]}, {"0": make_gridded()})
 

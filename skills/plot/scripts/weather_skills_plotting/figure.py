@@ -129,10 +129,20 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
         source = (trace.get("meta") or {}).get("source")
         if not bind_of(trace) and source:
             named = f" {source['variable']!r}" if source.get("variable") else ""
+            where = (
+                f"data[{i}].meta.z"
+                if trace.get("type") in ("heatmap", "contour")
+                else f'data[{i}].meta.x / y (e.g. "x": "time" for a line)'
+            )
+            ds = datasets.get(str(source.get("input"))) or (
+                next(iter(datasets.values())) if len(datasets) == 1 else None
+            )
+            fields = [str(v) for v in ds.data_vars] if ds is not None else []
             raise UsageError(
                 f"data[{i}].meta.source names data{named} but nothing says where it goes: set "
-                f'data[{i}].meta.x / y (e.g. "x": "time" for a line) or meta.z (a heatmap)'
+                f"{where}"
                 + (" in place of meta.source.variable" if named else "")
+                + (f"; the data holds {', '.join(fields)}" if len(fields) > 1 else "")
             )
         if bind_of(trace):
             bound = bind_trace(trace, ctx, f"data[{i}]", color=colorway[n_colored % len(colorway)])
@@ -518,7 +528,8 @@ def _assemble_map(items, user_layout, lmeta, ctx):
                 panel_traces[p].append((_MAP_RANK[bound.kind], tr, spec_trace, bound))
         if extents[p] is None:
             extents[p] = next(
-                (b.extent for _, _, b in groups[g] if b is not None and b.extent), None
+                (b.extent for _, _, b in [*groups[g], *floating] if b is not None and b.extent),
+                None,
             )
         if extents[p] is None:
             raise UsageError("a map panel has no data extent; set layout.meta.geo.bbox")

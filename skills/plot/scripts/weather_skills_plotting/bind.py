@@ -564,6 +564,13 @@ def bind_points(trace, meta, ctx, loc, *, variable=None):
     source = meta.get("source") or {}
     ds = _dataset(ctx, source, f"{loc}.source")
     colored = variable is not None
+    fields = [str(v) for v in ds.data_vars if "grid_mapping_name" not in ds[v].attrs]
+    if not colored and len(fields) > 1:
+        print(
+            f"Note: {loc}: stations drawn uncolored; set {loc}.marker.color to one of "
+            f"{', '.join(fields)} to color them by it",
+            file=sys.stderr,
+        )
     if not colored:
         # Positions only: isel / sel on a dim the coordinates lack (time) picks nothing here.
         variable = cf_dim(ds, "latitude")
@@ -1234,6 +1241,13 @@ def bind_mapping(trace, meta, ctx, loc, *, color=None):
         )
     y = _named(meta, "y", ds, loc)
     color_var = (meta.get("marker") or {}).get("color")
+    for key, name in (("x", x), ("y", y), ("marker.color", color_var)):
+        if name is not None and name not in ds.variables:
+            raise UsageError(
+                f"{loc}.{key} {name!r} is not in input {source.get('input', '0')!r}, which holds "
+                f"{', '.join(map(str, ds.variables))}; x, y and marker.color all come from the "
+                "trace's one input (merge two files first to plot one against the other)"
+            )
     if x == cf_dim(ds, "longitude") and y == cf_dim(ds, "latitude"):
         return bind_points(trace, meta, ctx, loc, variable=color_var)
     if color_var:

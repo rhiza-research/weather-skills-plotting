@@ -116,6 +116,9 @@ def _default_trace(uid: str, ds, user=None, *, xaxis=None) -> dict:
     else:
         x = tdim or next((d for d in ("step", "time") if d in ds.dims), None)
         trace = {"type": "scatter", "meta": {"source": source, "x": x, "y": var}}
+        if x is None and var and ds[var].ndim == 1:
+            # A 1-D file along another dim (years, leads in days): a point per value of it.
+            trace["meta"]["x"] = ds[var].dims[0]
     trace["meta"] = {k: v for k, v in trace["meta"].items() if v is not None}
     trace["uid"] = uid
     if xaxis:
@@ -193,7 +196,7 @@ def _layer_traces(layers):
     action="append",
     help="Input Zarr, or a GeoJSON outline drawn on every map, as PATH or PATH=UID (letters, "
     "digits, _). Repeat for side-by-side maps, one panel per Zarr on its own grid. In --spec the "
-    "input is uid UID, else its position: 0, 1, …. Exclusive with data layers.",
+    "input is uid UID, else its position: 0, 1, …. Combines with --layer outline: / mask: only.",
 )
 @weather_skill.argument(
     "--layer",
@@ -321,7 +324,8 @@ def plot(
             meta = t.get("meta") or {}
             source = meta.get("source") or {}
             mapped = any(meta.get(k) for k in MAPPING_KEYS)
-            own = own or (uid not in datasets and (mapped or (source and "geojson" not in source)))
+            drawn_here = mapped or (source and "geojson" not in source)
+            own = own or (uid is not None and uid not in datasets and drawn_here)
         drawn = {
             key: _as_drawn(d, user.get(key))
             for key, d in datasets.items()
