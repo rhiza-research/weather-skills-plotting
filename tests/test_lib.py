@@ -89,3 +89,15 @@ def test_class_bar_names_classes_when_the_palette_has_labels():
     layout = ev("ws.classBar(ws.palettes.hits, axis='coloraxis2')")
     assert [a["text"] for a in layout["annotations"]] == ["Disagree", "Both below", "Hit"]
     assert "coloraxis2" in layout
+
+
+def test_dates_and_day_of_year_ticks():
+    assert ev("ws.date('2026-10-26')") == "26 Oct 2026"
+    assert ev("ws.date('2026-10-30T12:00:00', year=false)") == "30 Oct 12 UTC"
+    ticks = ev("ws.dayOfYearTicks")
+    assert ticks["tickvals"][7] == 213 and ticks["ticktext"][7] == "1 Aug"
+
+
+def test_a_palette_with_the_wrong_number_of_colors_says_so():
+    with pytest.raises(RuntimeError, match="3 colors for 5 bounds"):
+        ev("ws.stepped({colors: ['a', 'b', 'c'], bounds: [0, 1, 2, 3, 4]})")

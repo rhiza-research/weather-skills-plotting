@@ -68,8 +68,10 @@ def _inputs(tmp_path):
     wind["wind_speed"].values = rng.uniform(0, 12, wind["wind_speed"].shape)
     wind["wind_from_direction"] = wind["wind_speed"] * 0 + 270.0
     rh = xr.Dataset(
-        {"r": (("vertical", "latitude", "longitude"), rng.uniform(20, 90, (3, 2, 4)))},
+        {"r": (("step", "vertical", "latitude", "longitude"), rng.uniform(20, 90, (2, 3, 2, 4)))},
         coords={
+            "step": np.array([0, 6], dtype="timedelta64[h]").astype("timedelta64[ns]"),
+            "time": np.datetime64("2026-10-30T12:00:00", "ns"),
             "vertical": [1000.0, 850.0, 500.0],
             "latitude": [-1.0, 0.0],
             "longitude": [34.0, 35.0, 36.0, 37.0],
@@ -100,12 +102,15 @@ def _inputs(tmp_path):
     msl["msl"].attrs.update(units="hPa", standard_name="air_pressure_at_mean_sea_level")
 
     def centre(value, lat, lon):
+        # Two candidate centres; the second is not a centre in this map (NaN), as
+        # local-extrema writes it.
         ds = xr.Dataset(
-            {"msl": ("station_id", [value])},
+            {"msl": (("station_id", "time"), [[value], [np.nan]])},
             coords={
-                "station_id": ["C1"],
-                "latitude": ("station_id", [lat]),
-                "longitude": ("station_id", [lon]),
+                "station_id": ["C1", "C2"],
+                "time": msl.time.values,
+                "latitude": ("station_id", [lat, 2.0]),
+                "longitude": ("station_id", [lon, 33.0]),
             },
         )
         ds["msl"].attrs["units"] = "hPa"

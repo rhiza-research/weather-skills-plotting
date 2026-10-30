@@ -1,6 +1,7 @@
 // Past seasons and this year's forecast plume on one day-of-year axis. Each year is
 // its own input; the forecast is on valid dates (step-to-time) with a number dim.
 // plot.py -i y2024.zarr=Y2024 -i y2025.zarr=Y2025 -i fc_valid.zarr=FCA --spec seasons.jsonnet -o seasons.png
+local ws = import 'ws.libsonnet';
 local inputs = std.extVar('inputs');
 local years = ['Y2024', 'Y2025'];
 {
@@ -15,7 +16,7 @@ local years = ['Y2024', 'Y2025'];
   ],
   layout: {
     title: { text: 'Daily rainfall by day of year' },
-    xaxis: { title: { text: 'Day of year' }, tickvals: [1, 32, 60, 91], ticktext: ['1 Jan', '1 Feb', '1 Mar', '1 Apr'] },
+    xaxis: ws.dayOfYearTicks,  // 1 Jan, 1 Feb, … at their day of year
     yaxis: { title: { text: 'mm/day' }, rangemode: 'tozero' },
   },
 }

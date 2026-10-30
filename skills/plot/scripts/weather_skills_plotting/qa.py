@@ -20,11 +20,11 @@ def hash_png_pixels(path) -> str:
 def figure_counts(fig) -> list[tuple[str, int, int]]:
     """``(trace, n_finite, n)`` per trace name: its ``z``, marker colors, ``y`` or ``r``.
 
-    Traces with ``hoverinfo: "skip"`` (base-map lines, arrows) are left out.
+    Base-map lines (``ws.basemap``, uids ``basemap-…``) are left out.
     """
     rows: dict[str, list[int]] = {}
     for i, tr in enumerate(fig.data):
-        if getattr(tr, "hoverinfo", None) == "skip":
+        if str(tr.uid or "").startswith("basemap-"):
             continue
         raw = None
         color = getattr(getattr(tr, "marker", None), "color", None)

@@ -110,7 +110,12 @@ def write_gif(spec: dict, output, *, scale=1):
         stills.append({"data": data, "layout": {**layout, **(frame.get("layout") or {})}})
     with tempfile.TemporaryDirectory() as tmp:
         paths = [Path(tmp) / f"{i}.png" for i in range(len(stills))]
-        pio.write_images(stills, paths, scale=scale, validate=False)
+        # kaleido draws at 700 x 500 unless each image is given the layout's own size.
+        widths = [still["layout"].get("width") or 700 for still in stills]
+        heights = [still["layout"].get("height") or 500 for still in stills]
+        pio.write_images(
+            stills, paths, scale=scale, width=widths, height=heights, validate=False
+        )
         images = [Image.open(p).convert("RGB") for p in paths]
     # One palette picked from all frames stacked, so a colorbar bands the same in every frame.
     w, h = images[0].size

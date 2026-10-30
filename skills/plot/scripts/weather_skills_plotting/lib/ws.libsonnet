@@ -7,7 +7,12 @@ local palettes = import 'palettes.libsonnet';
 local round(x) = std.floor(x + 0.5);
 
 // Margins (px) around the plotting area: room for the title, ticks and a colorbar.
-local margin = { l: 50, r: 150, t: 70, b: 45 };
+local margin = { l: 50, r: 150, t: 70, b: 70 };
+
+// The legend sits in a row under the maps, clear of the colorbar on the right.
+local legend = { orientation: 'h', x: 0, y: -0.06, yanchor: 'top' };
+
+local months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // Natural Earth scale for a map span, and whether provinces / counties are readable.
 local scaleFor(bbox) =
@@ -47,6 +52,7 @@ local basemapStyles = {
     width: width,
     height: round(plotw * (bbox.n - bbox.s) / (bbox.e - bbox.w)) + margin.t + margin.b,
     margin: margin,
+    legend: legend,
     xaxis: { range: [bbox.w, bbox.e], showgrid: false, zeroline: false, ticksuffix: '°', constrain: 'domain' },
     yaxis: {
       range: [bbox.s, bbox.n], showgrid: false, zeroline: false, ticksuffix: '°',
@@ -61,6 +67,7 @@ local basemapStyles = {
     width: cols * panel + margin.l + margin.r,
     height: round(rows * panel * aspect / (1 - gap)) + margin.t + margin.b,
     margin: margin,
+    legend: legend,
   } + {
     [if i == 0 then 'xaxis' else 'xaxis%d' % (i + 1)]: {
       local c = i % cols,
@@ -115,6 +122,22 @@ local basemapStyles = {
   // bounds, cmin / cmax at the outer bounds, and colorbar ticks at the bounds.
   // Under / over colors (when the palette packs them) get one extra class width
   // beyond each end. A palette with no bounds is a continuous colorscale.
+  // An ISO date or time from std.extVar('inputs') as text: '2026-10-26' → '26 Oct 2026',
+  // '2026-10-30T12:00:00' → '30 Oct 2026 12 UTC'. year=false leaves the year out.
+  date(t, year=true)::
+    local day = std.parseInt(std.substr(t, 8, 2));
+    local text = '%d %s' % [day, months[std.parseInt(std.substr(t, 5, 2)) - 1]]
+                 + (if year then ' ' + std.substr(t, 0, 4) else '');
+    if std.length(t) > 10 && std.substr(t, 11, 8) != '00:00:00' then text + ' ' + std.substr(t, 11, 2) + ' UTC' else text,
+
+  // xaxis ticks for a day-of-year axis (.dt.dayofyear): the 1st of each month.
+  // Days are counted in a non-leap year, so after 28 Feb a leap year sits a day later.
+  dayOfYearTicks:: {
+    local starts = [1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335],
+    tickvals: starts,
+    ticktext: ['1 ' + m for m in months],
+  },
+
   stepped(p):: (
     if !std.objectHas(p, 'bounds') then {
       local n = std.length(p.colors),
@@ -123,6 +146,9 @@ local basemapStyles = {
       local b = p.bounds,
       local nb = std.length(b),
       local packed = std.length(p.colors) == nb + 1,
+      assert std.length(p.colors) == nb - 1 || packed :
+             'palette has %d colors for %d bounds: give one color per class (%d), or under + classes + over (%d)'
+             % [std.length(p.colors), nb, nb - 1, nb + 1],
       local lo = if packed then b[0] - (b[1] - b[0]) else b[0],
       local hi = if packed then b[nb - 1] + (b[nb - 1] - b[nb - 2]) else b[nb - 1],
       local edges = (if packed then [lo] else []) + b + (if packed then [hi] else []),

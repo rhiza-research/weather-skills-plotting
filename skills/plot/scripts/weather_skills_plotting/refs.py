@@ -21,6 +21,7 @@ from weather_skills_core.errors import UsageError
 METHODS = {
     "isel": "select",
     "sel": "select",
+    "dropna": "select",
     "clip": "select",
     "squeeze": "reshape",
     "transpose": "reshape",
@@ -184,10 +185,21 @@ def _method(base, name, args, kwargs, ref):
             return getattr(da, name)(picks, method=method) if method else getattr(da, name)(picks)
         except (KeyError, IndexError, ValueError, TypeError) as exc:
             raise UsageError(f"{ref}: {exc}") from None
+    if name == "dropna":
+        if len(args) != 1 or kwargs:
+            raise UsageError(f"{ref}: .dropna(dim) takes one dim, e.g. .dropna('station_id')")
+        return da.dropna(_dim(da, args[0], ref))
     if name == "squeeze":
         return da.squeeze()
     if name == "transpose":
-        return da.transpose(*[_dim(da, d, ref) for d in args])
+        order = [_dim(da, d, ref) for d in args]
+        extra = [d for d in da.dims if d not in order]
+        if extra:
+            raise UsageError(
+                f"{ref}: dims {extra} are left besides {order}; pick a value along them with "
+                ".isel(dim=…) / .sel(dim=…) before .transpose()"
+            )
+        return da.transpose(*order)
     if name == "flat":
         lat, lon = cf_dim(da, "latitude"), cf_dim(da, "longitude")
         if set(da.dims) != {lat, lon}:
@@ -308,7 +320,17 @@ def _attribute(base, attr, ref):
             if attr == "dt" and base.dtype.kind not in "mM" and base.dtype != object:
                 raise UsageError(f"{ref}: .dt needs a time or timedelta coordinate")
             return _Accessor(attr, base)
-        raise UsageError(f"{ref}: {attr!r} is not allowed after a variable; see the table")
+        # A coordinate of what is left after a selection: the lon / lat of the
+        # points .dropna() kept, the valid times of the steps picked.
+        name = attr
+        if attr in _ALIASES and attr not in base.coords:
+            name = cf_dim(base, _ALIASES[attr])
+        if name in base.coords:
+            return base[name]
+        raise UsageError(
+            f"{ref}: {attr!r} is neither .dt, .attrs nor a coordinate of this selection "
+            f"(coordinates: {', '.join(map(str, base.coords))})"
+        )
     raise UsageError(f"{ref}: {attr!r} is not allowed here")
 
 

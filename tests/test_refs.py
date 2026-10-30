@@ -79,7 +79,7 @@ def test_limits_only_on_scale_keys(inputs):
         ("@OBS.precip.fillna(0)", "missing data stays missing"),
         ("@OBS.precip.diff('time')", "difference"),
         ("@OBS.precip.__class__", "not allowed"),
-        ("@OBS.precip.values", "not allowed after a variable"),
+        ("@OBS.precip.values", "neither .dt, .attrs nor a coordinate"),
         ("@OBS.precip.max(dim='time')", "whole array only"),
         ("@OBS.precip[0]", "Subscript is not allowed"),
         ("@OBS.precip.isel(time=len('ab'))", "arguments must be"),
@@ -101,6 +101,7 @@ def test_forbidden_references(inputs, ref, match):
         ("@OBS.prcp", "data variables: precip"),
         ("@FC.step", "lead times; run step-to-time"),
         ("@OBS.precip.sel(time='1999-01-01')", "OBS.precip"),
+        ("@OBS.precip.transpose('lat', 'lon')", r"dims \['time'\] are left"),
     ],
 )
 def test_errors_name_the_fix(inputs, ref, match):
@@ -151,3 +152,11 @@ def test_geojson_lon_lat_name_its_x_y():
     lines = {"K": GeoLines([LineString([(30, 1), (31, 2)])], "K")}
     assert one("@K.lon", lines).tolist()[:2] == [30, 31]
     assert one("@K.lat", lines).tolist()[:2] == [1, 2]
+
+
+def test_dropna_and_the_coords_of_what_is_left(inputs):
+    obs = inputs["OBS"].copy(deep=True)
+    obs["precip"][0, 0, 1:] = np.nan
+    row = "@OBS.precip.isel(time=0, lat=0).dropna('lon')"
+    assert one(row, {"OBS": obs}).tolist() == [0]
+    assert one(row + ".lon", {"OBS": obs}).tolist() == [10]

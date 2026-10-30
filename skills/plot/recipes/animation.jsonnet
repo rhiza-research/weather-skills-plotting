@@ -9,10 +9,10 @@ local field(k) = { type: 'heatmap', x: '@OBS.lon', y: '@OBS.lat', z: '@OBS.preci
 {
   data: [field(0)] + ws.basemap(bbox),
   frames: [
-    { name: times[k], traces: [0], data: [field(k)], layout: { title: { text: 'Rainfall ' + times[k] } } }
+    { name: ws.date(times[k]), traces: [0], data: [field(k)], layout: { title: { text: 'Rainfall ' + ws.date(times[k]) } } }
     for k in std.range(0, std.length(times) - 1)
   ],
-  layout: ws.map(bbox) + ws.player(times, duration=500) + ws.classBar(ws.palettes.ppt_daily, 'mm') + {
-    title: { text: 'Rainfall ' + times[0] },
+  layout: ws.map(bbox) + ws.player([ws.date(t) for t in times], duration=500) + ws.classBar(ws.palettes.ppt_daily, 'mm') + {
+    title: { text: 'Rainfall ' + ws.date(times[0]) },
   },
 }

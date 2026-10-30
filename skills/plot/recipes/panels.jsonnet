@@ -12,7 +12,7 @@ local cols = 3;
     for i in std.range(0, n - 1)
   ]),
   layout: ws.grid(bbox, rows=std.ceil(n / cols), cols=cols) + ws.classBar(ws.palettes.ppt_daily, 'mm') + {
-    title: { text: 'Daily rainfall by lead, init %s' % inputs.FC.coords.time },
+    title: { text: 'Daily rainfall by lead, init %s' % ws.date(inputs.FC.coords.time) },
     // annotations+: adds to the colorbar labels classBar wrote.
     annotations+: [ws.panelTitle(i, 'Day %d' % (i + 1)) for i in std.range(0, n - 1)],
   },

@@ -27,6 +27,7 @@ import sys
 from pathlib import Path
 
 from weather_skills_core import UsageError, weather_skill
+from weather_skills_core.units import dequantify_dataset
 
 from weather_skills_plotting import export
 from weather_skills_plotting.geodata import load_geojson
@@ -93,7 +94,6 @@ def parse_ext(value):
 @weather_skill.argument(
     "--spec",
     type=SpecArg,
-    required=True,
     help="Jsonnet (a .jsonnet / .json file, a recipe name such as map, or the text itself) that "
     "evaluates to a Plotly "
     "figure {data, layout, frames}. A string starting with @ names data: '@OBS.precip', "
@@ -113,6 +113,12 @@ def parse_ext(value):
     help="KEY=VALUE, read in the spec as std.extVar('KEY'). Repeat.",
 )
 @weather_skill.argument(
+    "--scale",
+    type=float,
+    default=1,
+    help="Pixel density of PNG, JPG and GIF output: 2 doubles the pixels at the same layout.",
+)
+@weather_skill.argument(
     "--recipe",
     nargs="?",
     const="",
@@ -126,7 +132,7 @@ def parse_ext(value):
     probe=True,
     help="Print (-) or save (a path) the evaluated spec, @ references unresolved, and draw nothing.",
 )
-def plot(inputs, output, spec, jpath, ext_str, recipe, dump_spec, **kwargs):
+def plot(inputs, output, spec, jpath, ext_str, scale, recipe, dump_spec, **kwargs):
     """Draw weather-skills Zarrs with a Jsonnet spec that evaluates to a Plotly figure."""
     if recipe is not None:
         print(recipe_text(recipe))
@@ -144,8 +150,8 @@ def plot(inputs, output, spec, jpath, ext_str, recipe, dump_spec, **kwargs):
                 raise UsageError(f"input not found: {x.path}")
             datasets[x.name] = load_geojson(x.path)
         else:
-            ds = x.ds
-            datasets[x.name] = ds.pint.dequantify() if hasattr(ds, "pint") else ds
+            # Plain arrays, with units in CF form (g kg-1, mm day-1).
+            datasets[x.name] = dequantify_dataset(x.ds)
     meta = {name: input_metadata(value) for name, value in datasets.items()}
     figure = evaluate(spec, meta, jpath=jpath or (), ext_strs=ext_str or ())
     spec.evaluated = figure
@@ -182,7 +188,7 @@ def plot(inputs, output, spec, jpath, ext_str, recipe, dump_spec, **kwargs):
                 "smaller window",
                 file=sys.stderr,
             )
-    written = [export(fig, path) for path in outputs]
+    written = [export(fig, path, scale=scale) for path in outputs]
     return written if isinstance(output, list) else written[0]
 
 
