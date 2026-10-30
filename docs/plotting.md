@@ -96,14 +96,18 @@ Values are drawn in the file's own units (K stays K, Pa stays Pa); run
 - **Panels.** Map traces on the same axes are layers; traces on `x2`, `x3`, …
   are side-by-side panels, each on its own lat/lon grid. A faceted trace
   expands into one panel per value, and static layers repeat on every panel.
-  Panels fill the grid in axis order. Plotly's `layout.grid.subplots` instead
-  names the map (`"x3y3"`) in each cell, `""` for an empty one; the plotter
-  reads it to place panels and passes Plotly explicit domains, not the grid.
-  Traces keep their axes, so outlines and other layers on a map follow it.
-- **Shared windows.** When every map shows the same lon/lat window, only the
-  outer panels (nothing drawn below, nothing to the left) carry tick labels,
-  and the gaps between panels shrink to match. Side-by-side titles
-  (`name · dates`) wider than a column break onto two lines.
+- **Grid placement.** By default panels fill the grid in axis order: `xy`,
+  `x2y2`, `x3y3`, … left to right, then row by row. A spec can place them
+  itself with Plotly's `layout.grid.subplots`: a list of rows, each cell
+  holding the axis pair of the map that goes there (`"x3y3"`), or `""` to
+  leave it empty. The plotter turns this into an explicit `domain` for each
+  axis and does not pass `grid` on to Plotly. Moving a map moves its axes,
+  so every trace on those axes, outlines included, moves with it.
+- **Tick labels and titles.** When every map shows the same lon/lat window,
+  tick labels are kept only on the outer edge: longitude on panels with no
+  panel below them, latitude on panels with no panel to their left. The gaps
+  between panels shrink to match. A side-by-side title (`name · dates`) too
+  wide for its column breaks onto two lines.
 - **Map axes.** Equal-degree lon/lat axes (`scaleanchor`), not Plotly geo
   subplots, which cannot hold a heatmap. Each panel is sized from its lon/lat
   aspect. Room for titles, ticks and colorbars is a starting size in multiples
