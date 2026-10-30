@@ -7,7 +7,7 @@ local palettes = import 'palettes.libsonnet';
 local round(x) = std.floor(x + 0.5);
 
 // Margins (px) around the plotting area: room for the title, ticks and a colorbar.
-local margin = { l: 50, r: 110, t: 70, b: 45 };
+local margin = { l: 50, r: 150, t: 70, b: 45 };
 
 // Natural Earth scale for a map span, and whether provinces / counties are readable.
 local scaleFor(bbox) =
@@ -142,6 +142,49 @@ local basemapStyles = {
       colorbar: { tickvals: ticks },
     }
   ),
+
+  // A class palette on a coloraxis, with a colorbar of equal-height bands, one per
+  // class, labelled at the bounds (or by the palette's labels, one per class);
+  // under / over colors are triangles at the ends.
+  // The map colors come from ws.stepped (exact at the bounds); Plotly's own colorbar
+  // is hidden and this one is drawn as layout shapes and annotations, so it adds to
+  // the layout's shapes and annotations (write yours as annotations+: [...] after it).
+  // x, y, len and width are fractions of the plotting area (paper), from its bottom left.
+  classBar(p, title='', axis='coloraxis', x=1.03, y=0.05, len=0.85, width=0.03, format='%g'):: {
+    local b = p.bounds,
+    local nb = std.length(b),
+    local packed = std.length(p.colors) == nb + 1,
+    local classes = if packed then p.colors[1:nb] else p.colors,
+    local h = len / (nb - 1),
+    local box(y0, y1, color) = {
+      type: 'rect', xref: 'paper', yref: 'paper', x0: x, x1: x + width, y0: y0, y1: y1,
+      fillcolor: color, line: { width: 0.5, color: '#333333' }, layer: 'above',
+    },
+    local triangle(base, tip, color) = {
+      type: 'path', xref: 'paper', yref: 'paper', fillcolor: color, layer: 'above',
+      line: { width: 0.5, color: '#333333' },
+      path: 'M %f,%f L %f,%f L %f,%f Z' % [x, base, x + width, base, x + width / 2, tip],
+    },
+    [axis]: $.stepped(p) + { showscale: false },
+    shapes+: [box(y + k * h, y + (k + 1) * h, classes[k]) for k in std.range(0, nb - 2)]
+             + (if packed then [
+                  triangle(y, y - 0.8 * h, p.colors[0]),
+                  triangle(y + len, y + len + 0.8 * h, p.colors[nb]),
+                ] else []),
+    local label(text, at) = {
+      text: text, showarrow: false, font: { size: 11 },
+      xref: 'paper', yref: 'paper', x: x + width + 0.005, y: at, xanchor: 'left', yanchor: 'middle',
+    },
+    // A palette with labels names each class at its middle; otherwise the bounds are labelled.
+    annotations+: (
+      if std.objectHas(p, 'labels') then [label(p.labels[k], y + (k + 0.5) * h) for k in std.range(0, nb - 2)]
+      else [label(format % b[i], y + i * h) for i in std.range(0, nb - 1)]
+    ) + (if title == '' then [] else [{
+      text: title, showarrow: false, font: { size: 12 },
+      xref: 'paper', yref: 'paper', x: x + width / 2, y: y + len + (if packed then 0.8 * h else 0) + 0.015,
+      xanchor: 'center', yanchor: 'bottom',
+    }]),
+  },
 
   // Play / pause buttons and a slider for frames named by names, duration ms per frame.
   // A .gif output plays the frames at the same duration.

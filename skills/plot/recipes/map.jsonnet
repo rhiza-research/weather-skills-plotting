@@ -10,9 +10,8 @@ local t = inputs.OBS.coords.time;
     { type: 'scatter', mode: 'lines', x: '@KENYA.x', y: '@KENYA.y', line: { color: 'black', width: 2 },
       hoverinfo: 'skip', showlegend: false },
   ] + ws.basemap(bbox),
-  layout: ws.map(bbox) + {
+  layout: ws.map(bbox) + ws.classBar(ws.palettes.ppt_week, 'mm') + {
     template: ws.template,
     title: { text: 'Rainfall, week of %s' % t[0] },
-    coloraxis: ws.stepped(ws.palettes.ppt_week) + { colorbar+: { title: { text: 'mm' } } },
   },
 }

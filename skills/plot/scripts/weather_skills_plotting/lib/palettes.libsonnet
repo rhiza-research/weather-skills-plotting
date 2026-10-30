@@ -1,6 +1,7 @@
 // Color tables. A class palette is {colors, bounds}: colors holds one color per
 // class (between two bounds), or under + classes + over. A palette with no bounds
-// is a list of colors for a continuous scale. ws.stepped turns one into a coloraxis.
+// is a list of colors for a continuous scale. labels, when given, name each class.
+// ws.stepped turns one into a coloraxis, ws.classBar adds an even colorbar.
 //
 // ppt_daily … ppt_season are rainfall totals in mm (0–50, 0–200, 0–400, 0–1000);
 // ppt_anom_* are anomalies in mm (±50, ±200, ±300, ±500); ppt_total runs to 2500 mm.
@@ -66,6 +67,7 @@
   hits: {
     colors: ['#d73027', '#ffffff', '#1a9850'],
     bounds: [-1.5, -0.5, 0.5, 1.5],
+    labels: ['Disagree', 'Both below', 'Hit'],
   },
   bias: {
     colors: ['#053061', '#2166ac', '#4393c3', '#92c5de', '#d1e5f0', '#ffffff', '#fddbc7', '#f4a582', '#d6604d', '#b2182b', '#67001f'],

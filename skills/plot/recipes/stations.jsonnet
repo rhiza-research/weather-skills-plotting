@@ -11,8 +11,7 @@ local day = '.isel(time=0)';
       text: '@STN.point_id', textposition: 'top center',
       marker: { size: 12, color: '@STN.precip' + day, coloraxis: 'coloraxis', line: { color: 'black', width: 1 } } },
   ] + ws.basemap(bbox),
-  layout: ws.map(bbox) + {
+  layout: ws.map(bbox) + ws.classBar(ws.palettes.ppt_daily, 'mm/day') + {
     title: { text: 'Gridded rain and station gauges' },
-    coloraxis: ws.stepped(ws.palettes.ppt_daily) + { colorbar+: { title: { text: 'mm/day' } } },
   },
 }

@@ -78,10 +78,13 @@ agent can read them and override any part with `+`.
   from the map span). If borders or coastline can't be fetched, the country
   outlines bundled with core stand in.
 - **Palettes.** `ws.palettes` holds the CHC class palettes and the verify
-  palettes as `{colors, bounds}`. `ws.stepped` turns one into a coloraxis
-  whose colors step at the bounds. On uneven bounds the colorbar bands are
-  proportional to their value range, and tick labels closer than 4% of the bar
-  are dropped.
+  palettes as `{colors, bounds}` (and `labels` where classes have names).
+  `ws.stepped` turns one into a coloraxis whose colors step at the bounds, so
+  the map colors are exact without changing the data. Plotly's colorbar is
+  linear in value, which would make the 0–1–2 mm classes slivers, so
+  `ws.classBar` hides it and draws its own from layout shapes and annotations:
+  one equal-height band per class, labelled at the bounds, with under / over
+  triangles.
 - **Animation.** Standard Plotly `frames`; `ws.player` adds play / pause and a
   slider. A `.gif` output draws each frame with kaleido and joins them on one
   shared palette, at the play button's frame duration.

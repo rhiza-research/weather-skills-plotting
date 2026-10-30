@@ -35,6 +35,10 @@ Start from a recipe in `${CLAUDE_SKILL_DIR}/recipes/`. Each one runs as is: its 
 | `cross_section.jsonnet` | A field over longitude and pressure, 1000 hPa at the bottom |
 | `bars.jsonnet` | Horizontal bars per county from a name coordinate |
 | `scatter_xy.jsonnet` | One variable against another, with year labels and a threshold line |
+| `verify_grid.jsonnet` | Observation and each lead's forecast on one colorbar, verify hits maps underneath |
+| `mediogram.jsonnet` | Forecast members vs model climate as boxes per lead at a point, with the forecast mean |
+| `windrose.jsonnet` | Wind observations on polar axes by the direction they blow from, colored by speed |
+| `mslp.jsonnet` | Labelled isobars every 4 hPa with H / L and central pressure from local-extrema |
 
 ### Arguments
 - `-i`, `--input` — `PATH=NAME`, repeat. A Zarr, or a GeoJSON (`.geojson` / `.json`) of outlines. `NAME` is a letter or `_`, then letters, digits and `_` (`OBS`, `fc_week1`); it is how the spec refers to the file. Readable legend text goes in a trace's `"name"`, not here.
@@ -90,10 +94,11 @@ References select and label stored values; they never compute. Arithmetic, avera
 `local ws = import 'ws.libsonnet';` gives plain Plotly JSON; change any part with `+`.
 
 - `ws.map(bbox, width=760)` — one map's axes (equal degrees, range from `bbox`) and a canvas sized to it.
-- `ws.grid(bbox, rows, cols, panel=340)` — axes for maps in a grid, filled row by row; tick labels on the outer edge only. `ws.axes(i)` gives panel `i`'s `xaxis` / `yaxis` (`x`, `x2`, …) to add to a trace; `ws.panelTitle(i, text)` an annotation above it.
+- `ws.grid(bbox, rows, cols, panel=340)` — axes for maps in a grid, filled row by row; tick labels on the outer edge only. `ws.axes(i)` gives panel `i`'s `xaxis` / `yaxis` (`x`, `x2`, …) to add to a trace; `ws.panelTitle(i, text)` an annotation above it (add titles with `annotations+:` after `ws.classBar`).
 - `ws.basemap(bbox, i=0, layers=null, style={})` — coastline, borders (disputed dashed), lakes, rivers and, on maps up to 20° across, admin-1 lines, on panel `i`. `layers: ['borders', 'coastline']` picks some; `style: {borders: {line: {color: 'red'}}}` restyles. A GeoJSON input draws boundaries of your own.
-- `ws.stepped(palette)` — a `coloraxis` with color steps at the palette's class bounds, `cmin` / `cmax` at its ends, and colorbar ticks at the bounds.
-- `ws.palettes.NAME` — `{colors, bounds}`: rainfall totals `ppt_daily` (0–50 mm), `ppt_week` (0–200, also a dekad), `ppt_month` (0–400), `ppt_season` (0–1000), `ppt_total` (0–2500); anomalies `ppt_anom_daily` … `ppt_anom_season` (±50 / ±200 / ±300 / ±500); `ppt_poa` (% of normal), `spi`, verify maps `hits`, `bias`, `precip_bias`, `mae`; `colorblind`, `rocket`. Your own: `{colors: [...], bounds: [...]}`, one color per class, or under + classes + over.
+- `ws.classBar(palette, title='', axis='coloraxis')` — for a class palette: the `coloraxis` with color steps at the class bounds, and a colorbar with one equal-height band per class, labelled at the bounds (or by the palette's `labels`), under / over as triangles. It is drawn as layout shapes and annotations, so write your own as `annotations+: [...]` after it. `y` / `len` place it (paper fractions) when a figure has two.
+- `ws.stepped(palette)` — the coloraxis alone, with Plotly's own colorbar (a continuous palette, or class bands sized by their value range).
+- `ws.palettes.NAME` — `{colors, bounds}`: rainfall totals `ppt_daily` (0–50 mm), `ppt_week` (0–200, also a dekad), `ppt_month` (0–400), `ppt_season` (0–1000), `ppt_total` (0–2500); anomalies `ppt_anom_daily` … `ppt_anom_season` (±50 / ±200 / ±300 / ±500); `ppt_poa` (% of normal), `spi`, verify maps `hits`, `bias`, `precip_bias`, `mae`; `colorblind`, `rocket`. Your own: `{colors: [...], bounds: [...]}`, one color per class, or under + classes + over; `labels: [...]` names the classes.
 - `ws.player(names, duration=500)` — play / pause buttons and a slider for frames named `names`; a `.gif` plays at the same `duration` (ms).
 - `ws.template` — the house colorway, as `layout.template`.
 - `import 'themes/tropical_tidbits.libsonnet'` — Tropical Tidbits palettes: `tt_precip_rate` (mm/h), `tt_precip_total`, `tt_pwat` (mm), `tt_wind` (m/s), `tt_z500` (dam).
@@ -101,7 +106,6 @@ References select and label stored values; they never compute. Arithmetic, avera
 ## Notes
 - Values are drawn in the file's own units (K stays K, Pa stays Pa): run unit-convert for °C or hPa, and set palette bounds and contour levels in those units.
 - A forecast's `step` is a lead time. Run step-to-time to draw it by valid date beside observations, or use `.dt.days` for lead days.
-- A palette's colors step at its bounds on a linear bar, so narrow classes (0–1–2 mm) are thin on the colorbar and some tick labels are dropped so they don't overlap; the map colors are exact.
 - Animations: `frames[k].data` replaces the traces listed in `frames[k].traces` (by position in `data`). Keep the base map out of the frames: it stays on every frame.
 - A still image takes at most 100 panels; play more as frames.
 - Errors come from Jsonnet (syntax, unknown field), from the reference checks (which data, which dim, which skill), or from Plotly itself, naming the trace (`data[3] (scatter)`).

@@ -82,6 +82,35 @@ def _inputs(tmp_path):
         coords={"county": ["Kisumu", "Turkana", "Nairobi"]},
     )
     idx = _series("precip", [100, 200, 150]).assign(nino34=("time", [-1.0, 0.8, 1.6]))
+    week = make_gridded(n_time=1)
+    week["precip"].values = rng.uniform(0, 120, week["precip"].shape)
+    hits = make_gridded(n_time=1, name="event_hit")
+    hits["event_hit"].values = rng.choice([-1.0, 0.0, 1.0], hits["event_hit"].shape)
+    hits["event_hit"].attrs["units"] = "1"
+    ef = make_forecast(n_step=3, members=5)
+    ef["tp"].values = rng.uniform(0, 30, ef["tp"].shape)
+    mc = ef.copy(data={"tp": rng.uniform(0, 20, ef["tp"].shape)})
+    stn_wind = make_point_obs(n_time=6, n_points=1, name="wind_speed")
+    stn_wind["wind_speed"].values = rng.uniform(0, 10, stn_wind["wind_speed"].shape)
+    stn_wind["wind_from_direction"] = stn_wind["wind_speed"] * 0 + 45.0
+    stn_wind["wind_from_direction"].attrs["units"] = "degree"
+    stn_wind["wind_speed"].attrs.update(units="m s-1", standard_name="wind_speed")
+    msl = make_gridded(n_time=1, lats=(0.0, 5.0, 10.0), lons=(30.0, 35.0, 40.0), name="msl")
+    msl["msl"].values = np.array([[[1004.0, 1008, 1012], [1010, 1016, 1020], [1006, 1012, 1018]]])
+    msl["msl"].attrs.update(units="hPa", standard_name="air_pressure_at_mean_sea_level")
+
+    def centre(value, lat, lon):
+        ds = xr.Dataset(
+            {"msl": ("station_id", [value])},
+            coords={
+                "station_id": ["C1"],
+                "latitude": ("station_id", [lat]),
+                "longitude": ("station_id", [lon]),
+            },
+        )
+        ds["msl"].attrs["units"] = "hPa"
+        return ds
+
     for ds in (ens, quant, cty):
         ds[list(ds.data_vars)[0]].attrs["units"] = "mm day-1"
     idx["nino34"].attrs["units"] = "K"
@@ -100,6 +129,18 @@ def _inputs(tmp_path):
         "RH": rh,
         "CTY": cty,
         "IDX": idx,
+        "OW": week,
+        "FC1": week,
+        "FC2": week,
+        "V1": hits,
+        "V2": hits,
+        "EF": ef,
+        "MC": mc,
+        "EFM": ef.mean("number", keep_attrs=True),
+        "WS": stn_wind,
+        "MSL": msl,
+        "HI": centre(1020.0, 5.0, 40.0),
+        "LO": centre(1004.0, 0.0, 30.0),
     }
     paths = {name: write_zarr(ds, tmp_path / f"{name}.zarr") for name, ds in files.items()}
     paths["KENYA"] = _geojson(tmp_path / "kenya.geojson")

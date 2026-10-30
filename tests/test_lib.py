@@ -71,3 +71,21 @@ def test_basemap_traces_reference_natural_earth():
     assert traces[0]["xaxis"] == "x3"
     wide = ev("ws.basemap({n: 40, w: -20, s: -40, e: 60})")
     assert wide[0]["name"] == "rivers" and "_50m" in wide[0]["x"]
+
+
+def test_class_bar_draws_equal_bands_labelled_at_the_bounds():
+    layout = ev("ws.classBar(ws.palettes.ppt_daily, 'mm')")
+    go.Figure(layout=layout)
+    assert layout["coloraxis"]["showscale"] is False
+    rects = [s for s in layout["shapes"] if s["type"] == "rect"]
+    heights = {round(s["y1"] - s["y0"], 9) for s in rects}
+    assert len(rects) == 9 and len(heights) == 1  # nine classes, one height
+    assert [s["type"] for s in layout["shapes"][-2:]] == ["path", "path"]  # under / over
+    texts = [a["text"] for a in layout["annotations"]]
+    assert texts == ["0", "1", "2", "5", "10", "15", "20", "30", "40", "50", "mm"]
+
+
+def test_class_bar_names_classes_when_the_palette_has_labels():
+    layout = ev("ws.classBar(ws.palettes.hits, axis='coloraxis2')")
+    assert [a["text"] for a in layout["annotations"]] == ["Disagree", "Both below", "Hit"]
+    assert "coloraxis2" in layout
