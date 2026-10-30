@@ -44,6 +44,7 @@ Start from a recipe. `--recipe` lists them, `--recipe NAME` prints one to copy a
 - `-i`, `--input` — `PATH=NAME`, repeat. A Zarr, or a GeoJSON (`.geojson` / `.json`) of outlines. `NAME` is a letter or `_`, then letters, digits and `_` (`OBS`, `fc_week1`); it is how the spec refers to the file. Readable legend text goes in a trace's `"name"`, not here.
 - `--spec` — a `.jsonnet` / `.json` file, a recipe name (`map`), or the Jsonnet text itself.
 - `--recipe [NAME]` — list the recipes, or print one's Jsonnet; draws nothing.
+- `--scale N` — pixel density of PNG, JPG and GIF output: `2` doubles the pixels at the same layout (default 1). `layout.width` / `height` set the layout itself.
 - `-o`, `--output` — `.png`, `.jpg`, `.pdf`, `.svg`, `.html`, or `.gif` (plays the spec's `frames`). Repeat to write several.
 - `--dump-spec` — print (`-`) or save (a path) the evaluated spec, `@` strings unresolved, and draw nothing.
 - `--ext-str KEY=VALUE` — read in the spec as `std.extVar('KEY')`; repeat.
@@ -113,7 +114,6 @@ References select and label stored values; they never compute. Arithmetic, avera
 ## Notes
 - Titles don't wrap: break a long one with `<br>`, or put the detail in `title.subtitle`.
 - A log axis (pressure) labels Plotly's minor ticks too; set `tickvals` to the levels (`tickvals: '@RH.vertical'`).
-- `--scale 2` doubles the pixels of PNG, JPG and GIF output at the same layout; `layout.width` / `height` set the layout.
 - Values are drawn in the file's own units (K stays K, Pa stays Pa): run unit-convert for °C or hPa, and set palette bounds and contour levels in those units.
 - A forecast's `step` is a lead time. Run step-to-time to draw it by valid date beside observations, or use `.dt.days` for lead days.
 - Animations: `frames[k].data` replaces the traces listed in `frames[k].traces` (by position in `data`). Keep the base map out of the frames: it stays on every frame.
