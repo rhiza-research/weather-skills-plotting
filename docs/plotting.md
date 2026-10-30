@@ -48,17 +48,18 @@ The plotter selects and draws. Derived fields come from data skills upstream.
 ## Merging
 
 `merge_spec(base, overlay)` deep-merges `--spec` onto the figure the skill
-built, and the user wins:
+built; the spec wins.
 
-- `data[]` merges by `uid`, else by position. A new `uid` adds a plain Plotly
+- `data[]` merges by `uid`, else by position. Each input's trace is built with
+  its mapping written out (`"z": "precip"`, `"x": "time"`, …), so a spec trace
+  with that uid only needs the keys it changes.
+- A spec trace with a new `uid` that reads data (`meta.x` / `y` / `z` /
+  `marker.color`, or a non-GeoJSON `meta.source`) replaces the `-i` inputs'
+  traces, except those the spec also names by uid. Outlines and `--layer`
+  traces are always kept. A new `uid` that reads no data adds a plain Plotly
   trace (city markers, a box outline).
-- `layout.annotations`, `shapes` and `images` merge by `name`.
-- Everything else is a recursive dict merge.
-
-Each input's trace writes its mapping (`"z": "precip"`, `"x": "time"`, …),
-so a restyle by `uid` sets only what it changes. A spec whose new-uid traces
-read data draws those instead of the `-i` inputs' own traces, keeping the inputs
-it restyles by `uid`; outlines, station layers and `--layer` stacks keep theirs.
+- `layout.annotations`, `shapes` and `images` merge by `name`; everything else
+  is a recursive dict merge.
 
 `--dump-spec` prints the merged spec before any data is loaded. It has no
 arrays, and `layout.meta.inputs` keeps the file paths, so it replays without
@@ -87,30 +88,22 @@ A trace's `meta` names what fills each Plotly attribute:
 
 A trace with `meta.source` but no mapping or preset is an error. A size-1 dim
 is squeezed; any other dim left after `isel` / `sel` / `facet` / `along` is an
-error that names the fix. The only means the
-plotter draws are a band's mean line and the `samples` scatter. Every other
-average is made upstream with `summarize-dim` or `aggregate-temporal`.
-Values are drawn in the file's own units (K stays K, Pa stays Pa); run
-`unit-convert` first for °C or hPa.
+error that names the fix. The plotter averages nothing except a band's mean
+line and the `samples` scatter, and draws values in the file's own units.
 
 ## Assembly (`figure.py`, `layout.py`)
 
 - **Panels.** Map traces on the same axes are layers; traces on `x2`, `x3`, …
   are side-by-side panels, each on its own lat/lon grid. A faceted trace
   expands into one panel per value, and static layers repeat on every panel.
-- **Grid placement.** By default panels fill the grid in axis order: `xy`,
-  `x2y2`, `x3y3`, … left to right, then row by row. A spec can place them
-  itself with Plotly's `layout.grid.subplots`: a list of rows, each cell
-  holding the axis pair of the map that goes there (`"x3y3"`), or `""` to
-  leave it empty. The plotter turns this into an explicit `domain` for each
-  axis and does not pass `grid` on to Plotly. Moving a map moves its axes,
-  so every trace on those axes, outlines included, moves with it.
-- **Tick labels and titles.** When every map shows the same lon/lat window,
-  tick labels are kept only on the outer edge: longitude on panels with no
-  panel below them, latitude on panels with no panel to their left. The gaps
-  between panels shrink to match. A side-by-side title (`name · dates`) too
-  wide for its column breaks onto two lines, and a figure title or subtitle too wide
-  for the image wraps at spaces.
+- **Grid placement.** Panels fill the grid in axis order (`xy`, `x2y2`, …),
+  left to right, then row by row. Plotly's `layout.grid.subplots` places them
+  instead: rows of cells, each naming a map's axis pair or `""` for none. The
+  plotter turns it into an explicit `domain` per axis and drops `grid`, so
+  every trace on a map's axes, outlines included, moves with it.
+- **Ticks and titles.** Panels showing the same lon/lat window keep tick
+  labels on the outer edge only, and the gaps shrink to match. A side-by-side
+  title too wide for its column breaks onto two lines.
 - **Map axes.** Equal-degree lon/lat axes (`scaleanchor`), not Plotly geo
   subplots, which cannot hold a heatmap. Each panel is sized from its lon/lat
   aspect. Room for titles, ticks and colorbars is a starting size in multiples

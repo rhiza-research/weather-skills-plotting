@@ -51,13 +51,10 @@ and transforms when those are available (for example a fetch skill,
   with the same `--spec`. The HTML embeds every frame,
   so select fewer frames or a smaller bbox for long or fine-grid series.
 - Side-by-side maps are traces on separate axes (`x`, `x2`, …), each on its
-  own grid; traces on the same axes are layers. Panels of the same quantity
-  share one colorbar and, over the same region, one map window; give a trace
-  its own `coloraxis` to split them. Panels are numbered by axis: a trace on
-  `x7` / `y7` is panel 7. They fill left to right, then row by row down (row 2,
-  column 1 of a 6-column grid), unless `layout.grid.subplots` places them. Panel N's title is the annotation named
-  `panel-title-N`, whatever order the traces come in `data`. The canvas is sized from the maps; `layout.width` /
-  `height` fix it and the maps shrink to fit.
+  own grid; traces on the same axes are layers. Panel N is the one on `xN` /
+  `yN`, titled by the annotation `panel-title-N`; `layout.grid.subplots`
+  places panels in the grid. Leave `layout.width` / `height` unset: the canvas
+  is sized from the maps.
 - **Keep titles and colorbar labels short.** A title names the subject in a
   few words (`CHIRPS weekly totals`, `Week 1`), not the pipeline that made
   it; methods, sources and caveats go in your reply or the report text. A
