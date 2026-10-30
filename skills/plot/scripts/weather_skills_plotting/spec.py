@@ -153,6 +153,21 @@ def check_shape(data: dict) -> None:
             raise UsageError(f"plot spec data[{i}] must be an object")
         if "uid" in trace and not isinstance(trace["uid"], str):
             raise UsageError(f"plot spec data[{i}].uid must be a string")
+        meta = trace.get("meta") or {}
+        source = meta.get("source") if isinstance(meta, dict) else None
+        if source is not None and not isinstance(source, dict):
+            raise UsageError(
+                f"plot spec data[{i}].meta.source must be an object such as "
+                '{"input": "0"}; a file goes in layout.meta.inputs or -i'
+            )
+    layout_meta = (data.get("layout") or {}).get("meta") or {}
+    inputs = layout_meta.get("inputs") if isinstance(layout_meta, dict) else None
+    if inputs is not None and not (
+        isinstance(inputs, dict) and all(isinstance(v, str) for v in inputs.values())
+    ):
+        raise UsageError(
+            'plot spec layout.meta.inputs must map input ids to paths: {"0": "x.zarr"}'
+        )
 
 
 # --------------------------------------------------------------------- merging
@@ -393,13 +408,6 @@ def check_layout_meta(meta) -> None:
     if version is not None and version != SPEC_VERSION:
         raise UsageError(
             f"plot spec layout.meta.version {version!r} is not supported; expected {SPEC_VERSION}"
-        )
-    inputs = meta.get("inputs")
-    if inputs is not None and not (
-        isinstance(inputs, dict) and all(isinstance(v, str) for v in inputs.values())
-    ):
-        raise UsageError(
-            'plot spec layout.meta.inputs must map input ids to paths: {"0": "x.zarr"}'
         )
     geo = meta.get("geo")
     if geo is not None:

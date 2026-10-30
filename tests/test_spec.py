@@ -137,6 +137,14 @@ def test_layout_meta_errors():
         check_meta({"layout": {"meta": {"geo": {"mask_geojson": {"line": 1}}}}}, PALETTES)
 
 
+def test_shape_errors_before_merge_or_open():
+    """Checked at --spec parse time: the merge and the input opening read these first."""
+    with pytest.raises(UsageError, match=r"data\[0\].meta.source must be an object"):
+        load_spec({"data": [{"type": "scatter", "meta": {"source": "stations.zarr"}}]})
+    with pytest.raises(UsageError, match="layout.meta.inputs must map input ids to paths"):
+        load_spec({"layout": {"meta": {"inputs": ["stations.zarr"]}}})
+
+
 def test_duplicate_uid():
     with pytest.raises(UsageError, match="more than once"):
         check_meta({"data": [{"uid": "a"}, {"uid": "a"}]}, PALETTES)
