@@ -135,7 +135,7 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
     if any(b is not None and b.is_map for _, _, b in items):
         data, layout = _assemble_map(items, user_layout, lmeta, ctx)
     else:
-        data, layout = _assemble_chart(items, user_layout)
+        data, layout = _assemble_chart(items, user_layout, ctx)
     layout.setdefault("template", DEFAULT_TEMPLATE)
     built = {a.get("name"): a for a in layout.get("annotations") or []}
     for ann in user_layout.get("annotations") or []:
@@ -829,9 +829,10 @@ def _key(value):
 # ----------------------------------------------------------------- chart figure
 
 
-def _assemble_chart(items, user_layout):
+def _assemble_chart(items, user_layout, ctx):
     data = []
     layout = {}
+    colored = []  # cross sections: (spec_trace, bound, concrete traces) on one color axis
     axis_titles: dict[str, dict] = {}
     for i, spec_trace, bound in items:
         uid = spec_trace.get("uid") or f"trace{i}"
@@ -846,6 +847,8 @@ def _assemble_chart(items, user_layout):
             if tr.get("type") != "barpolar":
                 tr["xaxis"], tr["yaxis"] = xa, ya
             data.append(tr)
+        if bound.color_values and not _uncolored(spec_trace):
+            colored.append((spec_trace, bound, data[-len(bound.panels[0].traces) :]))
         layout = deep_merge(layout, bound.layout)
         xs, ys = xa[1:], ya[1:]
         if bound.axis_titles.get("x") is not None:
@@ -861,7 +864,20 @@ def _assemble_chart(items, user_layout):
             axis.setdefault("hoverformat", bound.x_tickformat)
         if bound.title:
             layout.setdefault("title", {"text": bound.title})
-    layout.update(axis_titles)
+    layout = deep_merge(layout, axis_titles)
+    if colored:
+        contours = [tr for _, _, trs in colored for tr in trs if tr.get("type") == "contour"]
+        for tr in contours:
+            fill_defaults(tr, {"contours": {"coloring": "fill"}})
+        lifted = {}
+        for spec_trace, bound, trs in colored:
+            lifted = deep_merge(lifted, _lift_color(spec_trace, bound.color_key))
+            for tr in trs:
+                tr["coloraxis"] = "coloraxis"
+        axis = _resolve_coloraxis(
+            "coloraxis", colored, user_layout.get("coloraxis"), ctx, contour_traces=contours
+        )
+        layout["coloraxis"] = deep_merge(axis, lifted)
     # Room above the plot only for what is there: a title, a legend row.
     lines = title_lines(user_layout.get("title") or layout.get("title"))
     named = [tr for tr in data if tr.get("name") and tr.get("showlegend") is not False]

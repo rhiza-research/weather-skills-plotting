@@ -1311,3 +1311,40 @@ def test_xy_isel_picks_only_where_the_dim_is():
     meta["source"] = {"isel": {"step": 0}}
     with pytest.raises(UsageError, match="isel dimension 'step' is not in the data"):
         compile({"data": [{"uid": "0", "meta": meta}]}, {"0": ds})
+
+
+def _humidity_levels():
+    """Relative humidity on pressure levels, as ecmwf-hres-fetch writes it."""
+    lev = np.array([1000.0, 850.0, 500.0, 200.0])
+    ds = make_gridded(n_time=1, name="r", lats=(0.0, -1.0, -2.0))
+    da = ds["r"].expand_dims(vertical=lev, axis=1) * xr.DataArray(lev / 10, dims="vertical")
+    ds = da.rename("r").to_dataset()
+    ds["r"].attrs.update(units="%", long_name="Relative humidity")
+    ds["vertical"].attrs.update(units="hPa", standard_name="air_pressure", positive="down")
+    return ds
+
+
+def test_cross_section_draws_pressure_against_longitude():
+    ds = _humidity_levels()
+    trace = _trace("a", source={"isel": {"time": 0}, "sel": {"latitude": -1.0}})
+    fig = compile({"data": [trace]}, {"a": ds})
+    (heat,) = _data(fig, "heatmap")
+    assert list(heat["x"]) == [10.0, 11.0, 12.0, 13.0]
+    assert list(heat["y"]) == [1000.0, 850.0, 500.0, 200.0]
+    assert np.asarray(heat["z"]).shape == (4, 4)
+    layout = _layout(fig)
+    assert layout["yaxis"]["autorange"] == "reversed"
+    assert layout["yaxis"]["title"]["text"] == "Pressure [hPa]"
+    assert layout["xaxis"]["title"]["text"] == "Longitude [°]"
+    assert layout["title"]["text"] == "Relative humidity · 1°S · 1 Jan '26"
+    assert heat["coloraxis"] == "coloraxis"
+    assert layout["coloraxis"]["colorbar"]["title"]["text"] == "Relative humidity [%]"
+    # A percent that is not rainfall keeps a plain sequential scale, not percent-of-normal classes.
+    assert "tickvals" not in layout["coloraxis"]["colorbar"]
+
+
+def test_cross_section_needs_one_value_of_other_dims():
+    ds = _humidity_levels()
+    trace = _trace("a", source={"sel": {"latitude": -1.0}})
+    with pytest.raises(UsageError, match="'time'.*isel / sel"):
+        compile({"data": [trace]}, {"a": ds})

@@ -53,8 +53,10 @@ def is_precip_poa(da) -> bool:
     tokens = name.replace("_", " ").replace("-", " ").split()
     if "percent of" in name or "pct of" in name or "poa" in tokens:
         return True
+    # A percent alone is not rainfall: relative humidity and cloud cover are in % too.
     units = (variable_units(da) or "").strip().lower()
-    return units in {"%", "percent"}
+    precip = any(word in name for word in ("ppt", "precip", "rain"))
+    return precip and units in {"%", "percent"}
 
 
 def is_temperature(da) -> bool:

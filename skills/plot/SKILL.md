@@ -36,7 +36,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --animate --layer heatmap:rain_daily.
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --animate -i rain_daily.zarr -o rain.gif
 ```
 
-The plot type follows the data: a lat/lon grid is a colored map, stations are colored markers, 1-D series are lines on one time axis. `meta.x` / `meta.y` scatter two variables or coordinates; a name coordinate such as `county` becomes a category axis (a dot chart: `"meta": {"x": "precip_7d", "y": "county"}`). `--obs`/`--forecast`/`--verify` and `--mediogram` pick the two special figures (sections below); `--animate` plays any map through time instead of drawing side-by-side panels. Use one of the three at a time.
+The plot type follows the data: a lat/lon grid is a colored map, a pressure-level field with one latitude or longitude picked is a cross section (pressure up the y-axis, surface at the bottom), stations are colored markers, 1-D series are lines on one time axis. `meta.x` / `meta.y` scatter two variables or coordinates; a name coordinate such as `county` becomes a category axis (a dot chart: `"meta": {"x": "precip_7d", "y": "county"}`). `--obs`/`--forecast`/`--verify` and `--mediogram` pick the two special figures (sections below); `--animate` plays any map through time instead of drawing side-by-side panels. Use one of the three at a time.
 
 ### Arguments
 - `--input`, `-i` — Zarr to draw, as `PATH` or `PATH=UID`; repeat for side-by-side maps or more lines. `UID` (letters, digits, `_`, e.g. `WRF`) is the trace's `"uid"` in `--spec`; legend text goes in that trace's `"name"`, panel titles in a `panel-title-N` annotation.
@@ -90,6 +90,7 @@ The figure at `-o`. PNG/JPG also print `data: NULL` when every value drawn is Na
 
 ### Notes
 - A file with more than one data variable needs `meta.source.variable` set to the one to draw. Plot stops rather than guess; inspect-zarr lists the variables.
+- Cross section: keep `vertical` and one of latitude / longitude, pick one value of every other dim: `{"data": [{"uid": "FC", "meta": {"source": {"isel": {"step": 0}, "sel": {"latitude": -1}}}}]}` draws pressure against longitude along 1°S (`"type": "contour"` for filled contours). `sel` takes the nearest grid row. Don't set `meta.x` / `meta.y`; those draw points.
 - A map shows one value per cell: pick one value of any extra dim (`number`, `vertical`) with `isel` / `sel`, panel it with `"meta": {"facet": "number"}`, or average it first with summarize-dim.
 - Plot draws the values in the file, in its units (K stays K, Pa stays Pa; run unit-convert for °C or hPa), so `zmin`, contour levels and palette edges are in those units. A precip rate stays a rate (mm/day); for period totals (mm) run aggregate-temporal, then convert-to-totals.
 

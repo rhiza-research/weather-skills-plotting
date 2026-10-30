@@ -39,6 +39,15 @@ def test_dump_spec_defaults_by_data_shape(tmp_path, plot_fn, capsys):
     assert meta["inputs"] == {"0": str(grid), "1": str(pts)}
 
 
+def test_cross_section_input_draws_as_heatmap(tmp_path, plot_fn, capsys):
+    ds = make_gridded(n_time=1, name="r").isel(time=0, latitude=0)
+    ds = ds.expand_dims(vertical=[1000.0, 500.0])
+    ds["vertical"].attrs.update(units="hPa", positive="down")
+    path = write_zarr(ds, tmp_path / "section.zarr")
+    spec = _dump(plot_fn, capsys, "-i", str(path))
+    assert spec["data"][0]["type"] == "heatmap"
+
+
 def test_inputs_named_on_the_command_line(tmp_path, plot_fn, capsys):
     grid = write_zarr(make_gridded(), tmp_path / "grid.zarr")
     pts = write_zarr(make_point_obs(), tmp_path / "pts.zarr")
