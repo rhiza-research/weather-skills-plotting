@@ -642,3 +642,11 @@ def test_errors_cite_the_specs_own_index(tmp_path, plot_fn, capsys, trace, match
     with pytest.raises(SystemExit):
         run_skill(plot_fn, *argv, "--spec", json.dumps(spec), "-o", str(tmp_path / "x.png"))
     assert re.search(match, capsys.readouterr().err)
+
+
+def test_one_line_the_spec_names_shows_its_legend(tmp_path, plot_fn, capsys):
+    path = write_zarr(_area(make_gridded(n_time=3)), tmp_path / "a.zarr")
+    assert "showlegend" not in _dump(plot_fn, capsys, "-i", str(path))["data"][0]
+    for trace in ({"uid": "0", "name": "CHIRPS mean"}, {"name": "CHIRPS mean"}):
+        spec = _dump(plot_fn, capsys, "-i", str(path), "--spec", json.dumps({"data": [trace]}))
+        assert spec["data"][0]["showlegend"] is True

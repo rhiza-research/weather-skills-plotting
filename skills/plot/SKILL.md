@@ -77,7 +77,7 @@ Every row below assumes `-i ecmwf.zarr=FC`.
 | To | `--spec` |
 | --- | --- |
 | Set the title | `{"layout": {"title": {"text": "Week 1"}}}` |
-| Add a second title line | `{"layout": {"title": {"text": "ECMWF rainfall", "subtitle": {"text": "Week 1: 16–22 Oct"}}}}` or `<br>` in `text` |
+| Add a second title line | `{"layout": {"title": {"text": "ECMWF rainfall", "subtitle": {"text": "Week 1: 16–22 Oct"}}}}` or `<br>` in `text`; a title or subtitle too wide for the image wraps at spaces by itself |
 | Title a panel | `{"layout": {"annotations": [{"name": "panel-title-2", "text": "ECMWF"}]}}` |
 | Arrange side-by-side maps | `{"layout": {"grid": {"subplots": [["xy", "x3y3"], ["x2y2", ""]]}}}` |
 | Pick one step | `{"data": [{"uid": "FC", "meta": {"source": {"isel": {"step": 0}}}}]}` |

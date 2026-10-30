@@ -317,3 +317,24 @@ def test_moving_highs_animate_without_the_svg_text_halo(grid, tmp_path, animatio
     data, _ = base_of(figure_of(out)[0])
     gl = [t for t in data if t["type"] == "scattergl"]
     assert gl and all("shadow" not in t["textfont"] for t in gl)
+
+
+def test_frames_keep_tick_labels_the_panel_grid_hid(grid, animation_fn, tmp_path):
+    # Four times lay out 2x2 as panels; the first panel's longitudes were left to the one below.
+    out = tmp_path / "v.html"
+    run_skill(animation_fn, "--animate", "-i", grid, "-o", str(out))
+    _, layout = base_of(figure_of(out)[0])
+    assert "showticklabels" not in layout["xaxis"] and "showticklabels" not in layout["yaxis"]
+
+
+def test_html_with_a_point_layer_empty_in_one_frame(grid, animation_fn, tmp_path):
+    lows = make_point_obs(n_time=4, n_points=2, name="msl")
+    lows["msl"].values[:] = np.nan
+    lows["msl"].values[1:, 0] = 1000.0  # no low at the first time
+    lows["msl"].attrs = {"units": "hPa", "extremum_kind": "low"}
+    lows = lows.assign_coords(latitude=("point_id", [1.5, 2.5]), longitude=("point_id", [10.5, 12]))
+    path = write_zarr(lows, tmp_path / "lows.zarr")
+    out = tmp_path / "v.html"
+    layers = ["--layer", f"heatmap:{grid}", "--layer", f"scatter:{path}"]
+    run_skill(animation_fn, "--animate", *layers, "-o", str(out))
+    assert len(figure_of(out)[1]) == 4

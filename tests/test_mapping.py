@@ -239,6 +239,21 @@ def test_long_axis_title_goes_on_two_lines():
     assert "<br>" in fig.layout.yaxis.title.text
 
 
+def test_a_title_too_wide_for_the_canvas_wraps_at_spaces():
+    time = np.arange("2026-01-01", "2026-01-04", dtype="datetime64[D]").astype("datetime64[ns]")
+    ds = xr.Dataset({"tp": ("time", [1.0, 2.0, 3.0])}, coords={"time": time})
+    words = "ECMWF HRES 700 hPa specific humidity over East Africa and the western Indian Ocean"
+    title = {"text": words, "subtitle": {"text": f"{words}, weekly totals, with outlines"}}
+    spec = {"data": [{"uid": "0", "meta": {"x": "time", "y": "tp"}}], "layout": {"title": title}}
+    fig = compile(spec, {"0": ds})
+    assert fig.layout.title.text.replace("<br>", " ") == words
+    assert "<br>" in fig.layout.title.text and "<br>" in fig.layout.title.subtitle.text
+    # Lines one at a time from the top, never cut off above the canvas.
+    assert fig.layout.title.yanchor == "top" and fig.layout.title.pad.t > 12
+    short = {**spec, "layout": {"title": {"text": "Week 1", "subtitle": {"text": "16–22 Oct"}}}}
+    assert compile(short, {"0": ds}).layout.title.text == "Week 1"
+
+
 def _section():
     ds = xr.Dataset(
         {"r": (("vertical", "longitude"), np.arange(20.0).reshape(4, 5))},
@@ -256,6 +271,29 @@ def test_cross_section_contour_over_pressure_and_longitude():
     assert trace.type == "contour" and np.asarray(trace.z).shape == (4, 5)
     assert fig.layout.yaxis.autorange == "reversed"  # 1000 hPa at the bottom
     assert fig.layout.coloraxis.colorbar.title.text  # the theme's color axis, titled
+
+
+def test_cross_section_takes_the_traces_colors_and_the_specs_range():
+    meta = {"x": "longitude", "y": "vertical", "z": "r"}
+    trace = {"uid": "0", "type": "heatmap", "colorscale": "YlGnBu", "zmax": 15, "meta": meta}
+    spec = {"data": [trace], "layout": {"yaxis": {"range": [1000, 800]}}}
+    fig = compile(spec, {"0": _section()})
+    assert fig.layout.coloraxis.colorscale[0][1] == "rgb(255,255,217)"  # YlGnBu's first color
+    assert fig.layout.coloraxis.cmax == 15
+    assert tuple(fig.layout.yaxis.range) == (1000, 800) and fig.layout.yaxis.autorange is None
+
+
+def test_dates_cannot_fill_a_color_scale():
+    stations = make_station(n_time=1).isel(time=0)
+    onset = np.array(["2026-03-01", "NaT", "2026-04-02"], dtype="datetime64[ns]")
+    stations["onset"] = ("station_id", onset)
+    meta = {"x": "longitude", "y": "latitude", "marker": {"color": "onset"}}
+    with pytest.raises(UsageError, match="marker.color 'onset' holds dates.*day of year"):
+        compile({"data": [{"uid": "0", "type": "scatter", "meta": meta}]}, {"0": stations})
+    grid = make_gridded(n_time=1)
+    grid["onset"] = grid["precip"].astype("datetime64[ns]")
+    with pytest.raises(UsageError, match="z 'onset' holds dates"):
+        compile({"data": [{"uid": "0", "type": "heatmap", "meta": {"z": "onset"}}]}, {"0": grid})
 
 
 def test_cross_section_needs_both_axes_and_no_extra_dims():

@@ -1276,6 +1276,11 @@ def bind_mapping(trace, meta, ctx, loc, *, color=None):
                 f"{loc}.z {z!r} is not in input {source.get('input', '0')!r}, which holds "
                 f"{', '.join(map(str, ds.data_vars))}"
             )
+        if ds[z].dtype.kind in "mM":
+            raise UsageError(
+                f"{loc}.z {z!r} holds dates or durations, which a color scale cannot show; "
+                "color by a number such as the day of year"
+            )
         lon, lat = cf_dim(ds, "longitude"), cf_dim(ds, "latitude")
         roles = {"longitude": lon, "latitude": lat}
         x, y = roles.get(meta.get("x")) or meta.get("x"), roles.get(meta.get("y")) or meta.get("y")
@@ -1312,6 +1317,11 @@ def bind_mapping(trace, meta, ctx, loc, *, color=None):
                 f"{', '.join(map(str, ds.variables))}; x, y and marker.color all come from the "
                 "trace's one input (merge two files first to plot one against the other)"
             )
+    if color_var and ds[color_var].dtype.kind in "mM":
+        raise UsageError(
+            f"{loc}.marker.color {color_var!r} holds dates or durations, which a color scale "
+            "cannot show; color by a number such as the day of year"
+        )
     if lon and (x, y) == (lon, lat):
         return bind_points(trace, meta, ctx, loc, variable=color_var)
     if color_var:

@@ -160,14 +160,26 @@ def layout_value(user_layout: dict, path: str):
 
 
 def title_lines(title) -> int:
-    """Lines the figure title takes: one per ``<br>``-separated line, plus a ``subtitle``."""
+    """Lines the figure title takes: one per ``<br>``-separated line, of the title and of
+    its ``subtitle``."""
     if not isinstance(title, dict):
         title = {"text": title}
     text = str(title.get("text") or "")
     if not text:
         return 0
+    subtitle = str((title.get("subtitle") or {}).get("text") or "")
     lines = len(re.split(r"<br\s*/?>", text, flags=re.IGNORECASE))
-    return lines + (1 if (title.get("subtitle") or {}).get("text") else 0)
+    return lines + (len(re.split(r"<br\s*/?>", subtitle, flags=re.IGNORECASE)) if subtitle else 0)
+
+
+def pinned_title(title, em: float) -> dict:
+    """``layout.title`` placed at the top of the canvas, so legend rows or a tall margin
+    never push it down onto the plot. Plotly's ``yanchor: "top"`` sets a title of several
+    ``<br>`` lines about 0.7 em too high, cutting off its first line; the pad makes up for it."""
+    title = title if isinstance(title, dict) else {"text": title}
+    lines = len(re.split(r"<br\s*/?>", str(title.get("text") or ""), flags=re.IGNORECASE))
+    pad = 12 + (round(0.7 * 1.4 * em) if lines > 1 else 0)  # the title font is 1.4 em
+    return {"yref": "container", "y": 1, "yanchor": "top", "pad": {"t": pad}}
 
 
 def map_layout(

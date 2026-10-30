@@ -48,6 +48,7 @@ from weather_skills_plotting.layout import (
     map_axes,
     map_layout,
     panel_title_annotation,
+    pinned_title,
     place_colorbars,
     subplot_cells,
     title_lines,
@@ -103,6 +104,7 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None, loc
         polygon=polygon_from_geojson(geo["mask_geojson"]) if geo.get("mask_geojson") else None,
         point=geo.get("point"),
     )
+    _wrap_title(user_layout)
     colorway = list(
         layout_value(user_layout, "colorway") or theme["template"]["layout"]["colorway"]
     )
@@ -196,6 +198,40 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None, loc
         return go.Figure({"data": data, "layout": out_layout})
     except ValueError as exc:
         raise plotly_error(exc) from None
+
+
+TITLE_CHAR_WIDTH = 0.55  # a title's average glyph width, in multiples of its font size
+TITLE_ROOM_PX = 560  # wrap width when the spec sets none; a single map is often this narrow
+
+
+def _wrap_title(layout: dict) -> None:
+    """Break a title or subtitle too wide for the canvas at spaces, as ``<br>`` (Plotly cuts
+    it off at both edges). Runs before layout, which makes room for every line."""
+    title = layout.get("title")
+    if not isinstance(title, dict):
+        return
+    font = layout_value(layout, "font.size") or 12
+    room = layout["width"] - 40 if layout.get("width") else TITLE_ROOM_PX
+    parts = [(title, font * 1.4)]  # Plotly's title font is 1.4x the figure font
+    if isinstance(title.get("subtitle"), dict):
+        parts.append((title["subtitle"], font))
+    for part, default_size in parts:
+        size = (part.get("font") or {}).get("size") or default_size
+        chars = max(int(room / (TITLE_CHAR_WIDTH * size)), 10)
+        given = re.split(r"<br\s*/?>", str(part.get("text") or ""), flags=re.IGNORECASE)
+        lines = []
+        for line in given:
+            current = ""
+            for word in line.split(" "):
+                # Markup such as <b> takes no width.
+                if current and len(re.sub(r"<[^>]+>", "", f"{current} {word}")) > chars:
+                    lines.append(current)
+                    current = word
+                else:
+                    current = f"{current} {word}" if current else word
+            lines.append(current)
+        if len(lines) > len(given):
+            part["text"] = "<br>".join(lines)
 
 
 # ---------------------------------------------------------------- trace merge
@@ -779,9 +815,12 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     layout, cell_domains = map_layout(
         rows, cols, aspect, panel_titles=int(any(panel_titles)), **sizing
     )
+    em = float(layout_value(user_layout, "font.size") or 12)
+    if title_text:
+        # The top margin holds the title's lines; start them at its top edge.
+        layout["title"] = pinned_title(title, em)
     # A "name · dates" title wider than a column runs into the next panel's title:
     # put the dates on a second line.
-    em = float(layout_value(user_layout, "font.size") or 12)
     plot_w = layout["width"] - layout["margin"]["l"] - layout["margin"]["r"]
     column_w = (cell_domains[1][0] - cell_domains[0][0] if cols > 1 else 1.0) * plot_w
     if any(t and " · " in t and len(t) * 0.5 * em > column_w for t in panel_titles):
@@ -970,7 +1009,9 @@ def _assemble_chart(items, user_layout, ctx):
         if bound.axis_titles.get("y") is not None:
             text = _two_lines(bound.axis_titles["y"])
             axis_titles.setdefault(f"yaxis{ys}", {"title": {"text": text}})
-        if bound.axis_titles.get("y_reversed"):
+        user_y = user_layout.get(f"yaxis{ys}") or {}
+        if bound.axis_titles.get("y_reversed") and "range" not in user_y:
+            # A pressure axis: 1000 hPa at the bottom. A range the spec sets is drawn as given.
             axis_titles.setdefault(f"yaxis{ys}", {}).setdefault("autorange", "reversed")
         if bound.axis_titles.get("y_nonnegative"):
             axis_titles.setdefault(f"yaxis{ys}", {}).setdefault("rangemode", "nonnegative")
@@ -986,9 +1027,13 @@ def _assemble_chart(items, user_layout, ctx):
         contours = [tr for _, _, trs in members for tr in trs if tr.get("type") == "contour"]
         for tr in contours:
             fill_defaults(tr, {"contours": {"coloring": "fill"}})
-        layout[name] = _resolve_coloraxis(
+        axis = _resolve_coloraxis(
             name, members, user_layout.get(name), ctx, contour_traces=contours
         )
+        # A trace-level colorscale / zmin / zmax / colorbar is drawn from its coloraxis.
+        for spec_trace, bound, _ in members:
+            axis = deep_merge(axis, _lift_color(spec_trace, bound.color_key))
+        layout[name] = axis
     # Room above the plot only for what is there: a title, a legend row.
     lines = title_lines(user_layout.get("title") or layout.get("title"))
     named = [tr for tr in data if tr.get("name") and tr.get("showlegend") is not False]
@@ -1008,13 +1053,9 @@ def _assemble_chart(items, user_layout, ctx):
     if lines:
         # Plotly centres the title in the top margin; a tall margin (legend rows) would push
         # it down into the legend. Pin it to the top instead (a spec title.y still wins).
-        layout["title"] = {
-            **(layout.get("title") or {}),
-            "yref": "container",
-            "y": 1,
-            "yanchor": "top",
-            "pad": {"t": 12},
-        }
+        em = float(layout_value(user_layout, "font.size") or 12)
+        title = user_layout.get("title") or layout.get("title")
+        layout["title"] = {**(layout.get("title") or {}), **pinned_title(title, em)}
     for name, axis in user_layout.items():
         if name.startswith("yaxis") and isinstance(axis, dict) and axis.get("overlaying"):
             # Plotly syncs an overlaid axis to the left grid (ticks at 1.01, 2.02, …);

@@ -373,6 +373,10 @@ def plot(
                 )
             for i, key in enumerate(drawn):
                 data[i]["name"] = trace_label(datasets[key], i, key)
+            # One line has no legend, but a name the spec gives it (by uid, or with no uid
+            # by position) is meant to be seen.
+            if len(data) == 1 and "name" in (user.get(data[0]["uid"]) or user.get(None) or {}):
+                data[0]["showlegend"] = True
         elif cli:
             # Side by side, every map names its axes, so a trace with none (an outline, a
             # station layer) is drawn on each of them.

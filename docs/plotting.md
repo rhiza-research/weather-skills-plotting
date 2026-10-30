@@ -109,7 +109,8 @@ Values are drawn in the file's own units (K stays K, Pa stays Pa); run
   tick labels are kept only on the outer edge: longitude on panels with no
   panel below them, latitude on panels with no panel to their left. The gaps
   between panels shrink to match. A side-by-side title (`name · dates`) too
-  wide for its column breaks onto two lines.
+  wide for its column breaks onto two lines, and a figure title or subtitle too wide
+  for the image wraps at spaces.
 - **Map axes.** Equal-degree lon/lat axes (`scaleanchor`), not Plotly geo
   subplots, which cannot hold a heatmap. Each panel is sized from its lon/lat
   aspect. Room for titles, ticks and colorbars is a starting size in multiples
