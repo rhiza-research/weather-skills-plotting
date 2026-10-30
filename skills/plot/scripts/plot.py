@@ -143,12 +143,7 @@ def _as_drawn(ds, trace):
 
 def _layer_traces(layers):
     data, datasets, mask = [], {}, None
-    # Unnamed outlines are outline1, outline2, …, as they are beside -i inputs.
-    names, n_outline = [], 0
-    for x in layers:
-        n_outline += x.kind == "outline"
-        names.append(x.name or (f"outline{n_outline}" if x.kind == "outline" else None))
-    for uid, layer in zip(input_ids(names), layers, strict=True):
+    for uid, layer in zip(input_ids([x.name for x in layers]), layers, strict=True):
         if layer.kind == "mask":
             mask = layer.path
             continue
@@ -196,9 +191,9 @@ def _layer_traces(layers):
     dest="inputs",
     type=parse_input,
     action="append",
-    help="Input Zarr as PATH or PATH=UID (letters, digits, _). Repeat for side-by-side maps, one panel per file on "
-    "its own grid. In --spec the input is uid UID, else its position: 0, 1, …. Exclusive with "
-    "data layers.",
+    help="Input Zarr, or a GeoJSON outline drawn on every map, as PATH or PATH=UID (letters, "
+    "digits, _). Repeat for side-by-side maps, one panel per Zarr on its own grid. In --spec the "
+    "input is uid UID, else its position: 0, 1, …. Exclusive with data layers.",
 )
 @weather_skill.argument(
     "--layer",
@@ -261,7 +256,7 @@ def plot(
 ):
     """Draw weather-skills Zarrs as maps, time series, scatter plots, wind roses, verification grids, mediograms, or animations."""
     inputs = list(inputs or [])
-    files = [x.ds for x in inputs]
+    files = [x.ds for x in inputs if x.ds is not None]
     layers = list(layer or [])
     grid = obs is not None or bool(forecast) or bool(verify)
     if grid + bool(mediogram) + bool(animate) > 1:
@@ -283,12 +278,13 @@ def plot(
         # The dumped spec already holds every trace and its layout.
         return run(spec.data, None, spec.opened(), output, dump_spec, theme_file=theme_file)
     # Boundaries and masks go on -i maps too: an outline on every panel.
-    shapes = [x for x in layers if x.kind in ("outline", "mask")] if files else []
+    shapes = [x for x in layers if x.kind in ("outline", "mask")] if inputs else []
     if shapes and len(shapes) == len(layers):
         layers = []
-    if files and layers:
+    if inputs and layers:
         raise UsageError(
-            "pass -i/--input or --layer, not both (-i takes only outline: and mask: layers)"
+            "pass -i/--input or --layer, not both (-i takes only outline: and mask: layers; "
+            "with --layer, a GeoJSON goes in as outline:PATH)"
         )
     if animate and len(files) > 1:
         raise UsageError(
@@ -303,7 +299,19 @@ def plot(
         if mask:
             layout["meta"] = {"geo": {"mask_geojson": mask}}
     else:
-        cli = dict(zip(input_ids([x.name for x in inputs]), files, strict=True))
+        # Every -i, then every outline / mask layer, is numbered by position unless named.
+        ids = input_ids([x.name for x in [*inputs, *shapes]])
+        cli = {
+            uid: x.ds for uid, x in zip(ids[: len(inputs)], inputs, strict=True) if x.ds is not None
+        }
+        outlines = [
+            (uid, x.path) for uid, x in zip(ids[: len(inputs)], inputs, strict=True) if x.ds is None
+        ]
+        for uid, shape in zip(ids[len(inputs) :], shapes, strict=True):
+            if shape.kind == "mask":
+                layout["meta"] = {"geo": {"mask_geojson": shape.path}}
+            else:
+                outlines.append((uid, shape.path))
         datasets = spec_datasets(spec, cli)
         user = {t.get("uid"): t for t in (spec.data.get("data") or [])} if spec else {}
         # A spec that draws data in traces of its own draws only those, plus the inputs it
@@ -340,19 +348,15 @@ def plot(
             ]
         else:
             data = []
-        for j, shape in enumerate(shapes):
-            if shape.kind == "mask":
-                layout["meta"] = {"geo": {"mask_geojson": shape.path}}
-                continue
-            for i in range(len(datasets)):
-                outline = {
-                    "uid": f"outline{j + 1}" + (f"-{i + 1}" if i else ""),
+        # A GeoJSON is an outline: one trace with no axis of its own, drawn on every map.
+        for uid, path in outlines:
+            data.append(
+                {
+                    "uid": uid,
                     "type": "scatter",
-                    "meta": {"bind": "geojson", "source": {"geojson": shape.path}},
+                    "meta": {"bind": "geojson", "source": {"geojson": path}},
                 }
-                if i:
-                    outline.update(xaxis=f"x{i + 1}", yaxis=f"y{i + 1}")
-                data.append(outline)
+            )
     if not datasets and not any((t.get("meta") or {}).get("bind") == "geojson" for t in data):
         if spec is None or not (spec.data.get("data")):
             raise UsageError(

@@ -230,10 +230,10 @@ def test_layers(tmp_path, plot_fn, capsys):
         f"mask:{edge}",
     ]
     spec = _dump(plot_fn, capsys, *argv)
-    # Unnamed outlines are outline1, … as beside -i inputs; other layers keep their position.
-    assert [t["uid"] for t in spec["data"]] == ["0", "1", "outline1"]
+    # Every layer, outlines included, is numbered by position.
+    assert [t["uid"] for t in spec["data"]] == ["0", "1", "2"]
     assert spec["layout"]["meta"]["geo"]["mask_geojson"] == str(edge)
-    restyle = json.dumps({"data": [{"uid": "outline1", "line": {"color": "#333333"}}]})
+    restyle = json.dumps({"data": [{"uid": "2", "line": {"color": "#333333"}}]})
     run_skill(plot_fn, *argv, "--spec", restyle, "-o", str(tmp_path / "layers.png"))
 
 
@@ -514,3 +514,29 @@ def test_preset_restyles_an_input_by_uid(tmp_path, plot_fn):
     path = write_zarr(winds, tmp_path / "winds.zarr")
     spec = json.dumps({"data": [{"uid": "0", "type": "barpolar", "meta": {"bind": "windrose"}}]})
     run_skill(plot_fn, "-i", str(path), "--spec", spec, "-o", str(tmp_path / "rose.png"))
+
+
+def test_geojson_input_is_an_outline_on_every_map(tmp_path, plot_fn, capsys):
+    grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
+    edge = tmp_path / "edge.geojson"
+    edge.write_text(
+        json.dumps({"type": "Polygon", "coordinates": [[[9, 0], [14, 0], [14, 4], [9, 4], [9, 0]]]})
+    )
+    argv = ["-i", str(grid), "-i", str(grid), "-i", str(edge)]
+    spec = _dump(plot_fn, capsys, *argv)
+    # Inputs are numbered by position whatever their file type; the GeoJSON is one trace.
+    assert [t["uid"] for t in spec["data"]] == ["0", "1", "2"]
+    assert spec["data"][2]["meta"] == {"bind": "geojson", "source": {"geojson": str(edge)}}
+    # --layer outline: beside -i is the same input.
+    layered = _dump(plot_fn, capsys, "-i", str(grid), "-i", str(grid), "--layer", f"outline:{edge}")
+    assert layered["data"] == spec["data"]
+    from weather_skills_plotting import compile
+
+    restyle = {"data": [{"uid": "2", "line": {"color": "red"}}]}
+    merged = plot_mod.merge_spec(spec, restyle)
+    datasets = {"0": make_gridded(n_time=1), "1": make_gridded(n_time=1)}
+    fig = compile(merged, datasets)
+    lines = [t for t in fig.data if str(t.uid).startswith("2")]
+    # One restyle reaches the outline on both maps.
+    assert {t.xaxis for t in lines} == {"x", "x2"}
+    assert all(t.line.color == "red" for t in lines)

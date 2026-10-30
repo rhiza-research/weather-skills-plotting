@@ -55,14 +55,17 @@ def split_name(value: str, flag: str) -> tuple[str, str | None]:
     return path, name
 
 
+GEOJSON_SUFFIXES = (".geojson", ".json")
+
+
 class InputArg:
-    """``-i PATH[=UID]``. The decorator opens the Zarr (``.ds``)."""
+    """``-i PATH[=UID]``: a Zarr, which the decorator opens (``.ds``), or a GeoJSON outline."""
 
     def __init__(self, path: str, name: str | None):
         self.path, self.name, self.ds = path, name, None
 
     def zarr_paths(self):
-        return [Path(self.path)]
+        return [] if Path(self.path).suffix.lower() in GEOJSON_SUFFIXES else [Path(self.path)]
 
     def __str__(self):
         # Provenance records str(); keep the flag's own form.

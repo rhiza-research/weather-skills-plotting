@@ -205,13 +205,13 @@ def test_outline_layer_on_every_frame(grid, edge, animation_fn, tmp_path, capsys
         animation_fn, "--animate", "-i", grid, "--layer", f"outline:{edge}", "--dump-spec", "-"
     )
     spec = json.loads(capsys.readouterr().out)
-    assert [t["uid"] for t in spec["data"]] == ["0", "outline1"]
+    assert [t["uid"] for t in spec["data"]] == ["0", "1"]
     out = tmp_path / "v.html"
     run_skill(animation_fn, "--animate", "-i", grid, "--layer", f"outline:{edge}", "-o", str(out))
     text, frames = figure_of(out)
     data, _ = base_of(text)
     # The outline is a base trace no frame replaces, so it stays drawn on every frame.
-    outline = data.index(next(t for t in data if t["uid"] == "outline1-p1"))
+    outline = data.index(next(t for t in data if t["uid"] == "1-p1"))
     assert all(outline not in f["traces"] for f in frames)
 
 
@@ -241,7 +241,7 @@ def test_layers_animate_like_a_still_map(grid, edge, animation_fn, tmp_path):
     # Heatmap, contour and stations change frame to frame; the outline stays put.
     moving = sorted(uids.index(f"{u}-p1") for u in ("0", "1", "2"))
     assert len(frames) == 4 and all(f["traces"] == moving for f in frames)
-    assert uids.index("outline1-p1") not in frames[0]["traces"]
+    assert uids.index("3-p1") not in frames[0]["traces"]
 
 
 def test_dumped_animation_replays_as_animation(grid, animation_fn, tmp_path, capsys):

@@ -414,8 +414,11 @@ def _input_label(ctx, trace):
 
 def _assemble_map(items, user_layout, lmeta, ctx):
     groups: dict[int, list] = {}
-    # A plain Plotly trace (city markers, a box) with no axis of its own goes on every map.
-    floating = [item for item in items if item[2] is None and not item[1].get("xaxis")]
+    # A plain Plotly trace (city markers, a box) or a static layer (an outline) with no axis of
+    # its own goes on every map.
+    floating = [
+        item for item in items if (item[2] is None or item[2].static) and not item[1].get("xaxis")
+    ]
     for item in items:
         if not any(item is f for f in floating):
             groups.setdefault(_anchor(item[1]), []).append(item)
