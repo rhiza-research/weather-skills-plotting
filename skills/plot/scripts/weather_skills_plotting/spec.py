@@ -166,6 +166,18 @@ def evaluate(spec: SpecArg, inputs_meta: dict, *, jpath=(), ext_strs=()) -> dict
                 f"{', '.join(inputs_meta) or 'none'}). If it is a palette, ws.palettes has "
                 f"{', '.join(palette_names())}."
             )
+        if missing and missing.group(1) == "coloraxis":
+            message += (
+                " ws.stepped(p) is the coloraxis itself (coloraxis: ws.stepped(p)); "
+                "ws.classBar(p) is layout keys (layout: ws.map(b) + ws.classBar(p))."
+            )
+        if "function has no parameter layers" in message:
+            message += (
+                "\nws.basemap switches layers by name: coastline=, borders=, disputed=, "
+                "lakes=, rivers= (true / false) and admin1= ('auto', true, false)"
+            )
+        elif "function has no parameter" in message:
+            message += "\nSKILL.md lists each ws.libsonnet function's parameters"
         if "couldn't open import" in message:
             message += (
                 "\nImports found by name: ws.libsonnet, palettes.libsonnet, "

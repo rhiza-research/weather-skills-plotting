@@ -12,6 +12,7 @@ drawn is a value stored in an input; calculations belong in data skills.
 from __future__ import annotations
 
 import ast
+import sys
 
 import numpy as np
 from weather_skills_core.cf import cf_dim
@@ -451,6 +452,8 @@ def resolve(spec, inputs: dict):
     grids = []
     # The dim and coordinate values each 1-D reference runs along, to check x / y pair up.
     along = {}
+    # The units of what fills each color (z, marker.color), to check shared colorbars.
+    color_units = {}
 
     def walk(node, path):
         if isinstance(node, dict):
@@ -468,6 +471,8 @@ def resolve(spec, inputs: dict):
                 f"({', '.join(sorted(LIMIT_KEYS))}); data to draw is stored values"
             )
         found[path] = node
+        if hasattr(value, "attrs") and path.endswith((".z", ".marker.color")):
+            color_units[path] = str(value.attrs.get("units", ""))
         if hasattr(value, "dims") and value.squeeze().ndim == 1:
             dim = value.squeeze().dims[0]
             if dim in value.coords:
@@ -507,16 +512,39 @@ def resolve(spec, inputs: dict):
                     f"{ax[0]} values for both"
                 )
     for trace_path, ref in grids:
-        trace = resolved
-        for part in trace_path.replace("[", ".[").split("."):
-            trace = trace[int(part[1:-1])] if part.startswith("[") else trace[part]
+        trace = _at(resolved, trace_path)
         if "x" not in trace or "y" not in trace:
             name = ref[1:].split(".")[0]
             raise UsageError(
                 f"{trace_path}: z = {ref} is a lat/lon grid; set x: '@{name}.lon' and "
                 f"y: '@{name}.lat' too, so it sits on degree axes with outlines and the base map"
             )
+    # Traces on one coloraxis share one colorbar; different units there mislabel one of them.
+    by_axis = {}
+    for path, units in color_units.items():
+        trace_path = (
+            path.rsplit(".z", 1)[0] if path.endswith(".z") else path.rsplit(".marker", 1)[0]
+        )
+        trace = _at(resolved, trace_path)
+        axis = trace.get("coloraxis") or (trace.get("marker") or {}).get("coloraxis")
+        if axis and units:
+            by_axis.setdefault(axis, {}).setdefault(units, []).append(trace_path)
+    for axis, units in by_axis.items():
+        if len(units) > 1:
+            listed = "; ".join(f"{u} in {', '.join(paths)}" for u, paths in units.items())
+            print(
+                f"Warning: {axis} colors traces in different units ({listed}); one colorbar "
+                "can only label one. Convert them to one unit, or give each its own coloraxis",
+                file=sys.stderr,
+            )
     return resolved, found
+
+
+def _at(tree, path):
+    for part in path.replace("[", ".[").split("."):
+        if part:
+            tree = tree[int(part[1:-1])] if part.startswith("[") else tree[part]
+    return tree
 
 
 def _traces_and_layout(spec):

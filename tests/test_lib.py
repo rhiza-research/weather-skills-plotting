@@ -135,3 +135,13 @@ def test_basemap_layers_are_on_unless_switched_off():
         "borders",
         "coastline",
     ]
+
+
+def test_a_ragged_grid_labels_its_filled_edges():
+    layout = ev(f"ws.grid({BBOX}, 3, 4, empty=[8, 9])")
+    go.Figure(layout=layout)
+    assert layout["xaxis5"]["showticklabels"]  # above an empty cell
+    assert not layout["xaxis9"]["visible"] and not layout["yaxis10"]["visible"]
+    assert layout["yaxis11"]["showticklabels"]  # first filled panel of its row
+    assert layout["xaxis11"]["showticklabels"] and not layout["xaxis7"]["showticklabels"]
+    go.Figure(layout={**layout, "annotations": [ev("ws.rowTitle(4, 'GEFS')")]})

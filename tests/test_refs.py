@@ -181,3 +181,22 @@ def test_x_and_y_must_pair_up(inputs):
 def test_the_innermost_refused_method_is_named(inputs):
     with pytest.raises(UsageError, match="rolling.*aggregate-temporal"):
         one("@OBS.precip.rolling(time=7).mean()", inputs)
+
+
+def test_one_colorbar_in_two_units_warns(inputs, capsys):
+    rate, total = inputs["OBS"], inputs["OBS"].copy()
+    total["precip"].attrs["units"] = "mm"
+    trace = {
+        "x": "@{0}.lon",
+        "y": "@{0}.lat",
+        "z": "@{0}.precip.isel(time=0)",
+        "coloraxis": "coloraxis",
+    }
+    spec = {
+        "data": [
+            {k: v.format("R") for k, v in trace.items()},
+            {k: v.format("T") for k, v in trace.items()},
+        ]
+    }
+    resolve(spec, {"R": rate, "T": total})
+    assert "colors traces in different units" in capsys.readouterr().err

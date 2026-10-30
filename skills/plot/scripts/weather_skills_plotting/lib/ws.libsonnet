@@ -72,8 +72,13 @@ local basemapStyles = {
 
   // Maps in a grid, filled row by row from the top left: panel i is ws.axes(i).
   // Tick labels show on the bottom row (longitude) and left column (latitude).
-  grid(box, rows, cols, panel=340, gap=0.04, pad=0.03)::
+  grid(box, rows, cols, panel=340, gap=0.04, pad=0.03, empty=[])::
     local bbox = $.pad(box, pad);
+    local filled(i) = !std.member(empty, i);
+    // Longitude labels on the lowest filled panel of each column, latitude labels on
+    // the leftmost filled panel of each row; empty panels are hidden.
+    local lowest(i) = filled(i) && [j for j in std.range(i + cols, rows * cols - 1) if (j - i) % cols == 0 && filled(j)] == [];
+    local leftmost(i) = filled(i) && [j for j in std.range(i - i % cols, i) if j < i && filled(j)] == [];
     {
     local aspect = (bbox.n - bbox.s) / (bbox.e - bbox.w),
     width: cols * panel + margin.l + margin.r,
@@ -86,7 +91,7 @@ local basemapStyles = {
       local r = std.floor(i / cols),
       domain: [c / cols + gap / 2, (c + 1) / cols - gap / 2],
       range: [bbox.w, bbox.e], showgrid: false, zeroline: false, ticksuffix: '°',
-      constrain: 'domain', showticklabels: r == rows - 1,
+      constrain: 'domain', showticklabels: lowest(i), visible: filled(i),
       anchor: if i == 0 then 'y' else 'y%d' % (i + 1),
     }
     for i in std.range(0, rows * cols - 1)
@@ -97,10 +102,17 @@ local basemapStyles = {
       domain: [1 - (r + 1) / rows + gap / 2, 1 - r / rows - gap / 2],
       range: [bbox.s, bbox.n], showgrid: false, zeroline: false, ticksuffix: '°',
       scaleanchor: if i == 0 then 'x' else 'x%d' % (i + 1), scaleratio: 1,
-      constrain: 'domain', showticklabels: c == 0,
+      constrain: 'domain', showticklabels: leftmost(i), visible: filled(i),
       anchor: if i == 0 then 'x' else 'x%d' % (i + 1),
     }
     for i in std.range(0, rows * cols - 1)
+  },
+
+  // A row label left of panel i (the first panel of a row), turned on its side.
+  rowTitle(i, text):: {
+    text: text, showarrow: false, font: { size: 13 }, textangle: -90,
+    xref: (if i == 0 then 'x' else 'x%d' % (i + 1)) + ' domain', x: 0, xshift: -48, xanchor: 'center',
+    yref: (if i == 0 then 'y' else 'y%d' % (i + 1)) + ' domain', y: 0.5, yanchor: 'middle',
   },
 
   // A title above panel i, as a layout annotation.
