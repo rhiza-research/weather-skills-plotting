@@ -15,7 +15,8 @@ Every skill's `--spec` is a standard Plotly figure, `{"data": [...], "layout": {
   makes panels (`facet`), how a line fans out (`along`, `band`), and its class
   palette (`palette`).
 - `layout.meta` holds figure-wide settings: `inputs`, `geo` (bbox, mask,
-  point), `overlays` and `export`.
+  point), `overlays`, `export` and `animation` (plus the `version` / `skill`
+  stamps a dumped spec carries).
 
 `spec.check_meta` checks the `meta` blocks and lists the allowed keys on any
 error.
@@ -56,7 +57,8 @@ built, and the user wins:
 
 Each input's trace writes its mapping (`"z": "precip"`, `"x": "time"`, …),
 so a restyle by `uid` sets only what it changes. A spec whose new-uid traces
-read data draws only those, plus the inputs it restyles by `uid`.
+read data draws those instead of the `-i` inputs' own traces, keeping the inputs
+it restyles by `uid`; outlines, station layers and `--layer` stacks keep theirs.
 
 `--dump-spec` prints the merged spec before any data is loaded. It has no
 arrays, and `layout.meta.inputs` keeps the file paths, so it replays without
@@ -68,7 +70,7 @@ A trace's `meta` names what fills each Plotly attribute:
 
 | `meta` | Plotly type | Draws |
 | --- | --- | --- |
-| `z` | heatmap, contour | a lon/lat grid; one panel per `facet` value (default `step`/`time`) |
+| `z` | heatmap, contour | a lon/lat grid; one panel per `facet` value (default `step`/`time`). With `x` / `y` naming two other dims of `z`: a cross-section chart, pressure axes 1000 hPa at the bottom |
 | `x` longitude, `y` latitude | scatter | stations, colored by `marker.color` when set |
 | `x` time or step, `y` | scatter, bar | one line along it, or an `along` fan / `band` |
 | `x`, `y` two variables | scatter, bar | one point per shared position |
@@ -132,8 +134,8 @@ needs Chrome), `.html` (self-contained, interactive), or `.gif` for `--animate`
 (each frame drawn by kaleido, joined by Pillow). Images print a `plot hash` and
 a `data: not null | NULL` line; the hash is of the pixels for PNG and JPG, and
 of the figure JSON for PDF and SVG, so it does not match across those formats.
-Provenance is embedded in PNG `tEXt` chunks, the GIF comment block, or an HTML
-`<meta>` tag.
+Provenance is embedded in the image's own metadata (PNG `tEXt` chunks, JPG,
+PDF, SVG, the GIF comment block) or an HTML `<meta>` tag.
 
 ```python
 from weather_skills_plotting import compile, export

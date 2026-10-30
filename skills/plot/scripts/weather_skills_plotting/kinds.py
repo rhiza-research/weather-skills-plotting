@@ -54,7 +54,10 @@ def is_precip_poa(da) -> bool:
     if "percent of" in name or "pct of" in name or "poa" in tokens:
         return True
     units = (variable_units(da) or "").strip().lower()
-    return units in {"%", "percent"}
+    # A percent alone is not rain (relative humidity, cloud cover): the field must say so.
+    about = f"{name} {da.attrs.get('standard_name') or ''}".lower()
+    rain = any(w in about for w in ("precip", "rain")) or bool({"tp", "pr"} & set(tokens))
+    return units in {"%", "percent"} and rain
 
 
 def is_temperature(da) -> bool:

@@ -266,3 +266,12 @@ def test_cross_section_needs_both_axes_and_no_extra_dims():
     both = {"x": "longitude", "y": "vertical", "z": "r"}
     with pytest.raises(UsageError, match=r"dims \['time'\] besides x 'longitude' and y 'vertical'"):
         compile({"data": [{"uid": "0", "type": "heatmap", "meta": both}]}, {"0": ds})
+
+
+def test_relative_humidity_in_percent_is_not_rain_percent_of_normal():
+    from weather_skills_plotting.kinds import is_precip_poa
+
+    rh = xr.DataArray([50.0], name="r", attrs={"units": "%", "long_name": "Relative humidity"})
+    assert not is_precip_poa(rh)
+    poa = xr.DataArray([80.0], name="precip", attrs={"units": "%"})
+    assert is_precip_poa(poa)

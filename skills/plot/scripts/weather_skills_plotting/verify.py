@@ -134,12 +134,12 @@ def build_verify_spec(obs, forecast, verify, spec):
         **{f"verify{i}": v for i, v in enumerate(verifies, 1)},
     }
 
-    obs_var = pick_variable(obs, _user_variable(user, "obs"), 'the "obs" trace\'s meta.source')
+    obs_var = pick_variable(obs, _user_variable(user, "obs"), 'the "obs" trace\'s meta', "z")
     obs_da = _single_map(obs, obs_var, "--obs")
     fc_vars = []
     for i, fc in enumerate(forecasts, 1):
         uid = f"forecast{i}"
-        var = pick_variable(fc, _user_variable(user, uid), f"the {uid!r} trace's meta.source")
+        var = pick_variable(fc, _user_variable(user, uid), f"the {uid!r} trace's meta", "z")
         fc_vars.append(var)
         _single_map(fc, var, f"--forecast {i}")
         u_fc, u_obs = variable_units(fc[var]), variable_units(obs_da)
@@ -225,7 +225,7 @@ def build_verify_spec(obs, forecast, verify, spec):
         )
     event_title = "Event"
     try:
-        # verify stamps the threshold on the variable; older files carry it on the dataset.
+        # verify stamps the threshold on the variable, or on the dataset.
         hits = verifies[0][VERIFY_VARS[metric]]
         threshold = float(
             hits.attrs.get("event_threshold", verifies[0].attrs.get("event_threshold"))

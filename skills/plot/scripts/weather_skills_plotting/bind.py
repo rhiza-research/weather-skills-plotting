@@ -186,20 +186,21 @@ def _display(ds, variable):
     return ds
 
 
-def pick_variable(ds, name, loc):
-    """``name``, or the file's only data variable; several and none named is an error."""
+def pick_variable(ds, name, loc, key="variable"):
+    """``name``, or the file's only data variable; several and none named is an error.
+    ``loc.key`` is where the spec names it (``meta.source.variable``, or ``meta.z``)."""
     variable = name
     fields = [v for v in ds.data_vars if "grid_mapping_name" not in ds[v].attrs]
     if not variable and len(fields) > 1:
         # Guessing among several fields draws the wrong one without a word.
         raise UsageError(
-            f"{loc}.variable is not set and the data holds {', '.join(map(str, fields))}; "
-            f"set {loc}.variable to the one to draw"
+            f"{loc}.{key} is not set and the data holds {', '.join(map(str, fields))}; "
+            f"set {loc}.{key} to the one to draw"
         )
     variable = variable or auto_variable(ds)
     if not variable or variable not in ds:
         raise UsageError(
-            f"{loc}.variable {variable!r} is not in the data; available: {', '.join(ds.data_vars)}"
+            f"{loc}.{key} {variable!r} is not in the data; available: {', '.join(ds.data_vars)}"
         )
     return variable
 
@@ -1270,6 +1271,11 @@ def bind_mapping(trace, meta, ctx, loc, *, color=None):
     ttype = trace.get("type") or "scatter"
     if ttype in ("heatmap", "contour"):
         z = _named(meta, "z", ds, loc)
+        if z not in ds.data_vars:
+            raise UsageError(
+                f"{loc}.z {z!r} is not in input {source.get('input', '0')!r}, which holds "
+                f"{', '.join(map(str, ds.data_vars))}"
+            )
         lon, lat = cf_dim(ds, "longitude"), cf_dim(ds, "latitude")
         roles = {"longitude": lon, "latitude": lat}
         x, y = roles.get(meta.get("x")) or meta.get("x"), roles.get(meta.get("y")) or meta.get("y")

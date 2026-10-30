@@ -1,6 +1,6 @@
 ---
 name: plot
-description: "Draw weather-skills Zarrs as maps (heatmap, contour, stations, wind arrows), time series, xy scatter plots, wind roses, forecast verification grids (obs, lead-week forecasts and their hits / bias / MAE maps), ECMWF-style mediograms (forecast vs model-climate ensembles at a point), or animated maps through time, saved as PNG, JPG, interactive HTML, or GIF. Titles, colors, panels, and layout are set with a standard Plotly figure JSON."
+description: "Draw weather-skills Zarrs as maps (heatmap, contour, stations, wind arrows), time series, xy scatter plots, wind roses, forecast verification grids (obs, lead-week forecasts and their hits / bias / MAE maps), ECMWF-style mediograms (forecast vs model-climate ensembles at a point), or animated maps through time, saved as PNG, JPG, PDF, SVG, interactive HTML, or GIF. Titles, colors, panels, and layout are set with a standard Plotly figure JSON."
 license: MIT
 compatibility: Requires Python 3.12 and uv. PNG, JPG, PDF and SVG export needs Chrome (installed, or `plotly_get_chrome -y`). Self-contained; the plotting library ships in scripts/.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py *)
@@ -19,7 +19,7 @@ Draws one or more Zarrs as a figure. Name the files on the command line; set tit
 # One map (or one panel per time / step)
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i rain.zarr -o rain.png
 # Maps side by side, each on its own grid
-uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i chirps.zarr=OBS -i ecmwf.zarr=FC -o compare.png
+uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i chirps_week1.zarr=OBS -i ecmwf_week1.zarr=FC -o compare.png  # each file one time or step
 # Area means or stations as lines on one time axis
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i chirps_area.zarr -i imerg_area.zarr -o rain.png
 # Layers on one map, bottom first
@@ -36,7 +36,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --animate --layer heatmap:rain_daily.
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --animate -i rain_daily.zarr -o rain.gif
 ```
 
-The plot type follows the data: a lat/lon grid is a colored map, stations are colored markers, 1-D series are lines on one time axis. Each trace's `meta` names the variable or coordinate that fills each Plotly attribute: `"z": "precip"` on a heatmap or contour; `"x": "longitude", "y": "latitude", "marker": {"color": "precip"}` for stations; `"x": "time", "y": "precip"` for a line; two variables in `x` / `y` for a scatter of one against the other. A name coordinate such as `county` becomes a category axis (a dot chart: `"meta": {"x": "precip_7d", "y": "county"}`). `--obs`/`--forecast`/`--verify` and `--mediogram` pick the two special figures (sections below); `--animate` plays any map through time instead of drawing side-by-side panels. Use one of the three at a time.
+The plot type follows the data: a lat/lon grid is a colored map, stations are colored markers (one station over time is a line), 1-D series are lines on one time axis. Each trace's `meta` names the variable or coordinate that fills each Plotly attribute: `"z": "precip"` on a heatmap or contour; `"x": "longitude", "y": "latitude", "marker": {"color": "precip"}` for stations; `"x": "time", "y": "precip"` for a line; two variables in `x` / `y` for a scatter of one against the other. A name coordinate such as `county` becomes a category axis (a dot chart: `"meta": {"x": "precip_7d", "y": "county"}`). `--obs`/`--forecast`/`--verify` and `--mediogram` pick the two special figures (sections below); `--animate` plays any map through time instead of drawing side-by-side panels. Use one of the three at a time.
 
 ### Arguments
 - `--input`, `-i` — Zarr to draw, or a GeoJSON (`.geojson`, `.json`) to outline on every map, as `PATH` or `PATH=UID`; repeat for side-by-side maps or more lines. An unnamed input's uid is its position (`"0"`, `"1"`, …), whatever its file type. `UID` (letters, digits, `_`, e.g. `WRF`) is the trace's `"uid"` in `--spec`; legend text goes in that trace's `"name"`, panel titles in a `panel-title-N` annotation.
@@ -54,7 +54,7 @@ The plot type follows the data: a lat/lon grid is a colored map, stations are co
 
 Each input file is one entry in `data`. Name it on the command line (`-i ecmwf.zarr=FC`) and put that name in `"uid"`. Unnamed files are `"0"`, `"1"`, … in order.
 
-Each file's trace already names what it draws (`--dump-spec -` shows it), so a restyle by uid sets only what it changes. A trace with a new uid that reads data (`meta.source.input`) is drawn instead of the inputs; inputs it does not restyle by uid are left out.
+Each file's trace already names what it draws (`--dump-spec -` shows it), so a restyle by uid sets only what it changes. A trace with a new uid that reads data (it sets `meta.x` / `y` / `z` / `marker.color`, or a `meta.source` that is not a GeoJSON) is drawn instead of the `-i` inputs' own traces; `-i` inputs it does not restyle by uid are left out. Outlines, `--layer scatter:` stations, and `--layer` stacks always keep their traces.
 
 A trace's `uid` is its file's UID when one is given, else its position: `-i a.zarr=West` is `"uid": "West"`, and `"0"` then matches nothing (plot stops). Copy uids from the `-i` line, or run `--dump-spec -` to see them. UID is an id (letters, digits, `_`); it is also the default legend and panel text until the trace sets `"name"` (legend text such as `"TAHMO (automatic)"`) or a `panel-title-N` annotation its title.
 
@@ -89,10 +89,10 @@ Every row below assumes `-i ecmwf.zarr=FC`.
 `isel` counts from 0 (`-1` is the last); `sel` picks by label. `bbox` is `[N, W, S, E]`. `--help` lists every option; `--dump-spec -` shows the spec for your files.
 
 ### Output
-The figure at `-o`. PNG/JPG also print `data: NULL` when every value drawn is NaN.
+The figure at `-o`. PNG, JPG, PDF and SVG also print `data: NULL` when every value drawn is NaN.
 
 ### Notes
-- A file with more than one data variable needs the trace to name the one to draw: `meta.z` on a map, `meta.y` for a line, `meta.marker.color` for stations. The trace's own `marker.color` stays Plotly's: a color such as `"red"`, not a variable. Plot stops rather than guess; inspect-zarr lists the variables.
+- A file with more than one data variable needs the trace to name the one to draw: `meta.z` on a map, `meta.y` for a line, `meta.marker.color` for stations. The trace's own `marker.color` stays Plotly's: a color such as `"red"`, not a variable. Grids and lines stop rather than guess; stations draw as plain dots, with a note naming the variables, until `meta.marker.color` names one. inspect-zarr lists the variables.
 - A map shows one value per cell: pick one value of any extra dim (`number`, `vertical`) with `isel` / `sel`, panel it with `"meta": {"facet": "number"}`, or average it first with summarize-dim.
 - Plot draws the values in the file, in its units (K stays K, Pa stays Pa; run unit-convert for °C or hPa), so `zmin`, contour levels and palette edges are in those units. A precip rate stays a rate (mm/day); for period totals (mm) run aggregate-temporal, then convert-to-totals.
 
@@ -113,17 +113,18 @@ CHIRPS and ECMWF week-1 rainfall side by side over Kenya, each on its own grid, 
 - Maps of the same window label longitude and latitude only on the outer panels; set `showticklabels` on a panel's `xaxisN` / `yaxisN` to change it. A side-by-side title (`name · dates`) too wide for its column goes on two lines.
 - Panels showing the same quantity share one colorbar. To split one off: `{"data": [{"uid": "FC", "coloraxis": "coloraxis2"}]}`.
 - Panels are numbered by axis: a trace's `xaxis` / `yaxis` put it in a panel, `"x"` / `"y"` panel 1, `"x2"` / `"y2"` panel 2, and so on. Without `layout.grid.subplots` they fill left to right along the top row, then on along each row below: in a grid of C columns, row r, column c is panel (r − 1) × C + c, so with `"grid": {"rows": 4, "columns": 6}` a trace on `"x7"` / `"y7"` sits in row 2, column 1. With `subplots`, panel N is wherever its `xNyN` cell is. The numbers never follow the order of traces in `data`.
+- One map under the spec's own `layout.title` draws no date line beneath it; `panel-title-1` still sets one.
 - Panel N's title is the annotation named `panel-title-N`; set its text with `{"layout": {"annotations": [{"name": "panel-title-2", "text": "GEFS · hit 78% · BER 15%"}]}}`. The text takes any characters, and `<br>` for a second line. Side-by-side files are titled with their `-i` UID or, with no UID, their file name (`wk1/KMSA downscaled.zarr` → `KMSA downscaled`; spaces and parentheses are fine), followed by the dates each shows when the files show different dates: `KMSA downscaled · 26 Oct–1 Nov '26`, on two lines when the column is narrow. Naming the files for their panels is simpler than writing annotations; UID is only an id of letters, digits and `_`.
-- Maps use plain x/y axes in degrees (x = longitude). Add points or lines as `scatter` traces with `x` / `y`, and boxes as `layout.shapes` with `xref: "x"`, `yref: "y"`.
+- Maps use plain x/y axes in degrees (x = longitude). Add points or lines as plain `scatter` traces with Plotly's own `x` / `y` arrays (degrees; not `meta.x` / `meta.y`, which name variables), and boxes as `layout.shapes` with `xref: "x"`, `yref: "y"`.
 - A field over two dims that are not a lat/lon grid, such as a pressure × longitude cross-section, is a chart: a `heatmap` or `contour` naming both axes, `{"type": "contour", "meta": {"x": "longitude", "y": "vertical", "z": "r"}}`. Every other dim must be picked first (`isel` / `sel`); a pressure axis (hPa, Pa) runs with 1000 hPa at the bottom.
-- An `outline` layer frames the map unless `geo.bbox` is set, and hides the built-in admin-1 lines. Use it to draw official boundaries.
+- On a single map, an `outline` layer frames the map unless `geo.bbox` is set (side-by-side maps keep their data's window), and hides the built-in admin-1 lines. Use it to draw official boundaries.
 - The canvas fits the maps and leaves room for titles and colorbars: up to 760×560 px for one map and 340×340 px per panel in a grid, with panels narrowing so a many-column grid stays within 1400 px. Leave `layout.width` / `height` unset unless you need a fixed size; the maps then shrink to fit it.
 
 ### Lines over time
 - A line is `"meta": {"x": "time", "y": "precip"}`; a forecast takes `"x": "step"` and runs along its valid date (init time + `step`). Every other dim must go: pick one value with `isel` / `sel`, draw one line per value with `"along": "number"` (or `"station_id"`: a station file is a map until you pick or `along` its stations), or average it first with summarize-dim (for an area mean, `--dim latitude --dim longitude --method mean --lat-weighted`).
 - Each 1-D file is one line on one shared axis (up to 26 files). The legend names it after its file, or its station id; `"name"` renames it. With two or more lines the legend sits in rows above the plot; one line has none.
 - Each line uses only its own settings, as in Plotly: set `y`, `along`, `band` or `align` on every line that needs it.
-- `"along": "number"` draws one line per member under one legend entry; `"along_color": "cycle"` gives each its own color and entry, as wanted for one line per station: `{"meta": {"x": "time", "y": "precip", "along": "station_id", "along_color": "cycle"}}`. `"band": [10, 90]` shades that percentile range (`[0, 100]` is min–max) and draws the mean bold; `"members": false` hides the members. A band trace draws three parts, each styled as its own trace: its uid is the mean line (`name`, `line`), `UID-members` the member lines and `UID-band` the shading (`name`, `fillcolor`): `{"data": [{"uid": "FC", "name": "Mean", "line": {"color": "red", "width": 4}, "meta": {"along": "number", "band": [0, 100]}}, {"uid": "FC-members", "line": {"color": "grey"}, "opacity": 0.3}, {"uid": "FC-band", "name": "Range"}]}`. With `"type": "bar"`, `along` gives one bar series per value.
+- `"along": "number"` draws one line per member under one legend entry; `"along_color": "cycle"` gives each its own color and entry. One line per station already does: `{"meta": {"x": "time", "y": "precip", "along": "station_id"}}` (`"along_color": "same"` for one color). `"band": [10, 90]` shades that percentile range (`[0, 100]` is min–max) and draws the mean bold; `"members": false` hides the members. A band trace draws three parts, each styled as its own trace: its uid is the mean line (`name`, `line`), `UID-members` the member lines and `UID-band` the shading (`name`, `fillcolor`): `{"data": [{"uid": "FC", "name": "Mean", "line": {"color": "red", "width": 4}, "meta": {"along": "number", "band": [0, 100]}}, {"uid": "FC-members", "line": {"color": "grey"}, "opacity": 0.3}, {"uid": "FC-band", "name": "Range"}]}`. With `"type": "bar"`, `along` gives one bar series per value.
 - Members with a bold ensemble mean and no shading: average the members first (summarize-dim `--dim number --method mean`), then draw both files: `-i ens.zarr=ENS -i mean.zarr=MEAN --spec '{"data": [{"uid": "ENS", "line": {"color": "grey", "width": 0.7}, "meta": {"x": "step", "y": "tp", "along": "number"}}, {"uid": "MEAN", "line": {"color": "red", "width": 4}, "meta": {"x": "step", "y": "tp"}}]}'`.
 - Two variables of one file: one `-i`, and one trace per variable, each with its own `y`: `{"data": [{"uid": "P", "meta": {"source": {"input": "0"}, "x": "time", "y": "precip"}}, {"uid": "T", "yaxis": "y2", "meta": {"source": {"input": "0"}, "x": "time", "y": "t2m"}}]}`.
 - One panel per line, as in Plotly: put each line on its own axes and lay them out with a grid: `{"data": [{"uid": "1", "xaxis": "x2", "yaxis": "y2"}], "layout": {"grid": {"rows": 2, "columns": 1, "pattern": "coupled"}}}`. A right-hand axis: `{"data": [{"uid": "1", "yaxis": "y2"}], "layout": {"yaxis2": {"overlaying": "y", "side": "right"}}}`.
@@ -163,13 +164,13 @@ CHIRPS and ECMWF week-1 rainfall side by side over Kenya, each on its own grid, 
 ### Animation
 Add `--animate` to any map command (`-i GRID`, or a `--layer` stack of heatmap, contour, stations, wind arrows, outlines and masks) and write `-o out.html`: a self-contained interactive map (plotly.js embedded, works offline) with one frame per time or step, play / pause and a slider, every frame on one color scale and titled with its time. Each frame is the map `plot` draws for that time, so the spec, theme and layers work as on a still map.
 - The base map (coastlines, borders with disputed lines dashed, lakes, rivers; admin-1 lines on small boxes) is the still map's and stays on every frame. Add boundaries with `--layer outline:region.geojson` (resolve-region writes one) and clip with `--layer mask:region.geojson`, as on a still map.
-- Every dim other than the map's own and the animated one must go (`isel` / `sel`, or summarize-dim); `{"data": [{"uid": "0", "meta": {"facet": "number"}}]}` animates another dim. Layers must cover the same times. It plays one map: stack inputs with `--layer`, not several `-i`. Time series and other non-map plots don't animate.
+- Every dim other than the map's own and the animated one must go (`isel` / `sel`, or summarize-dim); `{"data": [{"uid": "0", "meta": {"facet": "number"}}]}` animates another dim. Layers must cover the same times. It plays one map: stack inputs with `--layer`, not several `-i` Zarrs (a GeoJSON `-i` outline is fine). Time series and other non-map plots don't animate.
 - Speed: `{"layout": {"meta": {"animation": {"duration": 300}}}}` (ms per frame, default 500; `transition` ms between frames). Your own `layout.updatemenus` / `sliders` replace the default controls.
 - GIF: `-o out.gif` writes the frames as a looping GIF at the same `duration`, with no play / pause or slider. Each frame is drawn like a PNG (`layout.meta.export.scale` sets pixel density); GIFs hold 256 colors per frame, so smooth color scales band slightly. Repeat `-o` for both (`-o rain.html -o rain.gif`).
-- Size grows with frames × cells; stderr gives the frame count and data size and warns above 50 MB. Pick fewer frames (`{"step": {"start": 0, "stop": 12}}`) or a smaller `bbox`.
+- Size grows with frames × cells; stderr gives the frame count and data size and warns above 50 MB. Pick fewer frames (`{"meta": {"source": {"isel": {"step": {"start": 0, "stop": 12}}}}}`) or a smaller `bbox`.
 
 ### Provenance
-The file's history (`weather_skills_history`) is embedded in the PNG / GIF metadata or HTML `<meta>` tag; read it with the `provenance` skill. A PNG/JPG/GIF with a complete history carries a small red seal in the bottom-right corner.
+The file's history (`weather_skills_history`) is embedded in the PNG / JPG / PDF / SVG / GIF metadata or HTML `<meta>` tag; read it with the `provenance` skill. A PNG/JPG/GIF with a complete history carries a small red seal in the bottom-right corner.
 
 ### More examples
 ```bash

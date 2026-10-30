@@ -69,8 +69,11 @@ def test_merge_traces_new_bound_trace_without_input_names_the_input_uids():
         "meta": {"bind": "geojson", "source": {"geojson": "a"}},
     }
     assert len(merge_traces(base, [edge, {"uid": "city", "type": "scatter", "x": [1]}])) == 4
-    # One input: the trace falls back to it, as before.
-    assert len(merge_traces(base[:1], [xy])) == 2
+    # One input: a new trace of its own reads it; a position uid ("0") on a named input
+    # meant to restyle that input, so it says the input's uid.
+    assert len(merge_traces(base[:1], [{**xy, "uid": "dots"}])) == 2
+    with pytest.raises(UsageError, match="uids 'West'"):
+        merge_traces(base[:1], [xy])
 
 
 def test_merge_traces_position_past_end_errors():

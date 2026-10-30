@@ -35,10 +35,11 @@ _META = {
     "x / y / z / marker.color": "the variable or coordinate that fills that Plotly attribute; "
     "see MAPPING",
     "bind": "a preset that computes its arrays (no x / y / z / marker); see BINDS",
-    "source": "the data: {input, isel, sel, u, v, geojson, mask_geojson, point}",
+    "source": "the data: {input, isel, sel, u, v, variable (presets), geojson, mask_geojson, point}",
     "facet": "dim to panel (default: step or time when present); false for none",
     "along": "line: dim drawn as one line per value (e.g. number for spaghetti)",
-    "along_color": "same (default; one color, one legend entry) or cycle",
+    "along_color": "same (one color, one legend entry) or cycle (one each); default same, "
+    "cycle when along is the station dim",
     "band": "line with along: percentile pair such as [10, 90] ([0, 100] = min–max); draws "
     "the mean (this uid), the shading (uid-band) and member lines (uid-members), each "
     "styled by its own data entry",
@@ -149,7 +150,7 @@ _RECIPES = [
     (
         "First 4 ensemble members, 2x2",
         '{"data": [{"uid": "0", "meta": {"facet": "number", "source": {"isel": '
-        '{"number": [0, 1, 2, 3]}}}}], "layout": {"grid": {"rows": 2, "columns": 2}}}',
+        '{"number": [0, 1, 2, 3], "step": 0}}}}], "layout": {"grid": {"rows": 2, "columns": 2}}}',
     ),
     (
         "One day of a station file drawn over a map (--layer heatmap:… --layer scatter:…)",
@@ -308,11 +309,13 @@ def spec_reference(recipes=None) -> str:
         "  (https://plotly.com/python/reference/) except meta, which names the data: each",
         "  input's trace names the variable or coordinate that fills x / y / z / marker.color.",
         "  --spec is merged onto the figure the command builds from its files: data[] by uid",
-        "  (else position; a new uid adds a trace), layout.annotations / shapes by name, and",
-        "  everything else deep-merged. Run with --dump-spec - to see that figure, edit, pass back.",
-        "  A spec with new-uid traces that read data draws only those, plus the inputs it",
-        "  restyles by uid.",
-        "  Output by -o suffix: .png, .jpg, .html (interactive, works offline), or .gif",
+        "  (else position; a new uid adds a trace), layout.annotations / shapes / images by",
+        "  name, and everything else deep-merged. Run with --dump-spec - to see that figure,",
+        "  edit, pass back.",
+        "  A spec with new-uid traces that read data (x / y / z / marker.color, or a source)",
+        "  draws those instead of the -i inputs' own traces, keeping the inputs it restyles by",
+        "  uid; outlines, station layers and --layer stacks keep theirs.",
+        "  Output by -o suffix: .png, .jpg, .pdf, .svg, .html (interactive, works offline), or .gif",
         "  (--animate only).",
         "",
         "  Panels: map traces on the same xaxis stack as layers; traces on x, x2, … sit side by",

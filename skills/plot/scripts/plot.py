@@ -96,8 +96,12 @@ def _default_trace(uid: str, ds, user=None, *, xaxis=None) -> dict:
     umeta = (user or {}).get("meta") or {}
     var = _only_variable(ds)
     if umeta.get("bind"):
-        # A preset fills its own arrays: the input's trace gives only the source.
-        trace = {"uid": uid, "type": "scatter", "meta": {"source": source}}
+        # A preset fills its own arrays: the input's trace gives only the source, typed as
+        # the preset draws (a speed field is a heatmap, a rose a barpolar).
+        ttype = {"speed": "heatmap", "samples": "box", "windrose": "barpolar"}.get(
+            umeta["bind"], "scatter"
+        )
+        trace = {"uid": uid, "type": ttype, "meta": {"source": source}}
         if xaxis:
             trace.update(xaxis=xaxis, yaxis="y" + xaxis[1:])
         return trace
@@ -196,7 +200,8 @@ def _layer_traces(layers):
     action="append",
     help="Input Zarr, or a GeoJSON outline drawn on every map, as PATH or PATH=UID (letters, "
     "digits, _). Repeat for side-by-side maps, one panel per Zarr on its own grid. In --spec the "
-    "input is uid UID, else its position: 0, 1, …. Combines with --layer outline: / mask: only.",
+    "input is uid UID, else its position: 0, 1, …. Combines with --layer outline:, mask: and "
+    "scatter: only.",
 )
 @weather_skill.argument(
     "--layer",

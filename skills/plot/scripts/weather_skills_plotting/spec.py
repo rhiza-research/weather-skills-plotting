@@ -269,7 +269,8 @@ def merge_traces(base: list, overlay: list) -> list:
                 }
                 inputs.pop(None, None)
                 if (
-                    len(inputs) > 1
+                    # Several inputs, or a position uid ("0") where the inputs are named.
+                    (len(inputs) > 1 or (inputs and str(uid).isdigit()))
                     and (any(meta.get(k) for k in MAPPING_KEYS) or meta.get("bind") or source)
                     and not source.get("input")
                     and not source.get("geojson")
@@ -539,6 +540,9 @@ def plotly_error(exc: Exception, loc: str = "") -> UsageError:
     lines = [line for line in head.splitlines() if line.strip()]
     msg = "\n".join(lines[:12])
     bad = re.search(r"Invalid property specified for object of type \S+: '(\w+)'", head)
+    if "'color' property of scatter.marker" in head:
+        # A variable name where Plotly wants a color: the plotter's mapping lives in meta.
+        msg += "\nTo color by a variable, name it in meta.marker.color (stations) or meta.z (maps)"
     if bad and bad.group(1) in TRACE_META_KEYS:
         # align, along, palette …: the plotter's own keys, which Plotly does not know.
         msg += f'\n{bad.group(1)!r} is a meta key: write {{"meta": {{"{bad.group(1)}": …}}}}'
@@ -598,7 +602,7 @@ DUMP_SPEC_HELP = (
 )
 SPEC_ARGUMENT_HELP = (
     "Plotly figure JSON (inline or a path), deep-merged onto the figure built from the "
-    "input files. data[] merges by uid (else position); layout.annotations / shapes merge "
+    "input files. data[] merges by uid (else position); layout.annotations / shapes / images merge "
     "by name. Dataset bindings live in each trace's meta. Example: "
     '{"data": [{"uid": "0", "type": "contour"}], "layout": {"title": {"text": "Week 1"}}}'
 )
