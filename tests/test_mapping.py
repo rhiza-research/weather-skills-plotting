@@ -170,3 +170,68 @@ def test_x_not_in_the_input_says_which_key_and_one_input():
     spec = {"data": [{"uid": "0", "meta": {"source": {"input": "0"}, "x": "dmi", "y": "precip"}}]}
     with pytest.raises(UsageError, match=r"meta\.x 'dmi' is not in input '0'.*merge two files"):
         compile(spec, {"0": make_gridded()})
+
+
+def test_station_map_by_cf_role_whatever_the_coordinates_are_called():
+    # CF-tagged coordinates are found by their attributes, whatever they are called.
+    ds = make_station().rename({"longitude": "lon", "latitude": "lat"})
+    ds["lon"].attrs.update(standard_name="longitude", units="degrees_east")
+    ds["lat"].attrs.update(standard_name="latitude", units="degrees_north")
+    meta = {
+        "source": {"isel": {"time": 0}},
+        "x": "longitude",
+        "y": "latitude",
+        "marker": {"color": "precip"},
+    }
+    fig = compile({"data": [{"uid": "0", "type": "scatter", "meta": meta}]}, {"0": ds})
+    assert len([t for t in fig.data if t.uid == "0"][0].x) == 3
+    swapped = {**meta, "x": "latitude", "y": "longitude"}
+    with pytest.raises(UsageError, match="swap them"):
+        compile({"data": [{"uid": "0", "type": "scatter", "meta": swapped}]}, {"0": ds})
+
+
+def test_one_line_per_station_gets_its_own_color_and_legend():
+    meta = {"source": {"input": "0"}, "x": "time", "y": "precip", "along": "station_id"}
+    fig = compile({"data": [{"uid": "0", "meta": meta}]}, {"0": make_station()})
+    lines = [t for t in fig.data if str(t.uid).startswith("0")]
+    assert len(lines) == 3 and len({t.name for t in lines}) == 3
+    same = compile(
+        {"data": [{"uid": "0", "meta": {**meta, "along_color": "same"}}]}, {"0": make_station()}
+    )
+    assert len([t for t in same.data if str(t.uid).startswith("0")]) == 1
+
+
+def test_rain_past_the_colour_window_says_which_palette_fits(capsys):
+    ds = make_gridded(n_time=1, fill=300.0).isel(time=0)
+    ds["precip"].attrs["aggregation_period"] = "1 day"
+    compile({"data": [{"uid": "0", "type": "heatmap", "meta": {"z": "precip"}}]}, {"0": ds})
+    err = capsys.readouterr().err
+    assert "ppt_daily colors stop at 50 mm" in err and 'meta.palette "ppt_month"' in err
+
+
+def test_one_map_under_a_spec_title_has_no_date_line():
+    ds = make_gridded(n_time=1)
+    trace = {"uid": "0", "type": "heatmap", "meta": {"z": "precip"}}
+    dated = compile({"data": [trace]}, {"0": ds})
+    assert [a.text for a in dated.layout.annotations if a.name == "panel-title-1"] != [""]
+    titled = compile({"data": [trace], "layout": {"title": {"text": "Rain"}}}, {"0": ds})
+    assert [a.text for a in titled.layout.annotations if a.name == "panel-title-1"] == [""]
+    named = compile(
+        {
+            "data": [trace],
+            "layout": {
+                "title": {"text": "Rain"},
+                "annotations": [{"name": "panel-title-1", "text": "1 Jan"}],
+            },
+        },
+        {"0": ds},
+    )
+    assert [a.text for a in named.layout.annotations if a.name == "panel-title-1"] == ["1 Jan"]
+
+
+def test_long_axis_title_goes_on_two_lines():
+    time = np.arange("2026-01-01", "2026-01-04", dtype="datetime64[D]").astype("datetime64[ns]")
+    ds = xr.Dataset({"tp": ("time", [1.0, 2.0, 3.0])}, coords={"time": time})
+    ds["tp"].attrs.update(long_name="Sum of Total precipitation across step", units="mm")
+    fig = compile({"data": [{"uid": "0", "meta": {"x": "time", "y": "tp"}}]}, {"0": ds})
+    assert "<br>" in fig.layout.yaxis.title.text

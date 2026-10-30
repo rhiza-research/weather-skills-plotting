@@ -52,6 +52,7 @@ from weather_skills_plotting.layout import (
     title_lines,
 )
 from weather_skills_plotting.palettes import (
+    PRECIP_WINDOW_VMAX,
     _class_slots,
     continuous_colorscale,
     default_palette,
@@ -326,6 +327,26 @@ def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
             "continuous scale; drop them to keep its classes, or set bounds in the palette",
             file=sys.stderr,
         )
+    window = str((palette or {}).get("name") or "")
+    if (
+        window in PRECIP_WINDOW_VMAX
+        and not palette_raw
+        and finite.size
+        and float(np.percentile(finite, 95)) > PRECIP_WINDOW_VMAX[window]
+    ):
+        # The window follows aggregation_period; a sum the file still stamps as one day
+        # (summarize-dim over step) would saturate it without a word.
+        period = next((d.attrs.get("aggregation_period") for d in color_das), None)
+        units = next((variable_units(d) for d in color_das), None)
+        source = f"aggregation_period {period!r}" if period else f"units {units!r}"
+        bigger = [w for w, top in PRECIP_WINDOW_VMAX.items() if top >= np.percentile(finite, 95)]
+        print(
+            f"Note: values reach {hi:.0f} mm but the {window} colors stop at "
+            f"{PRECIP_WINDOW_VMAX[window]:.0f} mm (picked from its {source}); "
+            f'set meta.palette "{bigger[0] if bigger else "ppt_season"}" for this range, or '
+            "fix the file's aggregation_period",
+            file=sys.stderr,
+        )
     if palette and palette.get("bounds") and not stretch and "colorscale" not in user:
         under, classes, over = _class_slots(palette)
         if under and finite.size and finite.min() >= palette["bounds"][0]:
@@ -473,7 +494,9 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     if len(order) > 1 and any(len(keys) > 1 for keys in plan):
         raise UsageError(
             "side-by-side map traces (different xaxis) must each already be a single map; "
-            "select one time/step per input (meta.source.isel / sel) or aggregate first"
+            "select one time/step per input (meta.source.isel / sel) or aggregate first. For "
+            "one panel per step beside other maps, pass the file once per step "
+            '(-i a.zarr -i a.zarr …) with {"meta": {"source": {"isel": {"step": N}}}} on each'
         )
     panels = []  # (group index or None for an empty cell, key)
     if len(order) > 1:
@@ -738,6 +761,13 @@ def _assemble_map(items, user_layout, lmeta, ctx):
         "outer_ticks": outer_ticks,
         "user": {**user_layout, "grid": grid_in},
     }
+    title = user_layout.get("title")
+    title_text = title.get("text") if isinstance(title, dict) else title
+    # One map under the spec's own title: the title says what it shows, with no date line
+    # beneath it. panel-title-1 still names the (empty) title so a spec can set it.
+    quiet = n == 1 and bool(title_text)
+    if quiet:
+        panel_titles = [None]
     layout, cell_domains = map_layout(
         rows, cols, aspect, panel_titles=int(any(panel_titles)), **sizing
     )
@@ -793,6 +823,8 @@ def _assemble_map(items, user_layout, lmeta, ctx):
         layout[f"xaxis{s}"], layout[f"yaxis{s}"] = xaxis, yaxis
         if panel_titles[p]:
             layout["annotations"].append(panel_title_annotation(p, panel_titles[p]))
+        elif quiet:
+            layout["annotations"].append(panel_title_annotation(p, ""))
     for name, members in axis_members.items():
         contours = [tr for _, b, trs in members for tr in trs if tr.get("type") == "contour"]
         for tr in contours:
@@ -886,6 +918,19 @@ def _key(value):
 # ----------------------------------------------------------------- chart figure
 
 
+AXIS_TITLE_CHARS = 40
+
+
+def _two_lines(text: str) -> str:
+    """A long axis title (a long_name such as "Sum of Total precipitation across step [mm]")
+    broken at the space nearest its middle, so it is not cut off at the plot's edge."""
+    if len(text) <= AXIS_TITLE_CHARS or "<br>" in text or " " not in text:
+        return text
+    middle = len(text) // 2
+    cut = min((i for i, c in enumerate(text) if c == " "), key=lambda i: abs(i - middle))
+    return f"{text[:cut]}<br>{text[cut + 1 :]}"
+
+
 def _assemble_chart(items, user_layout):
     data = []
     layout = {}
@@ -906,9 +951,11 @@ def _assemble_chart(items, user_layout):
         layout = deep_merge(layout, bound.layout)
         xs, ys = xa[1:], ya[1:]
         if bound.axis_titles.get("x") is not None:
-            axis_titles.setdefault(f"xaxis{xs}", {"title": {"text": bound.axis_titles["x"]}})
+            text = _two_lines(bound.axis_titles["x"])
+            axis_titles.setdefault(f"xaxis{xs}", {"title": {"text": text}})
         if bound.axis_titles.get("y") is not None:
-            axis_titles.setdefault(f"yaxis{ys}", {"title": {"text": bound.axis_titles["y"]}})
+            text = _two_lines(bound.axis_titles["y"])
+            axis_titles.setdefault(f"yaxis{ys}", {"title": {"text": text}})
         if bound.axis_titles.get("y_nonnegative"):
             axis_titles.setdefault(f"yaxis{ys}", {}).setdefault("rangemode", "nonnegative")
         if bound.x_tickformat:

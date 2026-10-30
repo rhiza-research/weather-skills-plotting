@@ -568,3 +568,19 @@ def test_spec_trace_with_no_uid_restyles_input_zero(tmp_path, plot_fn, capsys):
     spec = _dump(plot_fn, capsys, "-i", str(path), "--spec", '{"data": [{"meta": {"z": "t2m"}}]}')
     assert [t["uid"] for t in spec["data"]] == ["0"]
     assert spec["data"][0]["meta"]["z"] == "t2m"
+
+
+def test_wind_rose_on_an_input_keeps_its_speed_legend(tmp_path, plot_fn, capsys):
+    import numpy as np
+
+    time = np.arange("2026-01-01", "2026-01-11", dtype="datetime64[D]").astype("datetime64[ns]")
+    winds = xr.Dataset(
+        {"u10": ("time", np.linspace(-5, 5, 10)), "v10": ("time", np.linspace(3, -3, 10))},
+        coords={"time": time},
+    )
+    winds["u10"].attrs["units"] = winds["v10"].attrs["units"] = "m s-1"
+    path = write_zarr(winds, tmp_path / "winds.zarr")
+    user = {"data": [{"uid": "0", "type": "barpolar", "meta": {"bind": "windrose"}}]}
+    spec = _dump(plot_fn, capsys, "-i", str(path), "--spec", json.dumps(user))
+    # The rose names its own speed bins; the input's file name is not stamped on it.
+    assert "name" not in spec["data"][0]

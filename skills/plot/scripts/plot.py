@@ -334,7 +334,10 @@ def plot(
         data = [_default_trace(key, d, user.get(key)) for key, d in drawn.items()]
         # Lines along time share one x/y axis, one legend entry per file.
         series = bool(data) and all(
-            t["type"] == "scatter" and t["meta"].get("x") != cf_dim(datasets[t["uid"]], "longitude")
+            t["type"] == "scatter"
+            # A preset (a wind rose, boxes) named on the input's uid is not a line.
+            and "bind" not in ((user.get(t["uid"]) or {}).get("meta") or {})
+            and t["meta"].get("x") != cf_dim(datasets[t["uid"]], "longitude")
             for t in data
         )
         if series:

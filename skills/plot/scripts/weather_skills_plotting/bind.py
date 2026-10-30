@@ -876,7 +876,10 @@ def bind_series(trace, meta, ctx, loc, *, variable, sdim, color=None):
                     "line": {"color": col},
                 },
             ]
-        elif meta.get("along_color") == "cycle":
+        elif meta.get("along_color") == "cycle" or (
+            # One line per station: each its own color and legend entry unless told "same".
+            meta.get("along_color") is None and along == point_dim(da)
+        ):
             if (trace.get("line") or {}).get("color"):
                 raise UsageError(
                     f"{loc}: along_color cycle gives each member its own color; drop line.color"
@@ -1241,6 +1244,13 @@ def bind_mapping(trace, meta, ctx, loc, *, color=None):
         )
     y = _named(meta, "y", ds, loc)
     color_var = (meta.get("marker") or {}).get("color")
+    lon, lat = cf_dim(ds, "longitude"), cf_dim(ds, "latitude")
+    # The CF roles name the file's own coordinates, whatever they are called (lon, lat).
+    roles = {"longitude": lon, "latitude": lat, "time": cf_dim(ds, "time")}
+    x, y = roles.get(x) or x, roles.get(y) or y
+    meta = {**meta, "x": x, "y": y}
+    if lon and (x, y) == (lat, lon):
+        raise UsageError(f'{loc}: a station map is x "longitude" and y "latitude"; swap them')
     for key, name in (("x", x), ("y", y), ("marker.color", color_var)):
         if name is not None and name not in ds.variables:
             raise UsageError(
@@ -1248,7 +1258,7 @@ def bind_mapping(trace, meta, ctx, loc, *, color=None):
                 f"{', '.join(map(str, ds.variables))}; x, y and marker.color all come from the "
                 "trace's one input (merge two files first to plot one against the other)"
             )
-    if x == cf_dim(ds, "longitude") and y == cf_dim(ds, "latitude"):
+    if lon and (x, y) == (lon, lat):
         return bind_points(trace, meta, ctx, loc, variable=color_var)
     if color_var:
         raise UsageError(
