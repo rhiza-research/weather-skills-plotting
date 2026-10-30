@@ -52,8 +52,10 @@ and transforms when those are available (for example a fetch skill,
 - Side-by-side maps are traces on separate axes (`x`, `x2`, …), each on its
   own grid; traces on the same axes are layers. Panels of the same quantity
   share one colorbar and, over the same region, one map window; give a trace
-  its own `coloraxis` to split them. Panel titles are annotations named
-  `panel-title-N`. The canvas is sized from the maps; `layout.width` /
+  its own `coloraxis` to split them. Panels are numbered left to right,
+  then row by row down: a trace on `x7` / `y7` is in panel 7, which in a
+  6-column grid is row 2, column 1. Panel N's title is the annotation named
+  `panel-title-N`, whatever order the traces come in `data`. The canvas is sized from the maps; `layout.width` /
   `height` fix it and the maps shrink to fit.
 - **Keep titles and colorbar labels short.** A title names the subject in a
   few words (`CHIRPS weekly totals`, `Week 1`), not the pipeline that made

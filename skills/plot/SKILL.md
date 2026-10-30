@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires Python 3.12 and uv. PNG, JPG, PDF and SVG export needs Chrome (installed, or `plotly_get_chrome -y`). Self-contained; the plotting library ships in scripts/.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py *)
 metadata:
-  version: "1.0.9"
+  version: "1.0.10"
   catalog-group: figure
 ---
 
@@ -106,7 +106,8 @@ CHIRPS and ECMWF week-1 rainfall side by side over Kenya, each on its own grid, 
 ### Panels and layers
 - A file with several times or steps gets one panel each, titled with its date. `layout.grid.rows` / `columns` set the grid; `xgap` / `ygap` the spacing, as a fraction of a panel. A still image takes at most 100 panels and stops with an error past that: pick times with `meta.source.isel` / `sel` (or the select skill), aggregate first, or use `--animate`, which has no limit.
 - Panels showing the same quantity share one colorbar. To split one off: `{"data": [{"uid": "FC", "coloraxis": "coloraxis2"}]}`.
-- Panel titles are annotations named `panel-title-1`, `panel-title-2`, …; set one's text with `{"layout": {"annotations": [{"name": "panel-title-2", "text": "GEFS · hit 78% · BER 15%"}]}}`. The text takes any characters, and `<br>` for a second line. Side-by-side files default to their `-i` UID (else the file name) as the title, but UID is an id of letters, digits and `_`: put title text in the annotation, not in UID.
+- Panels are numbered 1, 2, … left to right along the top row, then on along each row below. A trace's `xaxis` / `yaxis` put it in a panel: `"x"` / `"y"` is panel 1, `"x2"` / `"y2"` panel 2, and so on. In a grid of C columns, row r, column c is panel (r − 1) × C + c: with `"grid": {"rows": 4, "columns": 6}`, row 1 is panels 1–6, row 2 is panels 7–12, and a trace on `"x7"` / `"y7"` sits in row 2, column 1. The numbers follow grid position, not the order of traces in `data`.
+- Panel N's title is the annotation named `panel-title-N`; set its text with `{"layout": {"annotations": [{"name": "panel-title-2", "text": "GEFS · hit 78% · BER 15%"}]}}`. The text takes any characters, and `<br>` for a second line. Side-by-side files default to their `-i` UID (else the file name) as the title, but UID is an id of letters, digits and `_`: put title text in the annotation, not in UID.
 - Maps use plain x/y axes in degrees (x = longitude). Add points or lines as `scatter` traces with `x` / `y`, and boxes as `layout.shapes` with `xref: "x"`, `yref: "y"`.
 - An `outline` layer frames the map unless `geo.bbox` is set, and hides the built-in admin-1 lines. Use it to draw official boundaries.
 - The canvas fits the maps (up to 760×560 px for one map, 340×340 px per panel in a grid). `layout.width` / `height` fix it.
