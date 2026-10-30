@@ -677,13 +677,7 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     grid_in = user_layout.pop("grid", None) or {}
     if grid_in.get("subplots") is not None:
         # Plotly's grid.subplots: the map whose axes sit in each cell, "" for an empty one.
-        rows, cols, cells = subplot_cells(
-            grid_in["subplots"],
-            n,
-            [e is not None for e in extents],
-            grid_in.get("rows"),
-            grid_in.get("columns"),
-        )
+        rows, cols, cells = subplot_cells(grid_in["subplots"], n, [e is not None for e in extents])
     else:
         rows, cols = choose_grid(n, aspect, grid_in.get("rows"), grid_in.get("columns"))
         cells = list(range(n))

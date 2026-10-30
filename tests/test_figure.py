@@ -12,7 +12,8 @@ from weather_skills_plotting import compile
 
 
 def _trace(uid, **kw):
-    meta = kw.pop("meta", {})
+    # A map of the fixtures' precip unless the test names its own mapping.
+    meta = kw.pop("meta", None) or {"z": "precip"}
     source = {"input": kw.pop("input", uid), **kw.pop("source", {})}
     return {"uid": uid, "type": kw.pop("type", "heatmap"), "meta": {"source": source, **meta}, **kw}
 
@@ -1554,7 +1555,6 @@ def test_grid_subplots_empty_panel_left_out_draws_nothing():
         ({"subplots": [["xy", "x2y3", "x3y3"]]}, "must name one map's axes"),
         ({"subplots": [["xy", "x2y2"], ["x3y3"]]}, "same length"),
         ({"subplots": "xy"}, "subplots. property"),
-        ({"subplots": [["xy", "x2y2", "x3y3"]], "rows": 2}, "grid.rows is 2"),
     ],
 )
 def test_grid_subplots_errors_say_what_to_fix(grid, match):

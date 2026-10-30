@@ -65,31 +65,18 @@ def grid_shape(n, rows=None, columns=None):
     return rows, math.ceil(n / rows) or 1
 
 
-def subplot_cells(subplots, n: int, filled: list[bool], rows=None, columns=None):
-    """``(rows, columns, cells)`` from Plotly's ``layout.grid.subplots``.
+def subplot_cells(subplots, n: int, filled: list[bool]):
+    """``(rows, columns, cells)`` from Plotly's ``layout.grid.subplots``, which sets the
+    grid's shape as in Plotly (Plotly has already checked its form).
 
     ``subplots`` is a list of rows of ``"xNyN"`` names (``"xy"`` for the first
     map) and ``""`` for an empty cell. ``cells[p]`` is the row-major cell of map
     panel ``p`` (axes ``x{p+1}`` / ``y{p+1}``), or None for an empty panel the
     array leaves out. ``filled[p]`` says panel ``p`` draws something.
     """
-    if (
-        not isinstance(subplots, list)
-        or not subplots
-        or not all(isinstance(row, list) and row for row in subplots)
-    ):
-        raise UsageError(
-            'layout.grid.subplots must be a list of rows, such as [["xy", "x2y2"], ["x3y3", ""]]'
-        )
     n_cols = len(subplots[0])
     if any(len(row) != n_cols for row in subplots):
         raise UsageError("layout.grid.subplots rows must all have the same length")
-    for value, name, size in ((rows, "rows", len(subplots)), (columns, "columns", n_cols)):
-        if value is not None and value != size:
-            raise UsageError(
-                f"layout.grid.{name} is {value!r} but layout.grid.subplots has {size}; "
-                "drop grid.rows / grid.columns, subplots sets the shape"
-            )
     cells = [None] * n
     for i, name in enumerate(cell for row in subplots for cell in row):
         if name == "":
