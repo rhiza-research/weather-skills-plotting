@@ -40,6 +40,14 @@ local basemapStyles = {
     },
   },
 
+  // bbox widened on every side by frac of its larger span. A bbox from inputs.NAME.bbox
+  // runs between the outermost cell centres, so without a pad the edge cells are cut
+  // in half; ws.map, ws.grid and ws.basemap pad by 3% unless given pad=0.
+  pad(bbox, frac=0.03):: {
+    local d = frac * std.max(bbox.e - bbox.w, bbox.n - bbox.s),
+    n: bbox.n + d, s: bbox.s - d, w: bbox.w - d, e: bbox.e + d,
+  },
+
   // Panel i's axis names (0 → x / y, 1 → x2 / y2, …), to add to a trace.
   axes(i):: {
     xaxis: if i == 0 then 'x' else 'x%d' % (i + 1),
@@ -47,7 +55,9 @@ local basemapStyles = {
   },
 
   // One map: lon/lat axes on the bbox with equal degrees, and a canvas sized to its aspect.
-  map(bbox, width=760):: {
+  map(box, width=760, pad=0.03)::
+    local bbox = $.pad(box, pad);
+    {
     local plotw = width - margin.l - margin.r,
     width: width,
     height: round(plotw * (bbox.n - bbox.s) / (bbox.e - bbox.w)) + margin.t + margin.b,
@@ -62,7 +72,9 @@ local basemapStyles = {
 
   // Maps in a grid, filled row by row from the top left: panel i is ws.axes(i).
   // Tick labels show on the bottom row (longitude) and left column (latitude).
-  grid(bbox, rows, cols, panel=340, gap=0.04):: {
+  grid(box, rows, cols, panel=340, gap=0.04, pad=0.03)::
+    local bbox = $.pad(box, pad);
+    {
     local aspect = (bbox.n - bbox.s) / (bbox.e - bbox.w),
     width: cols * panel + margin.l + margin.r,
     height: round(rows * panel * aspect / (1 - gap)) + margin.t + margin.b,
@@ -98,25 +110,30 @@ local basemapStyles = {
     yref: (if i == 0 then 'y' else 'y%d' % (i + 1)) + ' domain', y: 1.01, yanchor: 'bottom',
   },
 
-  // Coastlines, borders, lakes and (on country-sized maps) admin-1 lines from the
-  // built-in Natural Earth input NE, clipped to bbox, on panel i.
-  // layers lists which to draw; style overrides a layer's Plotly keys.
-  basemap(bbox, i=0, layers=null, style={}):: [
-    local res = if name == 'admin1' then '10m' else scaleFor(bbox);
-    local clip = '.clip(%g, %g, %g, %g)' % [bbox.n, bbox.w, bbox.s, bbox.e];
-    {
-      type: 'scatter', mode: 'lines', name: name, uid: 'basemap-%s-%d' % [name, i],
-      hoverinfo: 'skip', showlegend: false,
-      x: '@NE.%s_%s%s.x' % [name, res, clip],
-      y: '@NE.%s_%s%s.y' % [name, res, clip],
-    } + $.axes(i) + basemapStyles[name] + std.get(style, name, {})
-    for name in (
-      if layers != null then layers
-      else (
-        if std.max(bbox.e - bbox.w, bbox.n - bbox.s) <= 20 then ['admin1'] else []
-      ) + ['rivers', 'lakes', 'borders', 'disputed', 'coastline']
-    )
-  ],
+  // Base-map lines from the built-in Natural Earth input NE on panel i, clipped to
+  // the padded bbox. Every layer is on unless switched off by name; admin1='auto'
+  // draws admin-1 lines on maps up to 20° across. Drawn bottom first: admin1, rivers,
+  // lakes (filled, opaque over the data), borders, disputed, coastline.
+  // style overrides a layer's Plotly keys: style={borders: {line: {color: 'red'}}}.
+  basemap(box, i=0, coastline=true, borders=true, disputed=true, lakes=true, rivers=true,
+          admin1='auto', style={}, pad=0.03)::
+    local bbox = $.pad(box, pad);
+    local on = {
+      admin1: if admin1 == 'auto' then std.max(box.e - box.w, box.n - box.s) <= 20 else admin1,
+      rivers: rivers, lakes: lakes, borders: borders, disputed: disputed, coastline: coastline,
+    };
+    [
+      local res = if name == 'admin1' then '10m' else scaleFor(bbox);
+      local clip = '.clip(%g, %g, %g, %g)' % [bbox.n, bbox.w, bbox.s, bbox.e];
+      {
+        type: 'scatter', mode: 'lines', name: name, uid: 'basemap-%s-%d' % [name, i],
+        hoverinfo: 'skip', showlegend: false,
+        x: '@NE.%s_%s%s.x' % [name, res, clip],
+        y: '@NE.%s_%s%s.y' % [name, res, clip],
+      } + $.axes(i) + basemapStyles[name] + std.get(style, name, {})
+      for name in ['admin1', 'rivers', 'lakes', 'borders', 'disputed', 'coastline']
+      if on[name]
+    ],
 
   // A palette as a coloraxis: a stepped colorscale whose steps sit at the class
   // bounds, cmin / cmax at the outer bounds, and colorbar ticks at the bounds.

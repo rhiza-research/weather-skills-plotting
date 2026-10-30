@@ -8,7 +8,7 @@ local cols = 3;
 {
   data: std.flattenArrays([
     [{ type: 'heatmap', x: '@FC.lon', y: '@FC.lat', z: '@FC.tp.isel(step=%d)' % i, coloraxis: 'coloraxis' } + ws.axes(i)]
-    + ws.basemap(bbox, i, layers=['borders', 'coastline'])
+    + ws.basemap(bbox, i, rivers=false, admin1=false)
     for i in std.range(0, n - 1)
   ]),
   layout: ws.grid(bbox, rows=std.ceil(n / cols), cols=cols) + ws.classBar(ws.palettes.ppt_daily, 'mm') + {

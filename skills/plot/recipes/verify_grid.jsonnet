@@ -14,7 +14,7 @@ local map(name, field, i, axis) = { type: 'heatmap', x: '@%s.lon' % name, y: '@%
   data: [map('OW', 'precip', 0, 'coloraxis')]
         + [map(leads[k].fc, 'precip', k + 1, 'coloraxis') for k in std.range(0, std.length(leads) - 1)]
         + [map(leads[k].v, 'event_hit', cols + k + 1, 'coloraxis2') for k in std.range(0, std.length(leads) - 1)]
-        + std.flattenArrays([ws.basemap(bbox, i, layers=['borders', 'coastline']) for i in std.range(0, 2 * cols - 1) if i != cols]),
+        + std.flattenArrays([ws.basemap(bbox, i, rivers=false, admin1=false) for i in std.range(0, 2 * cols - 1) if i != cols]),
   layout: ws.grid(bbox, rows=2, cols=cols)
           + ws.classBar(ws.palettes.ppt_week, 'mm', y=0.55, len=0.4)
           + ws.classBar(ws.palettes.hits, 'Event ≥ 10 mm', axis='coloraxis2', y=0.05, len=0.4) + {

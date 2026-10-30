@@ -19,6 +19,6 @@ local centres(name, letter, color) = {
       contours: { coloring: 'none', showlabels: true, start: 900, end: 1100, size: 4 }, line: { color: 'black', width: 1 } },
     centres('HI', 'H', '#1f4e9c'),
     centres('LO', 'L', '#c0392b'),
-  ] + ws.basemap(bbox, layers=['borders', 'coastline']),
+  ] + ws.basemap(bbox, rivers=false, admin1=false),
   layout: ws.map(bbox) + { title: { text: 'Sea-level pressure (hPa), %s' % ws.date(inputs.MSL.coords.time[t]) } },
 }

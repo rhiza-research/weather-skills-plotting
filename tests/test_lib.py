@@ -67,7 +67,7 @@ def test_basemap_traces_reference_natural_earth():
         "disputed",
         "coastline",
     ]
-    assert traces[-1]["x"] == "@NE.coastline_10m.clip(5, 33, -5, 42).x"
+    assert traces[-1]["x"] == "@NE.coastline_10m.clip(5.3, 32.7, -5.3, 42.3).x"
     assert traces[0]["xaxis"] == "x3"
     wide = ev("ws.basemap({n: 40, w: -20, s: -40, e: 60})")
     assert wide[0]["name"] == "rivers" and "_50m" in wide[0]["x"]
@@ -101,3 +101,37 @@ def test_dates_and_day_of_year_ticks():
 def test_a_palette_with_the_wrong_number_of_colors_says_so():
     with pytest.raises(RuntimeError, match="3 colors for 5 bounds"):
         ev("ws.stepped({colors: ['a', 'b', 'c'], bounds: [0, 1, 2, 3, 4]})")
+
+
+def test_maps_pad_the_bbox_unless_pad_is_zero():
+    assert ev(f"ws.map({BBOX}).yaxis.range[1]") > 5
+    assert ev(f"ws.map({BBOX}).xaxis.range[0]") < 33
+    assert ev(f"ws.map({BBOX}, pad=0).yaxis.range") == [-5, 5]
+    assert ev(f"ws.grid({BBOX}, 1, 2).xaxis2.range[1]") > 42
+    assert "clip(5.3, 32.7, -5.3, 42.3)" in ev(f"ws.basemap({BBOX})[0].x")
+
+
+def test_basemap_layers_are_on_unless_switched_off():
+    names = lambda e: [t["name"] for t in ev(e)]  # noqa: E731
+    assert names(f"ws.basemap({BBOX})") == [
+        "admin1",
+        "rivers",
+        "lakes",
+        "borders",
+        "disputed",
+        "coastline",
+    ]
+    assert names(f"ws.basemap({BBOX}, lakes=false)") == [
+        "admin1",
+        "rivers",
+        "borders",
+        "disputed",
+        "coastline",
+    ]
+    assert "admin1" not in names("ws.basemap({n: 20, w: 20, s: -20, e: 60})")
+    assert "admin1" in names("ws.basemap({n: 20, w: 20, s: -20, e: 60}, admin1=true)")
+    assert names(f"ws.basemap({BBOX}, disputed=false, rivers=false, admin1=false)") == [
+        "lakes",
+        "borders",
+        "coastline",
+    ]
