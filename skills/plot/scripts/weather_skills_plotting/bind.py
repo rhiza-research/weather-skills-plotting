@@ -564,7 +564,19 @@ def bind_points(trace, meta, ctx, loc, *, variable=None):
     source = meta.get("source") or {}
     ds = _dataset(ctx, source, f"{loc}.source")
     colored = variable is not None
-    da, ds = select(ctx, source, f"{loc}.source", variable=variable or cf_dim(ds, "latitude"))
+    if not colored:
+        # Positions only: isel / sel on a dim the coordinates lack (time) picks nothing here.
+        variable = cf_dim(ds, "latitude")
+        dims = ds[variable].dims
+        source = {
+            **source,
+            **{
+                key: {d: v for d, v in source[key].items() if d in dims or d not in ds.dims}
+                for key in ("isel", "sel")
+                if source.get(key)
+            },
+        }
+    da, ds = select(ctx, source, f"{loc}.source", variable=variable)
     pdim = point_dim(ds)
     if pdim is None or pdim not in da.dims:
         raise UsageError(
@@ -1228,6 +1240,10 @@ def bind_mapping(trace, meta, ctx, loc, *, color=None):
         raise UsageError(
             f'{loc}.marker.color colors stations on a map: set {loc}.x "longitude" and '
             f'{loc}.y "latitude"'
+        )
+    if x in ds.coords and ds[x].ndim == 0 and "step" in ds.dims:
+        raise UsageError(
+            f'{loc}.x {x!r} is one value here (the init time); a forecast\'s line runs along "step"'
         )
     if x in ds.dims and (x in ("step", cf_dim(ds, "time")) or ds[x].dtype.kind in "mM"):
         return bind_series(trace, meta, ctx, loc, variable=y, sdim=x, color=color)

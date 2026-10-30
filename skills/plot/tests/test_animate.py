@@ -241,7 +241,7 @@ def test_layers_animate_like_a_still_map(grid, edge, animation_fn, tmp_path):
     # Heatmap, contour and stations change frame to frame; the outline stays put.
     moving = sorted(uids.index(f"{u}-p1") for u in ("0", "1", "2"))
     assert len(frames) == 4 and all(f["traces"] == moving for f in frames)
-    assert uids.index("3-p1") not in frames[0]["traces"]
+    assert uids.index("outline1-p1") not in frames[0]["traces"]
 
 
 def test_dumped_animation_replays_as_animation(grid, animation_fn, tmp_path, capsys):

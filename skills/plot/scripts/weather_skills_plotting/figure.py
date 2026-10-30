@@ -125,10 +125,13 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
         if trace.get("uid") in banded:
             trace = {**trace, "meta": {**trace["meta"], "_parts": parts.get(trace["uid"], {})}}
         bound = None
-        if not bind_of(trace) and (trace.get("meta") or {}).get("source"):
+        source = (trace.get("meta") or {}).get("source")
+        if not bind_of(trace) and source:
+            named = f" {source['variable']!r}" if source.get("variable") else ""
             raise UsageError(
-                f"data[{i}].meta.source names data but nothing says where it goes: set "
+                f"data[{i}].meta.source names data{named} but nothing says where it goes: set "
                 f'data[{i}].meta.x / y (e.g. "x": "time" for a line) or meta.z (a heatmap)'
+                + (" in place of meta.source.variable" if named else "")
             )
         if bind_of(trace):
             bound = bind_trace(trace, ctx, f"data[{i}]", color=colorway[n_colored % len(colorway)])

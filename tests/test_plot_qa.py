@@ -53,7 +53,9 @@ def test_report_figure_prints_null(tmp_path, capsys):
     assert "inspect-zarr" in out
 
 
-HEATMAP = {"data": [{"type": "heatmap", "uid": "a", "meta": {"source": {"input": "a"}}}]}
+HEATMAP = {
+    "data": [{"type": "heatmap", "uid": "a", "meta": {"source": {"input": "a"}, "z": "precip"}}]
+}
 
 
 def test_export_prints_hash_and_not_null(tmp_path, capsys):

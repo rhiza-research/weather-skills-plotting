@@ -32,8 +32,14 @@ def test_dump_spec_defaults_by_data_shape(tmp_path, plot_fn, capsys):
     pts = write_zarr(make_point_obs(), tmp_path / "pts.zarr")
     spec = _dump(plot_fn, capsys, "-i", str(grid), "-i", str(pts))
     a, b = spec["data"]
-    assert a == {"uid": "0", "type": "heatmap", "meta": {"source": {"input": "0"}}}
-    assert b["meta"]["bind"] == "points" and b["xaxis"] == "x2"
+    assert a == {"uid": "0", "type": "heatmap", "meta": {"source": {"input": "0"}, "z": "precip"}}
+    assert b["meta"] == {
+        "source": {"input": "1"},
+        "x": "longitude",
+        "y": "latitude",
+        "marker": {"color": "precip"},
+    }
+    assert b["type"] == "scatter" and b["xaxis"] == "x2"
     meta = spec["layout"]["meta"]
     assert meta["version"] == 3 and meta["skill"] == "plot"
     assert meta["inputs"] == {"0": str(grid), "1": str(pts)}
@@ -44,7 +50,7 @@ def test_inputs_named_on_the_command_line(tmp_path, plot_fn, capsys):
     pts = write_zarr(make_point_obs(), tmp_path / "pts.zarr")
     spec = _dump(plot_fn, capsys, "-i", f"{grid}=OBS", "-i", str(pts))
     assert [t["uid"] for t in spec["data"]] == ["OBS", "1"]
-    assert spec["data"][0]["meta"] == {"source": {"input": "OBS"}}
+    assert spec["data"][0]["meta"] == {"source": {"input": "OBS"}, "z": "precip"}
     assert spec["layout"]["meta"]["inputs"] == {"OBS": str(grid), "1": str(pts)}
 
     spec = _dump(plot_fn, capsys, "--layer", f"heatmap:{grid}=RAIN", "--layer", f"scatter:{pts}")
@@ -84,7 +90,7 @@ def test_dump_merges_user_spec(tmp_path, plot_fn, capsys):
     user = {"data": [{"uid": "0", "type": "contour"}], "layout": {"title": {"text": "Hi"}}}
     spec = _dump(plot_fn, capsys, "-i", str(grid), "--spec", json.dumps(user))
     assert spec["data"][0]["type"] == "contour"
-    assert spec["data"][0]["meta"] == {"source": {"input": "0"}}
+    assert spec["data"][0]["meta"] == {"source": {"input": "0"}, "z": "precip"}
     assert spec["layout"]["title"] == {"text": "Hi"}
 
 
@@ -161,7 +167,8 @@ def test_series_of_a_forecast(tmp_path, plot_fn):
                         "uid": "0",
                         "type": "scatter",
                         "meta": {
-                            "bind": "series",
+                            "x": "step",
+                            "y": "tp",
                             "along": "number",
                             "band": [10, 90],
                         },
@@ -223,9 +230,11 @@ def test_layers(tmp_path, plot_fn, capsys):
         f"mask:{edge}",
     ]
     spec = _dump(plot_fn, capsys, *argv)
-    assert [t["uid"] for t in spec["data"]] == ["0", "1", "2"]
+    # Unnamed outlines are outline1, … as beside -i inputs; other layers keep their position.
+    assert [t["uid"] for t in spec["data"]] == ["0", "1", "outline1"]
     assert spec["layout"]["meta"]["geo"]["mask_geojson"] == str(edge)
-    run_skill(plot_fn, *argv, "-o", str(tmp_path / "layers.png"))
+    restyle = json.dumps({"data": [{"uid": "outline1", "line": {"color": "#333333"}}]})
+    run_skill(plot_fn, *argv, "--spec", restyle, "-o", str(tmp_path / "layers.png"))
 
 
 @pytest.mark.parametrize(
@@ -327,7 +336,7 @@ def test_each_series_keeps_only_its_own_settings(tmp_path, plot_fn, capsys):
     b = write_zarr(_area(make_gridded(n_time=3)), tmp_path / "b.zarr")
     user = {
         "data": [
-            {"uid": "0", "meta": {"source": {"variable": "precip"}}},
+            {"uid": "0", "meta": {"x": "time", "y": "precip"}},
             {"uid": "1", "type": "bar"},
         ]
     }
@@ -392,7 +401,7 @@ def test_series_with_no_common_dates_warn(tmp_path, plot_fn, capsys):
 
 def test_gridded_input_as_a_series_names_the_fix(tmp_path, plot_fn, capsys):
     a = write_zarr(make_gridded(n_time=2), tmp_path / "a.zarr")
-    user = {"data": [{"uid": "0", "type": "scatter", "meta": {"bind": "series"}}]}
+    user = {"data": [{"uid": "0", "type": "scatter", "meta": {"x": "time", "y": "precip"}}]}
     with pytest.raises(SystemExit):
         run_skill(plot_fn, "-i", str(a), "-o", str(tmp_path / "x.png"), "--spec", json.dumps(user))
     assert "summarize-dim" in capsys.readouterr().err
@@ -490,3 +499,18 @@ def test_one_figure_to_several_outputs(tmp_path, plot_fn):
     png, html = tmp_path / "a.png", tmp_path / "a.html"
     run_skill(plot_fn, "-i", str(grid), "-o", str(png), "-o", str(html))
     assert png.is_file() and "Plotly.newPlot" in html.read_text()
+
+
+def test_preset_restyles_an_input_by_uid(tmp_path, plot_fn):
+    # The input's own trace would be a line (x time, y …); a preset on its uid replaces that.
+    import numpy as np
+
+    time = np.arange("2026-01-01", "2026-01-11", dtype="datetime64[D]").astype("datetime64[ns]")
+    winds = xr.Dataset(
+        {"u10": ("time", np.linspace(-5, 5, 10)), "v10": ("time", np.linspace(3, -3, 10))},
+        coords={"time": time},
+    )
+    winds["u10"].attrs["units"] = winds["v10"].attrs["units"] = "m s-1"
+    path = write_zarr(winds, tmp_path / "winds.zarr")
+    spec = json.dumps({"data": [{"uid": "0", "type": "barpolar", "meta": {"bind": "windrose"}}]})
+    run_skill(plot_fn, "-i", str(path), "--spec", spec, "-o", str(tmp_path / "rose.png"))

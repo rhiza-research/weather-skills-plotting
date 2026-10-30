@@ -109,3 +109,23 @@ def test_chart_on_a_map_is_an_error():
     }
     with pytest.raises(UsageError, match=r"data\[1\] is a chart but this figure is a map"):
         compile(spec, {"G": make_gridded(), "L": _members()})
+
+
+def test_uncolored_station_map_ignores_a_time_pick():
+    meta = {"source": {"isel": {"time": 0}}, "x": "longitude", "y": "latitude"}
+    fig = compile({"data": [{"uid": "0", "type": "scatter", "meta": meta}]}, {"0": make_station()})
+    assert len([t for t in fig.data if t.uid == "0"][0].x) == 3
+
+
+def test_forecast_line_on_time_points_to_step():
+    from conftest import make_forecast
+
+    meta = {"source": {"isel": {"latitude": 0, "longitude": 0}}, "x": "time", "y": "tp"}
+    with pytest.raises(UsageError, match=r"x 'time' is one value here.*\"step\""):
+        compile({"data": [{"uid": "0", "meta": meta}]}, {"0": make_forecast()})
+
+
+def test_source_variable_alone_points_to_the_mapping():
+    spec = {"data": [{"uid": "0", "type": "heatmap", "meta": {"source": {"variable": "precip"}}}]}
+    with pytest.raises(UsageError, match=r"names data 'precip'.*in place of meta.source.variable"):
+        compile(spec, {"0": make_gridded()})

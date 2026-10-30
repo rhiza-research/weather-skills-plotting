@@ -91,10 +91,16 @@ def _only_variable(ds):
 def _default_trace(uid: str, ds, user=None, *, xaxis=None) -> dict:
     """Heatmap for a lat/lon grid, station markers for points, else a line along time or step,
     with meta naming what fills x / y / z. A same-uid ``user`` trace overrides these key by
-    key; one naming its own x / y on a station file draws no station map."""
+    key; one naming its own x / y on a grid or station file draws no map."""
     source = {"input": uid}
     umeta = (user or {}).get("meta") or {}
     var = _only_variable(ds)
+    if umeta.get("bind"):
+        # A preset fills its own arrays: the input's trace gives only the source.
+        trace = {"uid": uid, "type": "scatter", "meta": {"source": source}}
+        if xaxis:
+            trace.update(xaxis=xaxis, yaxis="y" + xaxis[1:])
+        return trace
     lat, lon = cf_dim(ds, "latitude"), cf_dim(ds, "longitude")
     pdim = point_dim(ds)
     tdim = next((d for d in ("time", "step") if d in ds.dims and ds.sizes[d] > 1), None)
@@ -105,7 +111,7 @@ def _default_trace(uid: str, ds, user=None, *, xaxis=None) -> dict:
     elif pdim is not None and not ({"x", "y"} & set(umeta)):
         meta = {"source": source, "x": lon, "y": lat, "marker": {"color": var} if var else None}
         trace = {"type": "scatter", "meta": meta}
-    elif pdim is None and lat in ds.dims and lon in ds.dims:
+    elif pdim is None and lat in ds.dims and lon in ds.dims and not ({"x", "y"} & set(umeta)):
         trace = {"type": "heatmap", "meta": {"source": source, "z": var}}
     else:
         x = tdim or next((d for d in ("step", "time") if d in ds.dims), None)
@@ -122,7 +128,7 @@ def _as_drawn(ds, trace):
     what is drawn (one line per station with ``along``, not a station map)."""
     meta = (trace or {}).get("meta") or {}
     source = meta.get("source") or {}
-    variable = meta.get("y") or meta.get("z") or (meta.get("marker") or {}).get("color")
+    variable = (meta.get("marker") or {}).get("color") or meta.get("z") or meta.get("y")
     if variable in ds.data_vars:
         ds = ds[[variable]]
     picks = {**(source.get("isel") or {}), **(source.get("sel") or {})}
@@ -137,7 +143,12 @@ def _as_drawn(ds, trace):
 
 def _layer_traces(layers):
     data, datasets, mask = [], {}, None
-    for uid, layer in zip(input_ids([x.name for x in layers]), layers, strict=True):
+    # Unnamed outlines are outline1, outline2, …, as they are beside -i inputs.
+    names, n_outline = [], 0
+    for x in layers:
+        n_outline += x.kind == "outline"
+        names.append(x.name or (f"outline{n_outline}" if x.kind == "outline" else None))
+    for uid, layer in zip(input_ids(names), layers, strict=True):
         if layer.kind == "mask":
             mask = layer.path
             continue

@@ -13,32 +13,36 @@ import json
 from weather_skills_plotting import spec
 from weather_skills_plotting.themes import DEFAULT_THEME_FILE
 
+_MAPPING = {
+    "z": "heatmap / contour: the lat/lon grid variable (x / y are its longitude / latitude); "
+    "panels the time/step dim",
+    "x / y": 'other types. x "longitude" with y "latitude": stations on a map. x "time" or '
+    '"step": y as a line along it. x and y two variables (or a coordinate such as county): '
+    'one point per shared position, or bars with type "bar"',
+    "marker.color": "stations: the variable that colors them (unset: plain dots)",
+}
+
 _BINDS = {
-    "field": "lat/lon grid → z of a heatmap or contour (default for those types); panels the time/step dim",
     "speed": "wind speed from u/v → heatmap or contour (pair with an arrows trace for a quiver map)",
     "arrows": "u/v wind arrows on a map → scatter lines; meta.arrows.step / .scale",
-    "points": "station_id / point_id values → colored scatter markers on a map",
     "geojson": "GeoJSON boundary → scatter lines (meta.source.geojson); repeats on every panel",
-    "series": "1-D along time or step → scatter / bar (default for those types)",
-    "xy": "one variable against another from the same input → scatter markers, or bars with "
-    'type "bar" (set by meta.x / meta.y)',
     "samples": "values at a point per step → box (all samples) or scatter (the mean)",
-    "windrose": "u/v pooled into a polar wind rose → barpolar (default for that type)",
+    "windrose": "u/v pooled into a polar wind rose → barpolar",
 }
 
 _META = {
-    "bind": "how the trace's arrays are filled; see BINDS",
-    "source": "the data: {input, variable, isel, sel, u, v, geojson, mask_geojson, point}",
-    "x / y": "variable names for a scatter of one against the other, a point per shared "
-    "position (merge puts variables from two files in one)",
+    "x / y / z / marker.color": "the variable or coordinate that fills that Plotly attribute; "
+    "see MAPPING",
+    "bind": "a preset that computes its arrays (no x / y / z / marker); see BINDS",
+    "source": "the data: {input, isel, sel, u, v, geojson, mask_geojson, point}",
     "facet": "dim to panel (default: step or time when present); false for none",
-    "along": "series: dim drawn as one line per value (e.g. number for spaghetti)",
+    "along": "line: dim drawn as one line per value (e.g. number for spaghetti)",
     "along_color": "same (default; one color, one legend entry) or cycle",
-    "band": "series with along: percentile pair such as [10, 90] ([0, 100] = min–max); draws "
+    "band": "line with along: percentile pair such as [10, 90] ([0, 100] = min–max); draws "
     "the mean (this uid), the shading (uid-band) and member lines (uid-members), each "
     "styled by its own data entry",
-    "members": "series with band: false hides the member lines (band and mean only)",
-    "align": "series: dayofyear overlays years on one seasonal axis",
+    "members": "line with band: false hides the member lines (band and mean only)",
+    "align": "line: dayofyear overlays years on one seasonal axis",
     "palette": "class palette name (default_precip, default_precip_anom, ppt_week, spi, …, or "
     "one a theme adds: see THEMES), "
     "color list, or {colors, bounds, under, over}: bounds are class edges, one color per "
@@ -50,16 +54,17 @@ _META = {
 
 _SOURCE = {
     "input": "input id: UID from -i PATH=UID, else the position 0, 1, … (obs, forecast1 … for --verify grids; forecast, mclimate for --mediogram)",
-    "variable": "data variable to draw; required when the file holds more than one",
+    "variable": "samples preset: the variable when the file holds several (other traces name "
+    "it in y / z / marker.color)",
     "isel": '0-based positions, e.g. {"number": 0, "step": [0, 1]}; -1 is the last. One '
     "integer picks one value (one map); a list keeps the dim (one panel each); a range is "
     '{"start": 0, "stop": 12, "step": 3} (stop excluded)',
     "sel": 'labels to select (nearest for numbers and dates), e.g. {"time": "2026-09-21"}',
     "u / v": "wind component variables (default: found by CF standard_name eastward_wind / "
     "northward_wind, or names such as u10/v10, u/v)",
-    "geojson": "geojson bind: path to the boundary file",
+    "geojson": "geojson preset: path to the boundary file",
     "mask_geojson": "blank cells outside this polygon for this trace only",
-    "point": 'samples and windrose binds: {"lat": …, "lon": …}, nearest grid cell',
+    "point": 'samples and windrose presets: {"lat": …, "lon": …}, nearest grid cell',
 }
 
 _LAYOUT_META = {
@@ -174,8 +179,9 @@ _RECIPES = [
         '{"data": [{"uid": "1", "coloraxis": "coloraxis2"}]}',
     ),
     (
-        "The variable to draw from a multi-variable file",
-        '{"data": [{"uid": "1", "meta": {"source": {"variable": "precip"}}}]}',
+        "The variable to draw from a multi-variable file (z on a map; y for a line, "
+        "marker.color for stations)",
+        '{"data": [{"uid": "1", "meta": {"z": "precip"}}]}',
     ),
     (
         "Boundary outline",
@@ -197,11 +203,15 @@ _RECIPES = [
         '{"data": [{"uid": "0", "meta": {"bind": "speed"}}, {"uid": "arrows", "type": "scatter", '
         '"meta": {"bind": "arrows", "source": {"input": "0"}, "arrows": {"step": 3}}}]}',
     ),
-    ("Wind rose", '{"data": [{"uid": "0", "type": "barpolar"}]}'),
+    (
+        "Wind rose at a point",
+        '{"data": [{"uid": "0", "type": "barpolar", "meta": {"bind": "windrose"}}], "layout": '
+        '{"meta": {"geo": {"point": {"lat": -1.29, "lon": 36.82}}}}}',
+    ),
     (
         "Area-mean time series of a grid (summarize-dim --dim latitude --dim longitude "
         "--method mean --lat-weighted first)",
-        '{"data": [{"uid": "0", "type": "scatter", "meta": {"bind": "series"}}]}',
+        '{"data": [{"uid": "0", "type": "scatter", "meta": {"x": "time", "y": "precip"}}]}',
     ),
     (
         "One variable against another (e.g. a merge --by-year output)",
@@ -290,10 +300,13 @@ def spec_reference(recipes=None) -> str:
     parts = [
         "PLOT SPEC (--spec)",
         '  A standard Plotly figure: {"data": [traces], "layout": {…}}. Every key is Plotly\'s',
-        "  (https://plotly.com/python/reference/) except meta, which holds the dataset bindings.",
+        "  (https://plotly.com/python/reference/) except meta, which names the data: each",
+        "  input's trace names the variable or coordinate that fills x / y / z / marker.color.",
         "  --spec is merged onto the figure the command builds from its files: data[] by uid",
         "  (else position; a new uid adds a trace), layout.annotations / shapes by name, and",
         "  everything else deep-merged. Run with --dump-spec - to see that figure, edit, pass back.",
+        "  A spec with new-uid traces that read data draws only those, plus the inputs it",
+        "  restyles by uid.",
         "  Output by -o suffix: .png, .jpg, .html (interactive, works offline), or .gif",
         "  (--animate only).",
         "",
@@ -303,9 +316,11 @@ def spec_reference(recipes=None) -> str:
         "  row down; a trace on x7 / y7 is in panel 7 (row 2, column 1 of a 6-column grid),",
         "  titled by the annotation named panel-title-7.",
         "",
-        _block("BINDS (data[].meta.bind)", _BINDS),
+        _block("MAPPING (data[].meta)", _MAPPING),
         "",
-        _block("data[].meta", {**{k: _META[k] for k in _META}}),
+        _block("BINDS (data[].meta.bind: presets that compute their arrays)", _BINDS),
+        "",
+        _block("data[].meta", _META),
         "  (keys: " + ", ".join(sorted(spec.TRACE_META_KEYS)) + ")",
         "",
         _block("data[].meta.source", _SOURCE),

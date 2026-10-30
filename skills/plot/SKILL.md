@@ -36,11 +36,11 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --animate --layer heatmap:rain_daily.
 uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py --animate -i rain_daily.zarr -o rain.gif
 ```
 
-The plot type follows the data: a lat/lon grid is a colored map, stations are colored markers, 1-D series are lines on one time axis. `meta.x` / `meta.y` scatter two variables or coordinates; a name coordinate such as `county` becomes a category axis (a dot chart: `"meta": {"x": "precip_7d", "y": "county"}`). `--obs`/`--forecast`/`--verify` and `--mediogram` pick the two special figures (sections below); `--animate` plays any map through time instead of drawing side-by-side panels. Use one of the three at a time.
+The plot type follows the data: a lat/lon grid is a colored map, stations are colored markers, 1-D series are lines on one time axis. Each trace's `meta` names the variable or coordinate that fills each Plotly attribute: `"z": "precip"` on a heatmap or contour; `"x": "longitude", "y": "latitude", "marker": {"color": "precip"}` for stations; `"x": "time", "y": "precip"` for a line; two variables in `x` / `y` for a scatter of one against the other. A name coordinate such as `county` becomes a category axis (a dot chart: `"meta": {"x": "precip_7d", "y": "county"}`). `--obs`/`--forecast`/`--verify` and `--mediogram` pick the two special figures (sections below); `--animate` plays any map through time instead of drawing side-by-side panels. Use one of the three at a time.
 
 ### Arguments
 - `--input`, `-i` — Zarr to draw, as `PATH` or `PATH=UID`; repeat for side-by-side maps or more lines. `UID` (letters, digits, `_`, e.g. `WRF`) is the trace's `"uid"` in `--spec`; legend text goes in that trace's `"name"`, panel titles in a `panel-title-N` annotation.
-- `--layer` — `KIND:PATH` or `KIND:PATH=UID` to stack on one map; repeat. Kinds: `heatmap`, `contour` (over a heatmap: labeled black lines, every 4 hPa for sea-level pressure; `"contours": {"coloring": "fill"}` fills it), `scatter` (stations; `"mode": "markers+text"` labels each with its `name` coordinate, else its id; local-extrema highs / lows print as a blue H / red L over the central value, restyled by a trace with that layer's uid), `quiver` (wind u/v: a speed field UID and arrows UID-arrows, each picking its own `isel` / `sel`), `outline` and `mask` (GeoJSON). `outline` and `mask` layers also combine with `-i` inputs (`-i grid.zarr --layer outline:counties.geojson`); `-i` itself takes Zarr paths only.
+- `--layer` — `KIND:PATH` or `KIND:PATH=UID` to stack on one map; repeat. An unnamed layer's uid is its position (`"0"`, `"1"`, …), except unnamed outlines, which are `outline1`, `outline2`, … in order, as beside `-i` inputs. Kinds: `heatmap`, `contour` (over a heatmap: labeled black lines, every 4 hPa for sea-level pressure; `"contours": {"coloring": "fill"}` fills it), `scatter` (stations; `"mode": "markers+text"` labels each with its `name` coordinate, else its id; local-extrema highs / lows print as a blue H / red L over the central value, restyled by a trace with that layer's uid), `quiver` (wind u/v: a speed field UID and arrows UID-arrows, each picking its own `isel` / `sel`), `outline` and `mask` (GeoJSON). `outline` and `mask` layers also combine with `-i` inputs (`-i grid.zarr --layer outline:counties.geojson`); `-i` itself takes Zarr paths only.
 - `--obs`, `--forecast`, `--verify` — verification grid: the observation for one week, then each lead's forecast (repeat, week-1 first) and its verify-skill output (once per `--forecast`, same order). See **Verification grid**.
 - `--mediogram` — forecast vs model climate at one point; pass `-i` twice (forecast, then m-climate). See **Mediogram**.
 - `--animate` — the same map, with its times or steps played as frames; takes the same `-i` / `--layer` inputs. `-o` must end in `.html` or `.gif`. See **Animation**.
@@ -53,6 +53,8 @@ The plot type follows the data: a lat/lon grid is a colored map, stations are co
 `--spec` changes the defaults. It takes [Plotly figure](https://plotly.com/python/reference/) JSON, `{"data": [...], "layout": {...}}`; write only the parts you change.
 
 Each input file is one entry in `data`. Name it on the command line (`-i ecmwf.zarr=FC`) and put that name in `"uid"`. Unnamed files are `"0"`, `"1"`, … in order.
+
+Each file's trace already names what it draws (`--dump-spec -` shows it), so a restyle by uid sets only what it changes. A trace with a new uid that reads data (`meta.source.input`) is drawn instead of the inputs; inputs it does not restyle by uid are left out.
 
 A trace's `uid` is its file's UID when one is given, else its position: `-i a.zarr=West` is `"uid": "West"`, and `"0"` then matches nothing (plot stops). Copy uids from the `-i` line, or run `--dump-spec -` to see them. UID is an id (letters, digits, `_`); it is also the default legend and panel text until the trace sets `"name"` (legend text such as `"TAHMO (automatic)"`) or a `panel-title-N` annotation its title.
 
@@ -78,7 +80,7 @@ Every row below assumes `-i ecmwf.zarr=FC`.
 | Add a second title line | `{"layout": {"title": {"text": "ECMWF rainfall", "subtitle": {"text": "Week 1: 16–22 Oct"}}}}` or `<br>` in `text` |
 | Title a panel | `{"layout": {"annotations": [{"name": "panel-title-2", "text": "ECMWF"}]}}` |
 | Pick one step | `{"data": [{"uid": "FC", "meta": {"source": {"isel": {"step": 0}}}}]}` |
-| Pick the variable to draw | `{"data": [{"uid": "FC", "meta": {"source": {"variable": "iod_mode_index"}}}]}` |
+| Pick the variable to draw | `{"data": [{"uid": "FC", "meta": {"z": "tp"}}]}` (`y` for a line, `marker.color` for stations) |
 | Set the color range | `{"data": [{"uid": "FC", "zmin": 0, "zmax": 100}]}` |
 | Set the map window | `{"layout": {"meta": {"geo": {"bbox": [5.5, 33.5, -5, 42.5]}}}}` |
 | Draw contours | `{"data": [{"uid": "FC", "type": "contour"}]}` |
@@ -89,7 +91,7 @@ Every row below assumes `-i ecmwf.zarr=FC`.
 The figure at `-o`. PNG/JPG also print `data: NULL` when every value drawn is NaN.
 
 ### Notes
-- A file with more than one data variable needs `meta.source.variable` set to the one to draw. Plot stops rather than guess; inspect-zarr lists the variables.
+- A file with more than one data variable needs the trace to name the one to draw: `z` on a map, `y` for a line, `marker.color` for stations. Plot stops rather than guess; inspect-zarr lists the variables.
 - A map shows one value per cell: pick one value of any extra dim (`number`, `vertical`) with `isel` / `sel`, panel it with `"meta": {"facet": "number"}`, or average it first with summarize-dim.
 - Plot draws the values in the file, in its units (K stays K, Pa stays Pa; run unit-convert for °C or hPa), so `zmin`, contour levels and palette edges are in those units. A precip rate stays a rate (mm/day); for period totals (mm) run aggregate-temporal, then convert-to-totals.
 
@@ -113,11 +115,11 @@ CHIRPS and ECMWF week-1 rainfall side by side over Kenya, each on its own grid, 
 - The canvas fits the maps (up to 760×560 px for one map, 340×340 px per panel in a grid). `layout.width` / `height` fix it.
 
 ### Lines over time
-- A series runs along `time`, or for a forecast along its valid date (init time + `step`). Every other dim must go: pick one value with `isel` / `sel`, draw one line per value with `"along": "number"` (or `"station_id"`: a station file is a map until you pick or `along` its stations), or average it first with summarize-dim (for an area mean, `--dim latitude --dim longitude --method mean --lat-weighted`).
+- A line is `"meta": {"x": "time", "y": "precip"}`; a forecast takes `"x": "step"` and runs along its valid date (init time + `step`). Every other dim must go: pick one value with `isel` / `sel`, draw one line per value with `"along": "number"` (or `"station_id"`: a station file is a map until you pick or `along` its stations), or average it first with summarize-dim (for an area mean, `--dim latitude --dim longitude --method mean --lat-weighted`).
 - Each 1-D file is one line on one shared axis (up to 26 files). The legend names it after its file, or its station id; `"name"` renames it. With two or more lines the legend sits in rows above the plot; one line has none.
-- Each line uses only its own settings, as in Plotly: set `along`, `band`, `align` or `source.variable` on every line that needs it.
+- Each line uses only its own settings, as in Plotly: set `y`, `along`, `band` or `align` on every line that needs it.
 - `"along": "number"` draws one line per member under one legend entry; `"along_color": "cycle"` gives each its own color and entry. `"band": [10, 90]` shades that percentile range (`[0, 100]` is min–max) and draws the mean bold; `"members": false` hides the members. A band trace draws three parts, each styled as its own trace: its uid is the mean line (`name`, `line`), `UID-members` the member lines and `UID-band` the shading (`name`, `fillcolor`): `{"data": [{"uid": "FC", "name": "Mean", "line": {"color": "red", "width": 4}, "meta": {"along": "number", "band": [0, 100]}}, {"uid": "FC-members", "line": {"color": "grey"}, "opacity": 0.3}, {"uid": "FC-band", "name": "Range"}]}`. With `"type": "bar"`, `along` gives one bar series per value.
-- Two variables of one file are two `-i` of the same path, each with its own `"meta": {"source": {"variable": …}}`.
+- Two variables of one file: one `-i`, and one trace per variable, each with its own `y`: `{"data": [{"uid": "P", "meta": {"source": {"input": "0"}, "x": "time", "y": "precip"}}, {"uid": "T", "yaxis": "y2", "meta": {"source": {"input": "0"}, "x": "time", "y": "t2m"}}]}`.
 - One panel per line, as in Plotly: put each line on its own axes and lay them out with a grid: `{"data": [{"uid": "1", "xaxis": "x2", "yaxis": "y2"}], "layout": {"grid": {"rows": 2, "columns": 1, "pattern": "coupled"}}}`. A right-hand axis: `{"data": [{"uid": "1", "yaxis": "y2"}], "layout": {"yaxis2": {"overlaying": "y", "side": "right"}}}`.
 - Lines on one axis with different units, or with no dates in common, print a warning and still draw.
 - `"align": "dayofyear"` on each line puts every year on one calendar, labelled `1 Oct`, `15 Nov`, … (29 Feb joins 28 Feb). Pass one file per year, each a single season; a season across New Year (DJF) puts Jan–Feb at the left.
@@ -141,7 +143,7 @@ CHIRPS and ECMWF week-1 rainfall side by side over Kenya, each on its own grid, 
 ### Verification grid
 `--obs OBS --forecast W1 --verify V1 --forecast W2 --verify V2 …` draws, for one verifying week, the observation and one column per forecast lead on one color scale, with each lead's verify map (hits, bias, or MAE from the verify skill) underneath and the metric named under the observation. One `--forecast` gives one row: observation, forecast, verify map.
 - Prepare: `--obs` and each `--forecast` hold one time, the verifying week (select it first; a forecast with a `step` axis needs step-to-time before that). Obs and forecasts share one grid: coarsen the obs onto the forecast with `--reference-grid`. An ensemble forecast is drawn as its mean: run summarize-dim `--dim number --method mean` first. For rainfall, run aggregate-temporal, then convert-to-totals, before verify. All `--verify` files use one metric.
-- Traces: `"obs"`, `"forecast1"` … `"forecastN"`, `"verify1"` … `"verifyN"`; column titles `panel-title-1` (obs), `panel-title-2` (week 1), …; the metric label `row-label-metric`. Obs and forecasts share `coloraxis`, verify maps `coloraxis2` (`{"layout": {"coloraxis2": {"cmin": -20, "cmax": 20}}}`). Name the variable on each input that holds several: `{"data": [{"uid": "forecast1", "meta": {"source": {"variable": "tp"}}}]}`.
+- Traces: `"obs"`, `"forecast1"` … `"forecastN"`, `"verify1"` … `"verifyN"`; column titles `panel-title-1` (obs), `panel-title-2` (week 1), …; the metric label `row-label-metric`. Obs and forecasts share `coloraxis`, verify maps `coloraxis2` (`{"layout": {"coloraxis2": {"cmin": -20, "cmax": 20}}}`). Name the variable on each input that holds several: `{"data": [{"uid": "forecast1", "meta": {"z": "tp"}}]}`.
 - Colors: hits are disagree / below / hit, with the event threshold in the colorbar title; bias is centred on zero to the 98th percentile of |bias| (rainfall brown = too dry, green = too wet); MAE runs white to warm. Each lead's score summary goes to stderr.
 - The default title is the week's dates (`5–11 Oct '26`), from any input that still has a `time` coordinate. A `layout.title` replaces it as given, so include the week in your own title.
 
