@@ -143,7 +143,8 @@ def evaluate(spec: SpecArg, inputs_meta: dict, *, jpath=(), ext_strs=()) -> dict
     """Evaluate the Jsonnet to a figure dict, with std.extVar('inputs') and --ext-str set."""
     import _gojsonnet
 
-    jpathdir = [str(LIB_DIR), *[str(p) for p in jpath]]
+    # Recipes import by name too: importstr 'map.jsonnet' reads one.
+    jpathdir = [str(LIB_DIR), str(RECIPES_DIR), *[str(p) for p in jpath]]
     ext_vars = dict(ext_strs)
     ext_codes = {"inputs": json.dumps(inputs_meta)}
     try:

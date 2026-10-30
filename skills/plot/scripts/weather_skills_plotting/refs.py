@@ -281,9 +281,9 @@ def _attribute(base, attr, ref):
     if isinstance(base, NELayer):
         raise UsageError(f"{ref}: clip a Natural Earth layer first: .clip(n, w, s, e).{attr}")
     if isinstance(base, GeoLines):
-        if attr not in ("x", "y"):
-            raise UsageError(f"{ref}: a GeoJSON input has .x and .y")
-        return base.xy()[0 if attr == "x" else 1]
+        if attr not in ("x", "y", "lon", "lat"):
+            raise UsageError(f"{ref}: a GeoJSON input has .x (or .lon) and .y (or .lat)")
+        return base.xy()[0 if attr in ("x", "lon") else 1]
     if isinstance(base, _Accessor):
         if base.kind == "attrs":
             if attr not in base.da.attrs:
@@ -323,11 +323,16 @@ def to_json_value(value, path: str, ref: str):
     key = path.rsplit(".", 1)[-1].split("[")[0]
     if hasattr(value, "dims"):
         da = value
+        allowed = 2 if key in ("z", "customdata") else 1
+        # A dim of length 1 (the one time of a period total) holds no choice: drop such
+        # dims while there are more than the attribute takes.
+        for dim in [d for d in da.dims if da.sizes[d] == 1]:
+            if da.ndim > allowed:
+                da = da.squeeze(dim)
         if key == "z":
             lat, lon = cf_dim(da, "latitude"), cf_dim(da, "longitude")
             if da.ndim == 2 and set(da.dims) == {lat, lon}:
                 da = da.transpose(lat, lon)
-        allowed = 2 if key in ("z", "customdata") else 1
         if key == "z" and da.ndim != 2:
             raise UsageError(_shape_error(path, ref, da, 2))
         if da.ndim > allowed:
@@ -383,7 +388,16 @@ def resolve(spec, inputs: dict):
     Returns a new spec and ``{path: reference}`` for every reference resolved.
     """
     check_literals(spec)
+    for path, node in _traces_and_layout(spec):
+        if "meta" in node:
+            raise UsageError(
+                f"{path}.meta: plot has no meta keys. A palette is "
+                "layout: ws.classBar(palette, title) (or a Plotly colorscale); an outline is a "
+                "scatter with x: '@NAME.x', y: '@NAME.y'; data is an @ reference in the "
+                "Plotly attribute itself (see --recipe)"
+            )
     found = {}
+    grids = []
 
     def walk(node, path):
         if isinstance(node, dict):
@@ -401,9 +415,34 @@ def resolve(spec, inputs: dict):
                 f"({', '.join(sorted(LIMIT_KEYS))}); data to draw is stored values"
             )
         found[path] = node
+        # A frame's trace may set only z; it takes x / y from the trace it updates.
+        if path.startswith("data[") and path.endswith(".z") and hasattr(value, "dims"):
+            if {cf_dim(value, "latitude"), cf_dim(value, "longitude")} <= set(value.dims):
+                grids.append((path[:-2], node))
         return to_json_value(value, path, node)
 
-    return walk(spec, ""), found
+    resolved = walk(spec, "")
+    for trace_path, ref in grids:
+        trace = resolved
+        for part in trace_path.replace("[", ".[").split("."):
+            trace = trace[int(part[1:-1])] if part.startswith("[") else trace[part]
+        if "x" not in trace or "y" not in trace:
+            name = ref[1:].split(".")[0]
+            raise UsageError(
+                f"{trace_path}: z = {ref} is a lat/lon grid; set x: '@{name}.lon' and "
+                f"y: '@{name}.lat' too, so it sits on degree axes with outlines and the base map"
+            )
+    return resolved, found
+
+
+def _traces_and_layout(spec):
+    """``(path, object)`` for every trace (frames included) and the layout."""
+    out = [(f"data[{i}]", t) for i, t in enumerate(spec.get("data") or []) if isinstance(t, dict)]
+    for f, frame in enumerate(spec.get("frames") or []):
+        out += [(f"frames[{f}].data[{i}]", t) for i, t in enumerate(frame.get("data") or [])]
+    if isinstance(spec.get("layout"), dict):
+        out.append(("layout", spec["layout"]))
+    return out
 
 
 def _limit_path(path: str) -> bool:
@@ -416,9 +455,7 @@ def _limit_path(path: str) -> bool:
 
 def check_literals(spec):
     """Refuse literal numeric arrays longer than MAX_LITERAL_VALUES in traces."""
-    traces = [(f"data[{i}]", t) for i, t in enumerate(spec.get("data") or [])]
-    for f, frame in enumerate(spec.get("frames") or []):
-        traces += [(f"frames[{f}].data[{i}]", t) for i, t in enumerate(frame.get("data") or [])]
+    traces = [(path, node) for path, node in _traces_and_layout(spec) if path != "layout"]
 
     def count(value):
         if isinstance(value, bool):

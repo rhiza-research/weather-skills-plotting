@@ -19,7 +19,8 @@ def inputs():
 
 
 def one(value, inputs, key="y"):
-    resolved, found = resolve({"data": [{key: value}]}, inputs)
+    trace = {key: value, "x": [0], "y": [0]} if key == "z" else {key: value}
+    resolved, found = resolve({"data": [trace]}, inputs)
     return resolved["data"][0][key]
 
 
@@ -122,3 +123,31 @@ def test_literal_values_are_capped():
 
 def test_at_at_is_a_literal_at(inputs):
     assert one("@@rhiza", inputs) == "@rhiza"
+
+
+def test_size_one_dims_are_dropped(inputs):
+    total = inputs["OBS"].isel(time=[0])
+    z = one("@T.precip", {"T": total}, key="z")
+    assert z.shape == (3, 4)
+
+
+def test_meta_is_refused(inputs):
+    with pytest.raises(UsageError, match="plot has no meta keys"):
+        resolve({"data": [{"type": "heatmap", "meta": {"palette": "kmsa"}}]}, inputs)
+
+
+def test_a_grid_needs_its_lon_lat_axes(inputs):
+    with pytest.raises(UsageError, match="set x: '@OBS.lon' and y: '@OBS.lat'"):
+        resolve({"data": [{"type": "heatmap", "z": "@OBS.precip.isel(time=0)"}]}, inputs)
+    # A frame's trace takes x / y from the trace it updates.
+    resolve({"frames": [{"data": [{"z": "@OBS.precip.isel(time=0)"}]}]}, inputs)
+
+
+def test_geojson_lon_lat_name_its_x_y():
+    from shapely.geometry import LineString
+
+    from weather_skills_plotting.refs import GeoLines
+
+    lines = {"K": GeoLines([LineString([(30, 1), (31, 2)])], "K")}
+    assert one("@K.lon", lines).tolist()[:2] == [30, 31]
+    assert one("@K.lat", lines).tolist()[:2] == [1, 2]

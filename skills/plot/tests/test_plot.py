@@ -339,3 +339,8 @@ def test_recipes_by_name_and_listing(tmp_path, plot_fn, capsys):
             run_skill(plot_fn, "-i", f"{grid}=OBS", "--spec", spec, "--dump-spec", "-")
         err = capsys.readouterr().err
         assert "Field does not exist: KENYA" in err and "pass it with -i FILE=KENYA" in err
+
+
+def test_importstr_reads_a_recipe(plot_fn, capsys):
+    run_skill(plot_fn, "--spec", "{text: importstr 'map.jsonnet'}", "--dump-spec", "-")
+    assert "ws.basemap(bbox)" in json.loads(capsys.readouterr().out)["text"]
