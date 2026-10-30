@@ -92,7 +92,7 @@ def _week_title(da):
 
 def _user_variable(user, uid):
     trace = next((t for t in user.get("data") or [] if t.get("uid") == uid), {})
-    return ((trace.get("meta") or {}).get("source") or {}).get("variable")
+    return (trace.get("meta") or {}).get("z")
 
 
 def build_verify_spec(obs, forecast, verify, spec):
@@ -160,7 +160,7 @@ def build_verify_spec(obs, forecast, verify, spec):
             "uid": "obs",
             "type": "heatmap",
             "coloraxis": "coloraxis",
-            "meta": {"source": {"input": "obs", "variable": obs_var}},
+            "meta": {"source": {"input": "obs"}, "z": obs_var},
         }
     ]
     for i, var in enumerate(fc_vars, 1):
@@ -171,7 +171,7 @@ def build_verify_spec(obs, forecast, verify, spec):
                 "coloraxis": "coloraxis",
                 "xaxis": f"x{i + 1}",
                 "yaxis": f"y{i + 1}",
-                "meta": {"source": {"input": f"forecast{i}", "variable": var}},
+                "meta": {"source": {"input": f"forecast{i}"}, "z": var},
             }
         )
     # Theme palettes: hits red / white / green ("below" is white, so the map's no-data
@@ -190,7 +190,8 @@ def build_verify_spec(obs, forecast, verify, spec):
                 "xaxis": f"x{p}",
                 "yaxis": f"y{p}",
                 "meta": {
-                    "source": {"input": f"verify{i}", "variable": VERIFY_VARS[metric]},
+                    "source": {"input": f"verify{i}"},
+                    "z": VERIFY_VARS[metric],
                     "palette": palette,
                 },
             }

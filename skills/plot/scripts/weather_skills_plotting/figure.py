@@ -125,6 +125,11 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
         if trace.get("uid") in banded:
             trace = {**trace, "meta": {**trace["meta"], "_parts": parts.get(trace["uid"], {})}}
         bound = None
+        if not bind_of(trace) and (trace.get("meta") or {}).get("source"):
+            raise UsageError(
+                f"data[{i}].meta.source names data but nothing says where it goes: set "
+                f'data[{i}].meta.x / y (e.g. "x": "time" for a line) or meta.z (a heatmap)'
+            )
         if bind_of(trace):
             bound = bind_trace(trace, ctx, f"data[{i}]", color=colorway[n_colored % len(colorway)])
             n_colored += 1
@@ -133,6 +138,12 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
         raise UsageError("plot spec has no traces to draw")
 
     if any(b is not None and b.is_map for _, _, b in items):
+        charts = [i for i, _, b in items if b is not None and not b.is_map]
+        if charts:
+            raise UsageError(
+                f"data[{charts[0]}] is a chart but this figure is a map (a heatmap, or x "
+                "longitude with y latitude); draw the chart in its own plot"
+            )
         data, layout = _assemble_map(items, user_layout, lmeta, ctx)
     else:
         data, layout = _assemble_chart(items, user_layout)
@@ -497,7 +508,7 @@ def _assemble_map(items, user_layout, lmeta, ctx):
                 tr = _concrete(
                     spec_trace, gen, pid if j == 0 or "uid_suffix" in gen else f"{pid}-{j}"
                 )
-                panel_traces[p].append((_MAP_RANK[bind_of(spec_trace)], tr, spec_trace, bound))
+                panel_traces[p].append((_MAP_RANK[bound.kind], tr, spec_trace, bound))
         if extents[p] is None:
             extents[p] = next(
                 (b.extent for _, _, b in groups[g] if b is not None and b.extent), None
@@ -624,9 +635,7 @@ def _assemble_map(items, user_layout, lmeta, ctx):
             else:
                 entry[2].append(tr)
 
-    outlines = [
-        b.extent for _, st, b in items if b is not None and bind_of(st) == "geojson" and b.extent
-    ]
+    outlines = [b.extent for _, _, b in items if b is not None and b.kind == "geojson" and b.extent]
     if outlines and ctx.bbox is None and len(order) == 1:
         # An outline names the place of interest: frame it, with a margin.
         w, e = min(o[0] for o in outlines), max(o[1] for o in outlines)

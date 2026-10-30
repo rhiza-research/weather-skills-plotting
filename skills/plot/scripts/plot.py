@@ -42,7 +42,12 @@ from weather_skills_plotting.series import (
     warn_disjoint_dates,
     warn_mixed_units,
 )
-from weather_skills_plotting.spec import DUMP_SPEC_HELP, SPEC_ARGUMENT_HELP, merge_spec
+from weather_skills_plotting.spec import (
+    DUMP_SPEC_HELP,
+    MAPPING_KEYS,
+    SPEC_ARGUMENT_HELP,
+    merge_spec,
+)
 from weather_skills_plotting.verify import build_verify_spec
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
@@ -77,23 +82,35 @@ def parse_layer(value):
     return LayerArg(kind, *split_name(path.strip(), "--layer"))
 
 
+def _only_variable(ds):
+    """The file's one data variable, or ``None`` when it holds several (the spec names it)."""
+    fields = [v for v in ds.data_vars if "grid_mapping_name" not in ds[v].attrs]
+    return str(fields[0]) if len(fields) == 1 else None
+
+
 def _default_trace(uid: str, ds, user=None, *, xaxis=None) -> dict:
-    """Heatmap for a lat/lon grid, station markers for points, else a line. A ``user`` trace
-    naming ``meta.x`` / ``meta.y`` is an xy plot, so its stations are not a map."""
+    """Heatmap for a lat/lon grid, station markers for points, else a line along time or step,
+    with meta naming what fills x / y / z. A same-uid ``user`` trace overrides these key by
+    key; one naming its own x / y on a station file draws no station map."""
     source = {"input": uid}
-    xy = bool({"x", "y"} & set((user or {}).get("meta") or {}))
+    umeta = (user or {}).get("meta") or {}
+    var = _only_variable(ds)
     lat, lon = cf_dim(ds, "latitude"), cf_dim(ds, "longitude")
     pdim = point_dim(ds)
     tdim = next((d for d in ("time", "step") if d in ds.dims and ds.sizes[d] > 1), None)
     if pdim is not None and ds.sizes[pdim] == 1 and tdim:
         # One station over time is a time series, not one dot on a map.
-        trace = {"type": "scatter", "meta": {"source": {**source, "isel": {pdim: 0}}}}
-    elif pdim is not None and not xy:
-        trace = {"type": "scatter", "meta": {"bind": "points", "source": source}}
-    elif lat in ds.dims and lon in ds.dims:
-        trace = {"type": "heatmap", "meta": {"source": source}}
+        meta = {"source": {**source, "isel": {pdim: 0}}, "x": tdim, "y": var}
+        trace = {"type": "scatter", "meta": meta}
+    elif pdim is not None and not ({"x", "y"} & set(umeta)):
+        meta = {"source": source, "x": lon, "y": lat, "marker": {"color": var} if var else None}
+        trace = {"type": "scatter", "meta": meta}
+    elif pdim is None and lat in ds.dims and lon in ds.dims:
+        trace = {"type": "heatmap", "meta": {"source": source, "z": var}}
     else:
-        trace = {"type": "scatter", "meta": {"source": source}}
+        x = tdim or next((d for d in ("step", "time") if d in ds.dims), None)
+        trace = {"type": "scatter", "meta": {"source": source, "x": x, "y": var}}
+    trace["meta"] = {k: v for k, v in trace["meta"].items() if v is not None}
     trace["uid"] = uid
     if xaxis:
         trace.update(xaxis=xaxis, yaxis="y" + xaxis[1:])
@@ -105,8 +122,9 @@ def _as_drawn(ds, trace):
     what is drawn (one line per station with ``along``, not a station map)."""
     meta = (trace or {}).get("meta") or {}
     source = meta.get("source") or {}
-    if source.get("variable") in ds.data_vars:
-        ds = ds[[source["variable"]]]
+    variable = meta.get("y") or meta.get("z") or (meta.get("marker") or {}).get("color")
+    if variable in ds.data_vars:
+        ds = ds[[variable]]
     picks = {**(source.get("isel") or {}), **(source.get("sel") or {})}
     if meta.get("along"):
         picks[meta["along"]] = 0
@@ -134,12 +152,18 @@ def _layer_traces(layers):
             continue
         datasets[uid] = layer.ds
         source = {"input": uid}
+        var = _only_variable(layer.ds)
         if layer.kind in ("heatmap", "contour"):
-            data.append({"uid": uid, "type": layer.kind, "meta": {"source": source}})
+            meta = {"source": source, **({"z": var} if var else {})}
+            data.append({"uid": uid, "type": layer.kind, "meta": meta})
         elif layer.kind == "scatter":
-            data.append(
-                {"uid": uid, "type": "scatter", "meta": {"bind": "points", "source": source}}
-            )
+            meta = {
+                "source": source,
+                "x": cf_dim(layer.ds, "longitude"),
+                "y": cf_dim(layer.ds, "latitude"),
+                **({"marker": {"color": var}} if var else {}),
+            }
+            data.append({"uid": uid, "type": "scatter", "meta": meta})
         else:
             data.append(
                 {"uid": uid, "type": "heatmap", "meta": {"bind": "speed", "source": source}}
@@ -271,11 +295,24 @@ def plot(
         cli = dict(zip(input_ids([x.name for x in inputs]), files, strict=True))
         datasets = spec_datasets(spec, cli)
         user = {t.get("uid"): t for t in (spec.data.get("data") or [])} if spec else {}
-        drawn = {key: _as_drawn(d, user.get(key)) for key, d in datasets.items()}
+        # A spec that draws data in traces of its own draws only those, plus the inputs it
+        # restyles by uid.
+        own = False
+        for uid, t in user.items():
+            meta = t.get("meta") or {}
+            source = meta.get("source") or {}
+            mapped = any(meta.get(k) for k in MAPPING_KEYS)
+            own = own or (uid not in datasets and (mapped or (source and "geojson" not in source)))
+        drawn = {
+            key: _as_drawn(d, user.get(key))
+            for key, d in datasets.items()
+            if key in user or not own
+        }
         data = [_default_trace(key, d, user.get(key)) for key, d in drawn.items()]
-        # 1-D series share one x/y axis, one legend entry per file.
+        # Lines along time share one x/y axis, one legend entry per file.
         series = bool(data) and all(
-            t["type"] == "scatter" and "bind" not in t["meta"] for t in data
+            t["type"] == "scatter" and t["meta"].get("x") != cf_dim(datasets[t["uid"]], "longitude")
+            for t in data
         )
         if series:
             if len(data) > MAX_INPUTS:
@@ -283,8 +320,8 @@ def plot(
                     f"--input may be passed at most {MAX_INPUTS} times for series; got "
                     f'{len(data)}. For ensemble members use meta.along "number" on one input'
                 )
-            for i, (key, d) in enumerate(datasets.items()):
-                data[i]["name"] = trace_label(d, i, key)
+            for i, key in enumerate(drawn):
+                data[i]["name"] = trace_label(datasets[key], i, key)
         elif cli:
             data = [
                 _default_trace(key, d, user.get(key), xaxis=None if i == 0 else f"x{i + 1}")

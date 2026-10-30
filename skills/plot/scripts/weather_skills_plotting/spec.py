@@ -24,21 +24,11 @@ SPEC_VERSION = 3
 
 TOP_KEYS = frozenset({"data", "layout"})
 
-# How a trace's arrays are filled from a dataset. See ``bind.py``.
-BINDS = frozenset(
-    {"field", "speed", "arrows", "points", "series", "xy", "samples", "windrose", "geojson"}
-)
-# Bind used when ``meta.bind`` is unset, by Plotly trace type.
-DEFAULT_BIND = {
-    "heatmap": "field",
-    "contour": "field",
-    "scatter": "series",
-    "scattergl": "series",
-    "bar": "series",
-    "box": "samples",
-    "barpolar": "windrose",
-}
-MAP_BINDS = frozenset({"field", "speed", "arrows", "points", "geojson"})
+# Presets: traces whose arrays are computed (wind speed, arrows, roses, boxes, boundaries),
+# named by ``meta.bind``. See ``bind.py``.
+BINDS = frozenset({"speed", "arrows", "samples", "windrose", "geojson"})
+# Every other data trace names the variable or coordinate that fills each Plotly attribute.
+MAPPING_KEYS = ("x", "y", "z", "marker")
 
 TRACE_META_KEYS = frozenset(
     {
@@ -46,6 +36,8 @@ TRACE_META_KEYS = frozenset(
         "source",
         "x",
         "y",
+        "z",
+        "marker",
         "facet",
         "along",
         "along_color",
@@ -256,7 +248,7 @@ def merge_traces(base: list, overlay: list) -> list:
                 inputs.pop(None, None)
                 if (
                     len(inputs) > 1
-                    and (meta.get("x") or meta.get("y") or meta.get("bind") or source)
+                    and (any(meta.get(k) for k in MAPPING_KEYS) or meta.get("bind") or source)
                     and not source.get("input")
                     and not source.get("geojson")
                 ):
@@ -347,23 +339,31 @@ def check_trace_meta(meta, loc: str, palettes: dict) -> None:
 
     _check_keys(meta, TRACE_META_KEYS, loc)
     bind = meta.get("bind")
+    mapped = [k for k in MAPPING_KEYS if meta.get(k) is not None]
     if bind is not None and bind not in BINDS:
-        raise UsageError(f"plot spec {loc}.bind {bind!r} must be one of {', '.join(sorted(BINDS))}")
+        raise UsageError(
+            f"plot spec {loc}.bind {bind!r} must be one of {', '.join(sorted(BINDS))}; a line, "
+            f"scatter, station map or heatmap names its variables in {loc}.x / y / z instead"
+        )
+    if bind is not None and mapped:
+        raise UsageError(
+            f"plot spec {loc}.bind {bind!r} computes its own arrays; drop {loc}.{mapped[0]}"
+        )
     if meta.get("source") is not None:
         _check_source(meta["source"], f"{loc}.source")
-    for key in ("x", "y"):
-        if meta.get(key) is not None and not isinstance(meta[key], str):
-            raise UsageError(f"plot spec {loc}.{key} must be a variable name")
-    if (meta.get("x") is None) != (meta.get("y") is None):
-        raise UsageError(f"plot spec {loc}: a scatter of two variables needs both x and y")
-    # x / y draw one point per shared position; the series-over-time keys do not apply.
-    series_only = [k for k in ("along", "align", "band") if meta.get(k) is not None]
-    if meta.get("x") is not None and series_only:
+    if mapped and (meta.get("source") or {}).get("variable"):
         raise UsageError(
-            f"plot spec {loc}.{series_only[0]} draws a series over time and does not work with "
-            f"{loc}.x / y. Drop x and y to plot the variable along time; to overlay years on one "
-            f'seasonal axis, set "align": "dayofyear" on each line instead of an x of day numbers'
+            f"plot spec {loc}.source.variable: name the variable in {loc}.y, z or marker.color "
+            "instead"
         )
+    for key in ("x", "y", "z"):
+        if meta.get(key) is not None and not isinstance(meta[key], str):
+            raise UsageError(f"plot spec {loc}.{key} must be a variable or coordinate name")
+    marker = meta.get("marker")
+    if marker is not None:
+        _check_keys(marker, {"color"}, f"{loc}.marker")
+        if not isinstance(marker.get("color"), str):
+            raise UsageError(f"plot spec {loc}.marker.color must be a variable name")
     if meta.get("arrows") is not None:
         _check_keys(meta["arrows"], ARROW_KEYS, f"{loc}.arrows")
     if meta.get("along_color") not in (None, "same", "cycle"):
