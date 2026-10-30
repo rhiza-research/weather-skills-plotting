@@ -115,7 +115,11 @@ def test_theme_styles_merge_and_reach_the_figure(tmp_path):
     assert theme["styles"]["isobars"]["line"] == {"color": "black", "width": 3}
     ds = make_gridded(n_time=1)
     fig = compile(
-        {"data": [{"uid": "a", "type": "heatmap", "meta": {"source": {"input": "a"}}}]},
+        {
+            "data": [
+                {"uid": "a", "type": "heatmap", "meta": {"source": {"input": "a"}, "z": "precip"}}
+            ]
+        },
         {"a": ds},
         theme=theme,
     )

@@ -1,6 +1,12 @@
 """Map canvas and margins (layout.map_layout)."""
 
-from weather_skills_plotting.layout import map_axes, map_layout, register_templates, title_lines
+from weather_skills_plotting.layout import (
+    map_axes,
+    map_layout,
+    pinned_title,
+    register_templates,
+    title_lines,
+)
 from weather_skills_plotting.themes import default_theme
 
 
@@ -33,3 +39,11 @@ def test_a_subtitle_gets_its_own_line_above_the_maps():
     two, _ = map_layout(1, 2, 1.2, titled=2, panel_titles=True, right=True)
     assert two["margin"]["t"] - one["margin"]["t"] == 3 * 12
     assert two["height"] - one["height"] == 3 * 12
+    # Each <br> line of the subtitle counts too.
+    assert title_lines({"text": "Week 1", "subtitle": {"text": "16–22 Oct<br>ECMWF"}}) == 3
+
+
+def test_a_title_of_several_lines_is_pinned_below_the_top_edge():
+    # Plotly's yanchor "top" sets a multi-line title too high; the pad brings line one back.
+    assert pinned_title({"text": "Week 1"}, 12)["pad"] == {"t": 12}
+    assert pinned_title({"text": "Week 1<br>16–22 Oct"}, 12)["pad"]["t"] > 12

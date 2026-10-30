@@ -65,6 +65,45 @@ def grid_shape(n, rows=None, columns=None):
     return rows, math.ceil(n / rows) or 1
 
 
+def subplot_cells(subplots, n: int, filled: list[bool]):
+    """``(rows, columns, cells)`` from Plotly's ``layout.grid.subplots``, which sets the
+    grid's shape as in Plotly (Plotly has already checked its form).
+
+    ``subplots`` is a list of rows of ``"xNyN"`` names (``"xy"`` for the first
+    map) and ``""`` for an empty cell. ``cells[p]`` is the row-major cell of map
+    panel ``p`` (axes ``x{p+1}`` / ``y{p+1}``), or None for an empty panel the
+    array leaves out. ``filled[p]`` says panel ``p`` draws something.
+    """
+    n_cols = len(subplots[0])
+    if any(len(row) != n_cols for row in subplots):
+        raise UsageError("layout.grid.subplots rows must all have the same length")
+    cells = [None] * n
+    for i, name in enumerate(cell for row in subplots for cell in row):
+        if name == "":
+            continue
+        match = re.fullmatch(r"x(\d*)y(\d*)", str(name))
+        if not match or match[1] != match[2] or match[1] in ("0", "1"):
+            raise UsageError(
+                f"layout.grid.subplots entry {name!r} must name one map's axes, such as "
+                '"xy", "x2y2", "x3y3", or be "" for an empty cell'
+            )
+        p = int(match[1] or 1) - 1
+        if p >= n:
+            names = f"xy … x{n}y{n}" if n > 1 else "xy"
+            raise UsageError(
+                f"layout.grid.subplots entry {name!r} names no map; this figure's maps use {names}"
+            )
+        if cells[p] is not None:
+            raise UsageError(f"layout.grid.subplots names {name!r} twice")
+        cells[p] = i
+    missing = [
+        "xy" if p == 0 else f"x{p + 1}y{p + 1}" for p in range(n) if cells[p] is None and filled[p]
+    ]
+    if missing:
+        raise UsageError(f"layout.grid.subplots leaves out {', '.join(missing)}; give each a cell")
+    return len(subplots), n_cols, cells
+
+
 def choose_grid(n: int, aspect: float, rows=None, columns=None) -> tuple[int, int]:
     """``(rows, columns)`` for ``n`` map panels of lon/lat ``aspect``.
 
@@ -121,25 +160,51 @@ def layout_value(user_layout: dict, path: str):
 
 
 def title_lines(title) -> int:
-    """Lines the figure title takes: one per ``<br>``-separated line, plus a ``subtitle``."""
+    """Lines the figure title takes: one per ``<br>``-separated line, of the title and of
+    its ``subtitle``."""
     if not isinstance(title, dict):
         title = {"text": title}
     text = str(title.get("text") or "")
     if not text:
         return 0
+    subtitle = str((title.get("subtitle") or {}).get("text") or "")
     lines = len(re.split(r"<br\s*/?>", text, flags=re.IGNORECASE))
-    return lines + (1 if (title.get("subtitle") or {}).get("text") else 0)
+    return lines + (len(re.split(r"<br\s*/?>", subtitle, flags=re.IGNORECASE)) if subtitle else 0)
+
+
+def pinned_title(title, em: float) -> dict:
+    """``layout.title`` placed at the top of the canvas, so legend rows or a tall margin
+    never push it down onto the plot. Plotly's ``yanchor: "top"`` sets a title of several
+    ``<br>`` lines about 0.7 em too high, cutting off its first line; the pad makes up for it."""
+    title = title if isinstance(title, dict) else {"text": title}
+    lines = len(re.split(r"<br\s*/?>", str(title.get("text") or ""), flags=re.IGNORECASE))
+    pad = 12 + (round(0.7 * 1.4 * em) if lines > 1 else 0)  # the title font is 1.4 em
+    return {"yref": "container", "y": 1, "yanchor": "top", "pad": {"t": pad}}
 
 
 def map_layout(
-    rows, cols, aspect, *, titled, panel_titles, right=False, below=False, below_lines=0, user=None
+    rows,
+    cols,
+    aspect,
+    *,
+    titled,
+    panel_titles,
+    right=False,
+    below=False,
+    below_lines=0,
+    legend=False,
+    outer_ticks=False,
+    user=None,
 ) -> tuple[dict, list[tuple[float, float, float, float]]]:
     """Canvas, margins and per-panel ``(x0, x1, y0, y1)`` domains for a map grid.
 
-    ``titled`` is how many lines the figure title takes (``title_lines``).
+    ``titled`` is how many lines the figure title takes (``title_lines``);
+    ``panel_titles`` how many each panel title takes (0 for none).
+    ``outer_ticks`` says only the outer maps carry tick labels, so the gaps
+    between panels need no room for them.
 
     ``right`` / ``below`` say a colorbar stands there; ``below_lines`` is more
-    room under the maps, in lines of text. ``user`` is the spec layout: its
+    room under the maps, in lines of text; ``legend`` is a legend row under the title. ``user`` is the spec layout: its
     ``width`` / ``height`` fix the canvas (maps shrink to fit), and
     ``grid.xgap`` / ``grid.ygap`` are gaps as a fraction of a panel.
     """
@@ -154,16 +219,21 @@ def map_layout(
         box_w, box_h = MAP_BOX_PANEL
         w = min(MAP_BOX_SINGLE[0], (box_w * box_h * aspect) ** 0.5, PANEL_MAX_H * aspect)
     h = w / aspect
-    title_lines = LINE if panel_titles else 0
+    title_lines = LINE * int(panel_titles)
+    # Outer ticks: the bottom row's end labels ("42°", "34°") still meet in the gap.
+    tick_room = LINE if outer_ticks else TICK_ROOM
+    tick_line = 0 if outer_ticks else LINE
     ml = TICK_ROOM * em
     mr = (COLORBAR_ROOM if right else 1) * em
     # A subtitle takes a line plus a little air above the panel titles.
-    mt = (LINE * int(titled) + (1 if titled > 1 else 0) + title_lines + 1) * em
+    mt = (LINE * int(titled) + (1 if titled > 1 else 0) + LINE * legend + title_lines + 1) * em
     mb = (LINE + (COLORBAR_ROOM if below else 0) + below_lines) * em
 
     def gaps(w, h):
-        gx = grid["xgap"] * w if grid.get("xgap") is not None else (TICK_ROOM + 1) * em
-        gy = grid["ygap"] * h if grid.get("ygap") is not None else (LINE + title_lines + 1) * em
+        gx = grid["xgap"] * w if grid.get("xgap") is not None else (tick_room + 1) * em
+        gy = (
+            grid["ygap"] * h if grid.get("ygap") is not None else (tick_line + title_lines + 1) * em
+        )
         return gx, gy
 
     gx, gy = gaps(w, h)

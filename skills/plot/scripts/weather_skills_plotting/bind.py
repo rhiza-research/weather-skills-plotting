@@ -52,7 +52,7 @@ from weather_skills_plotting.palettes import (
     continuous_colorscale,
     parse_palette,
 )
-from weather_skills_plotting.spec import DEFAULT_BIND, fill_defaults
+from weather_skills_plotting.spec import MAPPING_KEYS, fill_defaults
 from weather_skills_plotting.wind import (
     WIND_ROSE_SECTORS,
     flat_numeric,
@@ -93,6 +93,8 @@ class Bound:
 
     panels: list
     is_map: bool = False
+    # What a map trace drew (field, speed, arrows, points, geojson): its stacking order.
+    kind: str | None = None
     static: bool = False
     extent: list | None = None
     # Color-scaled traces: the raw values, where they live in each concrete
@@ -106,6 +108,8 @@ class Bound:
     title: str | None = None
     layout: dict = field(default_factory=dict)
     x_tickformat: str | None = None
+    # A line along calendar dates (aligned to one year, or on its own dates).
+    x_dates: bool = False
 
 
 @dataclass
@@ -119,15 +123,14 @@ class Context:
 
 
 def bind_of(trace: dict) -> str | None:
-    """The trace's bind mode, or ``None`` for a plain Plotly trace."""
+    """The trace's preset (``meta.bind``), ``"mapping"`` when meta names the variables that
+    fill its Plotly attributes, or ``None`` for a plain Plotly trace."""
     meta = trace.get("meta") or {}
     if meta.get("bind"):
         return meta["bind"]
-    if meta.get("x") or meta.get("y"):
-        return "xy"
-    if not meta.get("source"):
-        return None
-    return DEFAULT_BIND.get(trace.get("type") or "scatter", "series")
+    if any(meta.get(k) is not None for k in MAPPING_KEYS):
+        return "mapping"
+    return None
 
 
 # ------------------------------------------------------------------- selection
@@ -185,20 +188,21 @@ def _display(ds, variable):
     return ds
 
 
-def pick_variable(ds, name, loc):
-    """``name``, or the file's only data variable; several and none named is an error."""
+def pick_variable(ds, name, loc, key="variable"):
+    """``name``, or the file's only data variable; several and none named is an error.
+    ``loc.key`` is where the spec names it (``meta.source.variable``, or ``meta.z``)."""
     variable = name
     fields = [v for v in ds.data_vars if "grid_mapping_name" not in ds[v].attrs]
     if not variable and len(fields) > 1:
         # Guessing among several fields draws the wrong one without a word.
         raise UsageError(
-            f"{loc}.variable is not set and the data holds {', '.join(map(str, fields))}; "
-            f"set {loc}.variable to the one to draw"
+            f"{loc}.{key} is not set and the data holds {', '.join(map(str, fields))}; "
+            f"set {loc}.{key} to the one to draw"
         )
     variable = variable or auto_variable(ds)
     if not variable or variable not in ds:
         raise UsageError(
-            f"{loc}.variable {variable!r} is not in the data; available: {', '.join(ds.data_vars)}"
+            f"{loc}.{key} {variable!r} is not in the data; available: {', '.join(ds.data_vars)}"
         )
     return variable
 
@@ -355,8 +359,8 @@ def _lonlat(da, what):
     lat, lon = cf_dim(da, "latitude"), cf_dim(da, "longitude")
     if lat is None or lon is None or lat not in da.dims or lon not in da.dims:
         raise UsageError(
-            f"{what} needs latitude/longitude dimensions; got {list(da.dims)}. "
-            'Station data draws as a scatter trace with meta.bind "points"'
+            f"{what} needs latitude/longitude dimensions; got {list(da.dims)}. Station data "
+            'draws as a scatter with meta.x "longitude" and meta.y "latitude"'
         )
     return lat, lon
 
@@ -405,7 +409,7 @@ def _slices(da, fdim):
 # --------------------------------------------------------------------- binders
 
 
-def bind_field(trace, meta, ctx, loc, *, speed=False):
+def bind_field(trace, meta, ctx, loc, *, speed=False, variable=None):
     source = meta.get("source") or {}
     if speed:
         ds = _dataset(ctx, source, f"{loc}.source")
@@ -415,7 +419,7 @@ def bind_field(trace, meta, ctx, loc, *, speed=False):
         da = wind_speed_da(u_da, v_da)
         title = wind_speed_cbar_label(u_da)
     else:
-        da, _ = select(ctx, source, f"{loc}.source")
+        da, _ = select(ctx, source, f"{loc}.source", variable=variable)
         title = variable_label_for_display(da)
     da, lat, lon, fdim = _map_field(ctx, da, meta, loc, "a map")
     x, y = da[lon].values, da[lat].values
@@ -436,6 +440,7 @@ def bind_field(trace, meta, ctx, loc, *, speed=False):
     return Bound(
         panels,
         is_map=True,
+        kind="speed" if speed else "field",
         extent=extent_from_da(da, lat, lon, ctx.bbox),
         color_values=values,
         color_key="z",
@@ -540,7 +545,7 @@ def bind_arrows(trace, meta, ctx, loc):
         }
         fill_defaults(key_trace, styles["arrows"])
         panels.append(Panel([arrows, key_box, key_trace], ptitle, key))
-    return Bound(panels, is_map=True, extent=extent)
+    return Bound(panels, is_map=True, kind="arrows", extent=extent)
 
 
 def _points_extent(da):
@@ -557,14 +562,37 @@ def _points_extent(da):
     ]
 
 
-def bind_points(trace, meta, ctx, loc):
+def bind_points(trace, meta, ctx, loc, *, variable=None):
+    """Stations at their longitude / latitude, colored by ``variable`` when it is set."""
     source = meta.get("source") or {}
-    da, ds = select(ctx, source, f"{loc}.source")
+    ds = _dataset(ctx, source, f"{loc}.source")
+    colored = variable is not None
+    fields = [str(v) for v in ds.data_vars if "grid_mapping_name" not in ds[v].attrs]
+    if not colored and len(fields) > 1:
+        print(
+            f"Note: {loc}: stations drawn uncolored; set {loc}.marker.color to one of "
+            f"{', '.join(fields)} to color them by it",
+            file=sys.stderr,
+        )
+    if not colored:
+        # Positions only: isel / sel on a dim the coordinates lack (time) picks nothing here.
+        variable = cf_dim(ds, "latitude")
+        dims = ds[variable].dims
+        source = {
+            **source,
+            **{
+                key: {d: v for d, v in source[key].items() if d in dims or d not in ds.dims}
+                for key in ("isel", "sel")
+                if source.get(key)
+            },
+        }
+    da, ds = select(ctx, source, f"{loc}.source", variable=variable)
     pdim = point_dim(ds)
     if pdim is None or pdim not in da.dims:
         raise UsageError(
-            f'{loc}: meta.bind "points" needs a station_id or point_id dimension '
-            f"(dims: {list(da.dims)})"
+            f"{loc}: x longitude / y latitude draw stations, which needs a station_id or "
+            f"point_id dimension (dims: {list(da.dims)}); a lat/lon grid draws as type "
+            f"heatmap with {loc}.z"
         )
     if da.sizes[pdim] == 0:
         raise UsageError(
@@ -591,6 +619,26 @@ def bind_points(trace, meta, ctx, loc):
     units = format_units_for_display(variable_units(da))
     panels, values = [], []
     for key, ptitle, part in _slices(da, fdim):
+        if not colored:
+            panels.append(
+                Panel(
+                    [
+                        {
+                            "mode": "markers",
+                            "x": lon,
+                            "y": lat,
+                            "text": names,
+                            "hovertext": hover_names,
+                            "marker": {"size": 13 if lon.size <= 50 else 8, "line": {"width": 1}},
+                            "hovertemplate": "%{hovertext}<extra></extra>",
+                            "showlegend": False,
+                        }
+                    ],
+                    ptitle,
+                    key,
+                )
+            )
+            continue
         vals = np.asarray(part.values, dtype=float)
         values.append(vals)
         finite = np.isfinite(vals)
@@ -638,9 +686,12 @@ def bind_points(trace, meta, ctx, loc):
     extent = (
         [ctx.bbox[1], ctx.bbox[3], ctx.bbox[2], ctx.bbox[0]] if ctx.bbox else _points_extent(da)
     )
+    if not colored:
+        return Bound(panels, is_map=True, kind="points", extent=extent)
     return Bound(
         panels,
         is_map=True,
+        kind="points",
         extent=extent,
         color_values=values,
         color_key="marker.color",
@@ -688,7 +739,7 @@ def bind_geojson(trace, meta, ctx, loc):
     # take the theme's admin-1 style (KMSA: dark grey).
     admin1 = {"line": ctx.theme["overlays"]["admin1"]["line"]}
     fill_defaults(line, ctx.theme["styles"]["boundary"] if parts <= 5 else admin1)
-    return Bound([Panel([line])], is_map=True, static=True, extent=[w, e, s, n])
+    return Bound([Panel([line])], is_map=True, kind="geojson", static=True, extent=[w, e, s, n])
 
 
 def _color_name(trace, color):
@@ -714,18 +765,12 @@ def _rgba(color, alpha):
     return f"rgba({int(r)}, {int(g)}, {int(b)}, {alpha})"
 
 
-def bind_series(trace, meta, ctx, loc, *, color=None):
+def bind_series(trace, meta, ctx, loc, *, variable, sdim, color=None):
+    """``variable`` as a line along the time or step dim ``sdim``."""
     source = meta.get("source") or {}
-    da, _ = select(ctx, source, f"{loc}.source")
-    sdim = "step" if "step" in da.dims else cf_dim(da, "time")
-    if sdim is None or sdim not in da.dims:
-        if da.ndim == 1:
-            sdim = da.dims[0]
-        else:
-            raise UsageError(
-                f"{loc}: a series needs a step or time axis; got {list(da.dims)}. To plot one "
-                "variable against another, set meta.x and meta.y to their names"
-            )
+    da, _ = select(ctx, source, f"{loc}.source", variable=variable)
+    if sdim not in da.dims:
+        raise UsageError(f"{loc}.y {variable!r} has no {sdim!r} dimension (dims: {list(da.dims)})")
     along = along_dim(da, meta.get("along"))
     if meta.get("along") and along is None:
         raise UsageError(
@@ -738,7 +783,7 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
     extra = [d for d in da.dims if d not in (sdim, along)]
     if extra:
         raise UsageError(
-            f"{loc}: dims {extra} remain besides {sdim!r}. Pick one value with "
+            f"{loc}: y {variable!r} has dims {extra} that x {sdim!r} lacks. Pick one value with "
             f"{loc}.source.isel / sel, set {loc}.along {extra[0]!r} for one line per value, "
             "or average them first with summarize-dim (--lat-weighted for an area mean)"
         )
@@ -834,7 +879,10 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
                     "line": {"color": col},
                 },
             ]
-        elif meta.get("along_color") == "cycle":
+        elif meta.get("along_color") == "cycle" or (
+            # One line per station: each its own color and legend entry unless told "same".
+            meta.get("along_color") is None and along == point_dim(da)
+        ):
             if (trace.get("line") or {}).get("color"):
                 raise UsageError(
                     f"{loc}: along_color cycle gives each member its own color; drop line.color"
@@ -895,6 +943,7 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
         [Panel(traces)],
         axis_titles=titles,
         x_tickformat=SEASONAL_TICKFORMAT if aligned else None,
+        x_dates=is_date,
     )
 
 
@@ -909,7 +958,10 @@ def seasonal_dates(coord, loc):
     try:
         month, day = coord.dt.month.values, coord.dt.day.values
     except (TypeError, AttributeError):
-        raise UsageError(f"{loc}.align dayofyear needs a calendar-date time axis") from None
+        raise UsageError(
+            f"{loc}.align dayofyear needs a calendar-date time axis; for a forecast, run "
+            'step-to-time first and draw it with x "time"'
+        ) from None
     day = np.where((month == 2) & (day == 29), 28, day)
     text = [f"{SEASONAL_YEAR}-{m:02d}-{d:02d}" for m, d in zip(month, day, strict=True)]
     return np.array(text, dtype="datetime64[D]").astype("datetime64[ns]")
@@ -931,15 +983,13 @@ def bind_xy(trace, meta, ctx, loc):
         picked.append(select(ctx, own, f"{loc}.source", variable=name)[0])
     x_da, y_da = picked
     if set(x_da.dims) != set(y_da.dims):
-        # An x on time (e.g. day of year) against y with an extra dim such as members is
-        # usually a series attempt: point at along / align instead.
         hint = ""
         extra = [d for d in y_da.dims if d not in x_da.dims]
         if "time" in x_da.dims and extra:
+            # An x on time (e.g. day of year) against members is usually meant as lines.
             hint = (
-                f'. To plot y along time, drop {loc}.x and {loc}.y and set "along": {extra[0]!r} '
-                f"for one line per value; to overlay years on one seasonal axis, also set "
-                f'"align": "dayofyear"'
+                f'; for one line per value set {loc}.x "time" and {loc}.along {extra[0]!r} '
+                f'(and {loc}.align "dayofyear" to overlay years)'
             )
         raise UsageError(
             f"{loc}: x {meta.get('x')!r} has dims {list(x_da.dims)} but y {meta.get('y')!r} has "
@@ -1163,26 +1213,157 @@ def bind_windrose(trace, meta, ctx, loc):
     return Bound([Panel(traces)], layout=layout)
 
 
+def bind_section(trace, meta, ctx, loc, *, variable, x, y):
+    """``variable`` over two dims that are not a lat/lon map (pressure x longitude, lead x
+    member): a chart heatmap or contour with ``x`` / ``y`` along those dims."""
+    source = meta.get("source") or {}
+    da, _ = select(ctx, source, f"{loc}.source", variable=variable)
+    for key, dim in (("x", x), ("y", y)):
+        if dim not in da.dims:
+            raise UsageError(
+                f"{loc}.{key} {dim!r} is not a dim of {variable!r} (dims: {list(da.dims)})"
+            )
+    extra = [d for d in da.dims if d not in (x, y)]
+    if extra:
+        raise UsageError(
+            f"{loc}: z {variable!r} has dims {extra} besides x {x!r} and y {y!r}; pick one value "
+            f"with {loc}.source.isel / sel, or average them first with summarize-dim"
+        )
+    da = da.transpose(y, x)
+    z = np.asarray(da.values, dtype=float)
+    units = format_units_for_display(variable_units(da))
+    hover = f"{x} %{{x}}, {y} %{{y}}: %{{z:.4g}}{' ' + units if units else ''}<extra></extra>"
+    out = {"x": da[x].values, "y": da[y].values, "z": z, "hovertemplate": hover}
+    pressure = False
+    try:
+        # A pressure axis (hPa, Pa) runs from the surface up: 1000 hPa at the bottom.
+        pressure = ureg.Quantity(1, variable_units(da[y])).check("[pressure]")
+    except Exception:  # noqa: BLE001 — no or unparseable units
+        pass
+    return Bound(
+        [Panel([out])],
+        color_values=[z],
+        color_key="z",
+        color_da=da,
+        color_title=variable_label_for_display(da),
+        axis_titles={
+            "x": variable_label_for_display(da[x]) if da[x].attrs else x,
+            "y": variable_label_for_display(da[y]) if da[y].attrs else y,
+            "y_reversed": pressure,
+        },
+    )
+
+
+def _named(meta, key, ds, loc):
+    """``meta[key]``, the variable a trace draws; unset is an error that lists the choices."""
+    if not meta.get(key):
+        fields = [str(v) for v in ds.data_vars if "grid_mapping_name" not in ds[v].attrs]
+        raise UsageError(
+            f"{loc}.{key} is not set; set it to the variable to draw ({', '.join(fields)})"
+        )
+    return meta[key]
+
+
+def bind_mapping(trace, meta, ctx, loc, *, color=None):
+    """A trace whose meta names the variable or coordinate that fills each Plotly attribute.
+
+    heatmap / contour: ``z``, a lat/lon grid. Other types: ``x`` and ``y``. ``x`` longitude
+    with ``y`` latitude draws stations on a map (``marker.color`` colors them); an ``x`` that
+    is the time or step dim draws ``y`` as a line along it; any other ``x`` draws one point
+    per position the two share.
+    """
+    source = meta.get("source") or {}
+    ds = _dataset(ctx, source, f"{loc}.source")
+    ttype = trace.get("type") or "scatter"
+    if ttype in ("heatmap", "contour"):
+        z = _named(meta, "z", ds, loc)
+        if z not in ds.data_vars:
+            raise UsageError(
+                f"{loc}.z {z!r} is not in input {source.get('input', '0')!r}, which holds "
+                f"{', '.join(map(str, ds.data_vars))}"
+            )
+        if ds[z].dtype.kind in "mM":
+            raise UsageError(
+                f"{loc}.z {z!r} holds dates or durations, which a color scale cannot show; "
+                "color by a number such as the day of year"
+            )
+        lon, lat = cf_dim(ds, "longitude"), cf_dim(ds, "latitude")
+        roles = {"longitude": lon, "latitude": lat}
+        x, y = roles.get(meta.get("x")) or meta.get("x"), roles.get(meta.get("y")) or meta.get("y")
+        if (x, y) == (None, None) or (lon and lat and (x, y) == (lon, lat)):
+            return bind_field(trace, meta, ctx, loc, variable=z)
+        if not (x and y):
+            raise UsageError(
+                f"{loc}: a {ttype} off the map names both axes: set {loc}.x and {loc}.y to two "
+                f"dims of {z!r}, or neither for a lat/lon map"
+            )
+        return bind_section(trace, meta, ctx, loc, variable=z, x=x, y=y)
+    if meta.get("z"):
+        raise UsageError(f"{loc}.z fills a heatmap or contour, not a {ttype}; set {loc}.x / y")
+    x = meta.get("x")
+    if not x:
+        raise UsageError(
+            f'{loc}.x is not set; name what fills x: a dimension such as "time" for a line, '
+            '"longitude" (with y "latitude") for stations, or a variable for one point per '
+            "position"
+        )
+    y = _named(meta, "y", ds, loc)
+    color_var = (meta.get("marker") or {}).get("color")
+    lon, lat = cf_dim(ds, "longitude"), cf_dim(ds, "latitude")
+    # The CF roles name the file's own coordinates, whatever they are called (lon, lat).
+    roles = {"longitude": lon, "latitude": lat, "time": cf_dim(ds, "time")}
+    x, y = roles.get(x) or x, roles.get(y) or y
+    meta = {**meta, "x": x, "y": y}
+    if lon and (x, y) == (lat, lon):
+        raise UsageError(f'{loc}: a station map is x "longitude" and y "latitude"; swap them')
+    for key, name in (("x", x), ("y", y), ("marker.color", color_var)):
+        if name is not None and name not in ds.variables:
+            raise UsageError(
+                f"{loc}.{key} {name!r} is not in input {source.get('input', '0')!r}, which holds "
+                f"{', '.join(map(str, ds.variables))}; x, y and marker.color all come from the "
+                "trace's one input (merge two files first to plot one against the other)"
+            )
+    if color_var and ds[color_var].dtype.kind in "mM":
+        raise UsageError(
+            f"{loc}.marker.color {color_var!r} holds dates or durations, which a color scale "
+            "cannot show; color by a number such as the day of year"
+        )
+    if lon and (x, y) == (lon, lat):
+        return bind_points(trace, meta, ctx, loc, variable=color_var)
+    if color_var:
+        raise UsageError(
+            f'{loc}.marker.color colors stations on a map: set {loc}.x "longitude" and '
+            f'{loc}.y "latitude"'
+        )
+    if x in ds.coords and ds[x].ndim == 0 and "step" in ds.dims:
+        raise UsageError(
+            f'{loc}.x {x!r} is one value here (the init time); a forecast\'s line runs along "step"'
+        )
+    if x in ds.dims and (x in ("step", cf_dim(ds, "time")) or ds[x].dtype.kind in "mM"):
+        return bind_series(trace, meta, ctx, loc, variable=y, sdim=x, color=color)
+    for key in ("along", "align", "band"):
+        if meta.get(key) is not None:
+            raise UsageError(
+                f"{loc}.{key} needs x to be the time or step dimension; x {x!r} draws one "
+                "point per position"
+            )
+    return bind_xy(trace, meta, ctx, loc)
+
+
 BINDERS = {
-    "field": bind_field,
+    "mapping": bind_mapping,
     "speed": lambda t, m, c, loc: bind_field(t, m, c, loc, speed=True),
     "arrows": bind_arrows,
-    "points": bind_points,
     "geojson": bind_geojson,
-    "series": bind_series,
-    "xy": bind_xy,
     "samples": bind_samples,
     "windrose": bind_windrose,
 }
 
 _TYPES_FOR_BIND = {
-    "field": {"heatmap", "contour"},
+    "mapping": {"scatter", "scattergl", "bar", "heatmap", "contour"},
     "speed": {"heatmap", "contour"},
     "arrows": {"scatter", "scattergl"},
-    "points": {"scatter", "scattergl"},
     "geojson": {"scatter", "scattergl"},
-    "series": {"scatter", "scattergl", "bar"},
-    "xy": {"scatter", "scattergl", "bar"},
     "samples": {"box", "scatter", "violin"},
     "windrose": {"barpolar"},
 }
@@ -1193,18 +1374,12 @@ def bind_trace(trace: dict, ctx: Context, loc: str, *, color=None) -> Bound:
     ttype = trace.get("type") or "scatter"
     allowed = _TYPES_FOR_BIND[bind]
     if ttype not in allowed:
+        what = "meta.x / y / z" if bind == "mapping" else f"meta.bind {bind!r}"
         raise UsageError(
-            f"{loc}: meta.bind {bind!r} draws as type {' or '.join(sorted(allowed))}, "
-            f"not {ttype!r}"
-            + (
-                "; for a 1-D series of a gridded field, average lat/lon first with "
-                'summarize-dim --lat-weighted and set meta.bind "series"'
-                if bind == "field"
-                else ""
-            )
+            f"{loc}: {what} draws as type {' or '.join(sorted(allowed))}, not {ttype!r}"
         )
     # Binders name keys under meta (source, along, arrows, …): errors say data[i].meta.<key>.
     meta_loc = f"{loc}.meta"
-    if bind == "series":
-        return bind_series(trace, trace.get("meta") or {}, ctx, meta_loc, color=color)
+    if bind == "mapping":
+        return bind_mapping(trace, trace.get("meta") or {}, ctx, meta_loc, color=color)
     return BINDERS[bind](trace, trace.get("meta") or {}, ctx, meta_loc)

@@ -69,8 +69,11 @@ def test_merge_traces_new_bound_trace_without_input_names_the_input_uids():
         "meta": {"bind": "geojson", "source": {"geojson": "a"}},
     }
     assert len(merge_traces(base, [edge, {"uid": "city", "type": "scatter", "x": [1]}])) == 4
-    # One input: the trace falls back to it, as before.
-    assert len(merge_traces(base[:1], [xy])) == 2
+    # One input: a new trace of its own reads it; a position uid ("0") on a named input
+    # meant to restyle that input, so it says the input's uid.
+    assert len(merge_traces(base[:1], [{**xy, "uid": "dots"}])) == 2
+    with pytest.raises(UsageError, match="uids 'West'"):
+        merge_traces(base[:1], [xy])
 
 
 def test_merge_traces_position_past_end_errors():
@@ -113,8 +116,8 @@ def test_deep_merge_and_fill_defaults():
         ({"source": {"reduce": ["latitude"]}}, "meta.source.reduce is not a known key"),
         ({"band": [10, 90]}, "band needs .*along"),
         ({"along_color": "rainbow"}, "along_color must be"),
-        ({"x": "dmi"}, "needs both x and y"),
-        ({"x": {"input": "a"}, "y": "precip"}, "x must be a variable name"),
+        ({"bind": "speed", "z": "u10"}, "computes its own arrays; drop data\\[0\\].meta.z"),
+        ({"x": {"input": "a"}, "y": "precip"}, "x must be a variable or coordinate name"),
         ({"palette": "no_such"}, "not a known palette"),
         ({"palette": {"colors": ["#fff", "#000"], "bounds": [0, 1, 2, 3]}}, "colors must have"),
     ],
@@ -135,6 +138,14 @@ def test_layout_meta_errors():
         check_meta({"layout": {"meta": {"version": 2}}}, PALETTES)
     with pytest.raises(UsageError, match="geojson"):
         check_meta({"layout": {"meta": {"geo": {"mask_geojson": {"line": 1}}}}}, PALETTES)
+
+
+def test_shape_errors_before_merge_or_open():
+    """Checked at --spec parse time: the merge and the input opening read these first."""
+    with pytest.raises(UsageError, match=r"data\[0\].meta.source must be an object"):
+        load_spec({"data": [{"type": "scatter", "meta": {"source": "stations.zarr"}}]})
+    with pytest.raises(UsageError, match="layout.meta.inputs must map input ids to paths"):
+        load_spec({"layout": {"meta": {"inputs": ["stations.zarr"]}}})
 
 
 def test_duplicate_uid():

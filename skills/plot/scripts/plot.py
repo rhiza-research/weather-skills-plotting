@@ -42,7 +42,12 @@ from weather_skills_plotting.series import (
     warn_disjoint_dates,
     warn_mixed_units,
 )
-from weather_skills_plotting.spec import DUMP_SPEC_HELP, SPEC_ARGUMENT_HELP, merge_spec
+from weather_skills_plotting.spec import (
+    DUMP_SPEC_HELP,
+    MAPPING_KEYS,
+    SPEC_ARGUMENT_HELP,
+    merge_spec,
+)
 from weather_skills_plotting.verify import build_verify_spec
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
@@ -77,23 +82,48 @@ def parse_layer(value):
     return LayerArg(kind, *split_name(path.strip(), "--layer"))
 
 
+def _only_variable(ds):
+    """The file's one data variable, or ``None`` when it holds several (the spec names it)."""
+    fields = [v for v in ds.data_vars if "grid_mapping_name" not in ds[v].attrs]
+    return str(fields[0]) if len(fields) == 1 else None
+
+
 def _default_trace(uid: str, ds, user=None, *, xaxis=None) -> dict:
-    """Heatmap for a lat/lon grid, station markers for points, else a line. A ``user`` trace
-    naming ``meta.x`` / ``meta.y`` is an xy plot, so its stations are not a map."""
+    """Heatmap for a lat/lon grid, station markers for points, else a line along time or step,
+    with meta naming what fills x / y / z. A same-uid ``user`` trace overrides these key by
+    key; one naming its own x / y on a grid or station file draws no map."""
     source = {"input": uid}
-    xy = bool({"x", "y"} & set((user or {}).get("meta") or {}))
+    umeta = (user or {}).get("meta") or {}
+    var = _only_variable(ds)
+    if umeta.get("bind"):
+        # A preset fills its own arrays: the input's trace gives only the source, typed as
+        # the preset draws (a speed field is a heatmap, a rose a barpolar).
+        ttype = {"speed": "heatmap", "samples": "box", "windrose": "barpolar"}.get(
+            umeta["bind"], "scatter"
+        )
+        trace = {"uid": uid, "type": ttype, "meta": {"source": source}}
+        if xaxis:
+            trace.update(xaxis=xaxis, yaxis="y" + xaxis[1:])
+        return trace
     lat, lon = cf_dim(ds, "latitude"), cf_dim(ds, "longitude")
     pdim = point_dim(ds)
     tdim = next((d for d in ("time", "step") if d in ds.dims and ds.sizes[d] > 1), None)
     if pdim is not None and ds.sizes[pdim] == 1 and tdim:
         # One station over time is a time series, not one dot on a map.
-        trace = {"type": "scatter", "meta": {"source": {**source, "isel": {pdim: 0}}}}
-    elif pdim is not None and not xy:
-        trace = {"type": "scatter", "meta": {"bind": "points", "source": source}}
-    elif lat in ds.dims and lon in ds.dims:
-        trace = {"type": "heatmap", "meta": {"source": source}}
+        meta = {"source": {**source, "isel": {pdim: 0}}, "x": tdim, "y": var}
+        trace = {"type": "scatter", "meta": meta}
+    elif pdim is not None and not ({"x", "y"} & set(umeta)):
+        meta = {"source": source, "x": lon, "y": lat, "marker": {"color": var} if var else None}
+        trace = {"type": "scatter", "meta": meta}
+    elif pdim is None and lat in ds.dims and lon in ds.dims and not ({"x", "y"} & set(umeta)):
+        trace = {"type": "heatmap", "meta": {"source": source, "z": var}}
     else:
-        trace = {"type": "scatter", "meta": {"source": source}}
+        x = tdim or next((d for d in ("step", "time") if d in ds.dims), None)
+        trace = {"type": "scatter", "meta": {"source": source, "x": x, "y": var}}
+        if x is None and var and ds[var].ndim == 1:
+            # A 1-D file along another dim (years, leads in days): a point per value of it.
+            trace["meta"]["x"] = ds[var].dims[0]
+    trace["meta"] = {k: v for k, v in trace["meta"].items() if v is not None}
     trace["uid"] = uid
     if xaxis:
         trace.update(xaxis=xaxis, yaxis="y" + xaxis[1:])
@@ -105,8 +135,9 @@ def _as_drawn(ds, trace):
     what is drawn (one line per station with ``along``, not a station map)."""
     meta = (trace or {}).get("meta") or {}
     source = meta.get("source") or {}
-    if source.get("variable") in ds.data_vars:
-        ds = ds[[source["variable"]]]
+    variable = (meta.get("marker") or {}).get("color") or meta.get("z") or meta.get("y")
+    if variable in ds.data_vars:
+        ds = ds[[variable]]
     picks = {**(source.get("isel") or {}), **(source.get("sel") or {})}
     if meta.get("along"):
         picks[meta["along"]] = 0
@@ -134,12 +165,18 @@ def _layer_traces(layers):
             continue
         datasets[uid] = layer.ds
         source = {"input": uid}
+        var = _only_variable(layer.ds)
         if layer.kind in ("heatmap", "contour"):
-            data.append({"uid": uid, "type": layer.kind, "meta": {"source": source}})
+            meta = {"source": source, **({"z": var} if var else {})}
+            data.append({"uid": uid, "type": layer.kind, "meta": meta})
         elif layer.kind == "scatter":
-            data.append(
-                {"uid": uid, "type": "scatter", "meta": {"bind": "points", "source": source}}
-            )
+            meta = {
+                "source": source,
+                "x": cf_dim(layer.ds, "longitude"),
+                "y": cf_dim(layer.ds, "latitude"),
+                **({"marker": {"color": var}} if var else {}),
+            }
+            data.append({"uid": uid, "type": "scatter", "meta": meta})
         else:
             data.append(
                 {"uid": uid, "type": "heatmap", "meta": {"bind": "speed", "source": source}}
@@ -161,9 +198,10 @@ def _layer_traces(layers):
     dest="inputs",
     type=parse_input,
     action="append",
-    help="Input Zarr as PATH or PATH=UID (letters, digits, _). Repeat for side-by-side maps, one panel per file on "
-    "its own grid. In --spec the input is uid UID, else its position: 0, 1, …. Exclusive with "
-    "data layers.",
+    help="Input Zarr, or a GeoJSON outline drawn on every map, as PATH or PATH=UID (letters, "
+    "digits, _). Repeat for side-by-side maps, one panel per Zarr on its own grid. In --spec the "
+    "input is uid UID, else its position: 0, 1, …. Combines with --layer outline:, mask: and "
+    "scatter: only.",
 )
 @weather_skill.argument(
     "--layer",
@@ -226,7 +264,7 @@ def plot(
 ):
     """Draw weather-skills Zarrs as maps, time series, scatter plots, wind roses, verification grids, mediograms, or animations."""
     inputs = list(inputs or [])
-    files = [x.ds for x in inputs]
+    files = [x.ds for x in inputs if x.ds is not None]
     layers = list(layer or [])
     grid = obs is not None or bool(forecast) or bool(verify)
     if grid + bool(mediogram) + bool(animate) > 1:
@@ -238,22 +276,39 @@ def plot(
         if inputs or layers:
             raise UsageError("--obs/--forecast/--verify make a verification grid; drop -i/--layer")
         merged, datasets = build_verify_spec(obs, forecast, verify, spec)
-        return run(merged, None, datasets, output, dump_spec, theme_file=theme_file)
+        return run(
+            merged,
+            None,
+            datasets,
+            output,
+            dump_spec,
+            theme_file=theme_file,
+            spec_as_written=spec.data if spec else None,
+        )
     if mediogram:
         if layers:
             raise UsageError("--mediogram takes two -i inputs (forecast, m-climate), not --layer")
         merged, datasets = build_mediogram_spec(files, spec)
-        return run(merged, None, datasets, output, dump_spec, theme_file=theme_file)
+        return run(
+            merged,
+            None,
+            datasets,
+            output,
+            dump_spec,
+            theme_file=theme_file,
+            spec_as_written=spec.data if spec else None,
+        )
     if replayed in ("plot --verify", "plot --mediogram") and not files and not layers:
         # The dumped spec already holds every trace and its layout.
         return run(spec.data, None, spec.opened(), output, dump_spec, theme_file=theme_file)
-    # Boundaries and masks go on -i maps too: an outline on every panel.
-    shapes = [x for x in layers if x.kind in ("outline", "mask")] if files else []
+    # Boundaries, masks and stations go on -i maps too: drawn on every panel.
+    shapes = [x for x in layers if x.kind in ("outline", "mask", "scatter")] if inputs else []
     if shapes and len(shapes) == len(layers):
         layers = []
-    if files and layers:
+    if inputs and layers:
         raise UsageError(
-            "pass -i/--input or --layer, not both (-i takes only outline: and mask: layers)"
+            "pass -i/--input or --layer, not both (-i takes only outline:, mask: and scatter: "
+            "layers; with --layer, a GeoJSON goes in as outline:PATH)"
         )
     if animate and len(files) > 1:
         raise UsageError(
@@ -268,14 +323,47 @@ def plot(
         if mask:
             layout["meta"] = {"geo": {"mask_geojson": mask}}
     else:
-        cli = dict(zip(input_ids([x.name for x in inputs]), files, strict=True))
+        # Every -i, then every outline / mask layer, is numbered by position unless named.
+        ids = input_ids([x.name for x in [*inputs, *shapes]])
+        cli = {
+            uid: x.ds for uid, x in zip(ids[: len(inputs)], inputs, strict=True) if x.ds is not None
+        }
+        outlines = [
+            (uid, x.path) for uid, x in zip(ids[: len(inputs)], inputs, strict=True) if x.ds is None
+        ]
+        stations = {}  # station layers: one trace each, drawn on every -i map
+        for uid, shape in zip(ids[len(inputs) :], shapes, strict=True):
+            if shape.kind == "mask":
+                layout["meta"] = {"geo": {"mask_geojson": shape.path}}
+            elif shape.kind == "scatter":
+                stations[uid] = shape.ds
+            else:
+                outlines.append((uid, shape.path))
         datasets = spec_datasets(spec, cli)
         user = {t.get("uid"): t for t in (spec.data.get("data") or [])} if spec else {}
-        drawn = {key: _as_drawn(d, user.get(key)) for key, d in datasets.items()}
+        # A spec that draws data in traces of its own draws only those, plus the inputs it
+        # restyles by uid.
+        own = False
+        for uid, t in user.items():
+            meta = t.get("meta") or {}
+            source = meta.get("source") or {}
+            mapped = any(meta.get(k) for k in MAPPING_KEYS)
+            drawn_here = mapped or (source and "geojson" not in source)
+            own = own or (uid is not None and uid not in datasets and drawn_here)
+        drawn = {
+            key: _as_drawn(d, user.get(key))
+            for key, d in datasets.items()
+            if key in user or not own
+        }
+        datasets = {**datasets, **stations}
         data = [_default_trace(key, d, user.get(key)) for key, d in drawn.items()]
-        # 1-D series share one x/y axis, one legend entry per file.
+        # Lines along time share one x/y axis, one legend entry per file.
         series = bool(data) and all(
-            t["type"] == "scatter" and "bind" not in t["meta"] for t in data
+            t["type"] == "scatter"
+            # A preset (a wind rose, boxes) named on the input's uid is not a line.
+            and "bind" not in ((user.get(t["uid"]) or {}).get("meta") or {})
+            and t["meta"].get("x") != cf_dim(datasets[t["uid"]], "longitude")
+            for t in data
         )
         if series:
             if len(data) > MAX_INPUTS:
@@ -283,28 +371,37 @@ def plot(
                     f"--input may be passed at most {MAX_INPUTS} times for series; got "
                     f'{len(data)}. For ensemble members use meta.along "number" on one input'
                 )
-            for i, (key, d) in enumerate(datasets.items()):
-                data[i]["name"] = trace_label(d, i, key)
+            for i, key in enumerate(drawn):
+                data[i]["name"] = trace_label(datasets[key], i, key)
+            # One line has no legend, but a name the spec gives it (by uid, or with no uid
+            # by position) is meant to be seen.
+            if len(data) == 1 and "name" in (user.get(data[0]["uid"]) or user.get(None) or {}):
+                data[0]["showlegend"] = True
         elif cli:
+            # Side by side, every map names its axes, so a trace with none (an outline, a
+            # station layer) is drawn on each of them.
             data = [
-                _default_trace(key, d, user.get(key), xaxis=None if i == 0 else f"x{i + 1}")
+                _default_trace(
+                    key,
+                    d,
+                    user.get(key),
+                    xaxis=(f"x{i + 1}" if i else "x") if len(drawn) > 1 else None,
+                )
                 for i, (key, d) in enumerate(drawn.items())
             ]
         else:
             data = []
-        for j, shape in enumerate(shapes):
-            if shape.kind == "mask":
-                layout["meta"] = {"geo": {"mask_geojson": shape.path}}
-                continue
-            for i in range(len(datasets)):
-                outline = {
-                    "uid": f"outline{j + 1}" + (f"-{i + 1}" if i else ""),
+        for uid, ds in stations.items():
+            data.append(_default_trace(uid, _as_drawn(ds, user.get(uid)), user.get(uid)))
+        # A GeoJSON is an outline: one trace with no axis of its own, drawn on every map.
+        for uid, path in outlines:
+            data.append(
+                {
+                    "uid": uid,
                     "type": "scatter",
-                    "meta": {"bind": "geojson", "source": {"geojson": shape.path}},
+                    "meta": {"bind": "geojson", "source": {"geojson": path}},
                 }
-                if i:
-                    outline.update(xaxis=f"x{i + 1}", yaxis=f"y{i + 1}")
-                data.append(outline)
+            )
     if not datasets and not any((t.get("meta") or {}).get("bind") == "geojson" for t in data):
         if spec is None or not (spec.data.get("data")):
             raise UsageError(
@@ -317,7 +414,16 @@ def plot(
     if series:
         warn_mixed_units(merged, datasets)
         warn_disjoint_dates(merged, datasets)
-    return run(merged, None, datasets, output, dump_spec, theme_file=theme_file, animate=animate)
+    return run(
+        merged,
+        None,
+        datasets,
+        output,
+        dump_spec,
+        theme_file=theme_file,
+        animate=animate,
+        spec_as_written=spec.data if spec else None,
+    )
 
 
 install_spec_help(plot)

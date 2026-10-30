@@ -146,9 +146,13 @@ def animate_figure(
 
     out_layout = {k: v for k, v in layout.items() if not _AXIS_RE.match(k) and k != "grid"}
     out_layout["annotations"] = frame_annotations(0)
-    # Panel 1 was one cell of a grid; as the only panel it takes the whole plot area.
+    # Panel 1 was one cell of a grid; as the only panel it takes the whole plot area, and
+    # shows the tick labels the grid left to its neighbours.
     for key in ("xaxis", "yaxis"):
-        out_layout[key] = {**out_layout[key], "domain": [0, 1]}
+        axis = {**out_layout[key], "domain": [0, 1]}
+        if "showticklabels" not in (user_layout.get(key) or {}):
+            axis.pop("showticklabels", None)
+        out_layout[key] = axis
     bars = [k for k, v in out_layout.items() if k.startswith("coloraxis") and isinstance(v, dict)]
     for key in bars:
         bar = out_layout[key].setdefault("colorbar", {})

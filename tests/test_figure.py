@@ -12,7 +12,8 @@ from weather_skills_plotting import compile
 
 
 def _trace(uid, **kw):
-    meta = kw.pop("meta", {})
+    # A map of the fixtures' precip unless the test names its own mapping.
+    meta = kw.pop("meta", None) or {"z": "precip"}
     source = {"input": kw.pop("input", uid), **kw.pop("source", {})}
     return {"uid": uid, "type": kw.pop("type", "heatmap"), "meta": {"source": source, **meta}, **kw}
 
@@ -28,7 +29,7 @@ def _data(fig, kind=None):
 
 def test_heatmap_panels_each_time_with_one_discrete_colorbar():
     ds = make_gridded(n_time=3)
-    fig = compile({"data": [_trace("a")]}, {"a": ds})
+    fig = compile({"data": [_trace("a", meta={"z": "precip"})]}, {"a": ds})
     heat = _data(fig, "heatmap")
     assert len(heat) == 3
     assert [t["xaxis"] for t in heat] == ["x", "x2", "x3"]
@@ -59,7 +60,7 @@ def test_heatmap_panels_each_time_with_one_discrete_colorbar():
 
 def test_continuous_map_hovers_z_without_a_customdata_copy():
     ds = make_gridded(n_time=1, name="t2m", units="K")
-    heat = _data(compile({"data": [_trace("a")]}, {"a": ds}), "heatmap")[0]
+    heat = _data(compile({"data": [_trace("a", meta={"z": "t2m"})]}, {"a": ds}), "heatmap")[0]
     assert heat["customdata"] is None
     assert "%{z:.4g}" in heat["hovertemplate"]
 
@@ -68,7 +69,14 @@ def test_user_trace_keys_lift_to_coloraxis_and_win():
     ds = make_gridded(n_time=1)
     spec = {
         "data": [
-            _trace("a", zmin=0, zmax=20, colorscale="Blues", colorbar={"title": {"text": "Rain"}})
+            _trace(
+                "a",
+                zmin=0,
+                zmax=20,
+                colorscale="Blues",
+                colorbar={"title": {"text": "Rain"}},
+                meta={"z": "precip"},
+            )
         ]
     }
     axis = _layout(compile(spec, {"a": ds}))["coloraxis"]
@@ -79,14 +87,22 @@ def test_user_trace_keys_lift_to_coloraxis_and_win():
 
 def test_layout_coloraxis_override_wins():
     ds = make_gridded(n_time=1)
-    spec = {"data": [_trace("a")], "layout": {"coloraxis": {"colorbar": {"len": 0.3}}}}
+    spec = {
+        "data": [_trace("a", meta={"z": "precip"})],
+        "layout": {"coloraxis": {"colorbar": {"len": 0.3}}},
+    }
     assert _layout(compile(spec, {"a": ds}))["coloraxis"]["colorbar"]["len"] == 0.3
 
 
 def test_side_by_side_inputs_get_their_own_grid_and_one_scale_per_quantity():
     a = make_gridded(n_time=1)
     b = make_gridded(n_time=1, name="tp", lats=(1.5, 2.5), lons=(10.5, 12.5), fill=3.0)
-    spec = {"data": [_trace("a"), _trace("ECMWF", xaxis="x2", yaxis="y2", name="hover only")]}
+    spec = {
+        "data": [
+            _trace("a", meta={"z": "precip"}),
+            _trace("ECMWF", xaxis="x2", yaxis="y2", name="hover only", meta={"z": "tp"}),
+        ]
+    }
     fig = compile(spec, {"a": a, "ECMWF": b})
     heat = _data(fig, "heatmap")
     # Two rainfall rates under different variable names are one quantity: one bar.
@@ -101,8 +117,8 @@ def test_shared_coloraxis_on_request():
     b = make_gridded(n_time=1, fill=5.0)
     spec = {
         "data": [
-            _trace("a", coloraxis="coloraxis"),
-            _trace("b", xaxis="x2", yaxis="y2", coloraxis="coloraxis"),
+            _trace("a", coloraxis="coloraxis", meta={"z": "precip"}),
+            _trace("b", xaxis="x2", yaxis="y2", coloraxis="coloraxis", meta={"z": "precip"}),
         ]
     }
     fig = compile(spec, {"a": a, "b": b})
@@ -114,11 +130,17 @@ def test_one_trace_showscale_true_shows_its_shared_bar():
     # Rain on four panels shares one bar; the trace asking for it wins over the
     # others' showscale false, wherever it sits in the list.
     rain = [
-        _trace(f"r{i}", input="r", showscale=(i == 0), **({"xaxis": f"x{i + 1}"} if i else {}))
+        _trace(
+            f"r{i}",
+            input="r",
+            showscale=(i == 0),
+            meta={"z": "precip"},
+            **({"xaxis": f"x{i + 1}"} if i else {}),
+        )
         for i in range(4)
     ]
     prob = make_gridded(n_time=1, name="prob", units="1", fill=0.3)
-    spec = {"data": [*rain, _trace("p", xaxis="x5", showscale=True)]}
+    spec = {"data": [*rain, _trace("p", xaxis="x5", showscale=True, meta={"z": "prob"})]}
     layout = _layout(compile(spec, {"r": make_gridded(n_time=1), "p": prob}))
     assert layout["coloraxis"]["showscale"] is True
     assert layout["coloraxis2"]["showscale"] is True
@@ -129,8 +151,10 @@ def test_spec_placed_colorbars_keep_their_position():
     prob = make_gridded(n_time=1, name="prob", units="1", fill=0.3)
     spec = {
         "data": [
-            _trace("a", colorbar={"x": 1.01, "y": 0.75, "len": 0.45}),
-            _trace("p", xaxis="x2", colorbar={"x": 1.01, "y": 0.25, "len": 0.45}),
+            _trace("a", colorbar={"x": 1.01, "y": 0.75, "len": 0.45}, meta={"z": "precip"}),
+            _trace(
+                "p", xaxis="x2", colorbar={"x": 1.01, "y": 0.25, "len": 0.45}, meta={"z": "prob"}
+            ),
         ]
     }
     layout = _layout(compile(spec, {"a": make_gridded(n_time=1), "p": prob}))
@@ -147,31 +171,37 @@ def test_spec_placed_colorbars_keep_their_position():
 def test_faceted_side_by_side_is_an_error():
     a = make_gridded(n_time=2)
     with pytest.raises(UsageError, match="single map"):
-        compile({"data": [_trace("a"), _trace("b", input="a", xaxis="x2")]}, {"a": a})
+        grid = {"z": "precip"}
+        spec = {"data": [_trace("a", meta=grid), _trace("b", input="a", xaxis="x2", meta=grid)]}
+        compile(spec, {"a": a})
 
 
 def test_leftover_dim_is_an_error_with_hint():
     ds = make_forecast(n_step=2)  # tests/conftest: number × step × lat × lon
     ds = ds.expand_dims(level=[850, 500])
     with pytest.raises(UsageError, match="dimensions 'level', 'number' remain.*isel"):
-        compile({"data": [_trace("a")]}, {"a": ds})
+        compile({"data": [_trace("a", meta={"z": "tp"})]}, {"a": ds})
 
 
 def test_step_panels_for_forecast():
-    fig = compile({"data": [_trace("a")]}, {"a": make_forecast(n_number=0, n_step=4)})
+    fig = compile(
+        {"data": [_trace("a", meta={"z": "tp"})]}, {"a": make_forecast(n_number=0, n_step=4)}
+    )
     assert len(_data(fig, "heatmap")) == 4
 
 
 def test_ensemble_map_is_not_averaged():
     # The plotter selects but never averages: summarize-dim makes the ensemble mean.
     with pytest.raises(UsageError, match="'number' remains.*summarize-dim"):
-        compile({"data": [_trace("a")]}, {"a": make_forecast(n_number=3, n_step=4)})
+        compile(
+            {"data": [_trace("a", meta={"z": "tp"})]}, {"a": make_forecast(n_number=3, n_step=4)}
+        )
 
 
 def test_isel_and_bbox_subset():
     ds = make_gridded(n_time=3)
     spec = {
-        "data": [_trace("a", source={"isel": {"time": 1}})],
+        "data": [_trace("a", source={"isel": {"time": 1}}, meta={"z": "precip"})],
         "layout": {"meta": {"geo": {"bbox": [3, 11, 1, 12]}}},
     }
     fig = compile(spec, {"a": ds})
@@ -182,7 +212,7 @@ def test_isel_and_bbox_subset():
 
 
 def test_contour_uses_class_edges_as_levels():
-    spec = {"data": [_trace("a", type="contour")]}
+    spec = {"data": [_trace("a", type="contour", meta={"z": "precip"})]}
     tr = _data(compile(spec, {"a": make_gridded(n_time=1)}), "contour")[0]
     assert tr["contours"]["coloring"] == "fill"
     assert tr["contours"]["size"] == 1
@@ -208,7 +238,16 @@ def _pressure():
 def test_one_station_keeps_its_station_axis():
     # local-extrema finds a single high: a one-point file still draws as a point.
     stations = make_station(n_station=1, n_time=1).isel(time=0)
-    spec = {"data": [_trace("a"), _trace("c", type="scatter", meta={"bind": "points"})]}
+    spec = {
+        "data": [
+            _trace("a", meta={"z": "msl"}),
+            _trace(
+                "c",
+                type="scatter",
+                meta={"x": "longitude", "y": "latitude", "marker": {"color": "precip"}},
+            ),
+        ]
+    }
     fig = compile(spec, {"a": _pressure(), "c": stations})
     point = next(t for t in fig.data if t["uid"] == "c")
     assert len(point["x"]) == 1
@@ -217,9 +256,14 @@ def test_one_station_keeps_its_station_axis():
 def test_line_only_contour_over_shading_keeps_the_shading_colorbar():
     spec = {
         "data": [
-            _trace("a"),
+            _trace("a", meta={"z": "msl"}),
             _trace(
-                "iso", input="a", type="contour", contours={"coloring": "none"}, showscale=False
+                "iso",
+                input="a",
+                type="contour",
+                contours={"coloring": "none"},
+                showscale=False,
+                meta={"z": "msl"},
             ),
         ]
     }
@@ -234,7 +278,12 @@ def test_line_only_contour_over_shading_keeps_the_shading_colorbar():
 
 def test_contour_over_heatmap_defaults_to_labeled_isobars_every_4_hpa():
     # --layer heatmap:msl.zarr --layer contour:msl.zarr with no spec.
-    spec = {"data": [_trace("a"), _trace("iso", input="a", type="contour")]}
+    spec = {
+        "data": [
+            _trace("a", meta={"z": "msl"}),
+            _trace("iso", input="a", type="contour", meta={"z": "msl"}),
+        ]
+    }
     fig = compile(spec, {"a": _pressure()})
     iso = _data(fig, "contour")[0]
     assert iso["coloraxis"] is None and iso["showscale"] is False
@@ -252,8 +301,14 @@ def test_contour_over_heatmap_defaults_to_labeled_isobars_every_4_hpa():
 def test_contour_over_heatmap_keeps_a_fill_or_levels_the_spec_asks_for():
     spec = {
         "data": [
-            _trace("a"),
-            _trace("iso", input="a", type="contour", contours={"start": 1000, "size": 10}),
+            _trace("a", meta={"z": "msl"}),
+            _trace(
+                "iso",
+                input="a",
+                type="contour",
+                contours={"start": 1000, "size": 10},
+                meta={"z": "msl"},
+            ),
         ]
     }
     iso = _data(compile(spec, {"a": _pressure()}), "contour")[0]
@@ -273,13 +328,13 @@ def test_text_only_points_have_no_colorbar_and_keep_customdata_in_images(tmp_pat
     stations = make_station(n_station=3, n_time=1).isel(time=0)
     spec = {
         "data": [
-            _trace("a"),
+            _trace("a", meta={"z": "msl"}),
             _trace(
                 "c",
                 type="scatter",
                 mode="text",
                 texttemplate="<b>H</b><br>%{customdata:.0f}",
-                meta={"bind": "points"},
+                meta={"x": "longitude", "y": "latitude", "marker": {"color": "precip"}},
             ),
         ]
     }
@@ -301,7 +356,16 @@ def test_text_only_points_skip_nan_but_markers_keep_them():
     stations = make_station(n_station=3, n_time=1).isel(time=0)
     stations["precip"].values[1] = np.nan
     for mode, n in (("text", 2), ("markers", 3)):
-        spec = {"data": [_trace("c", type="scatter", mode=mode, meta={"bind": "points"})]}
+        spec = {
+            "data": [
+                _trace(
+                    "c",
+                    type="scatter",
+                    mode=mode,
+                    meta={"x": "longitude", "y": "latitude", "marker": {"color": "precip"}},
+                )
+            ]
+        }
         trace = next(t for t in compile(spec, {"c": stations}).data if t["uid"] == "c")
         assert len(trace["x"]) == n and len(trace["customdata"]) == n
     # The station with no value is a ×, not a filled dot that reads as a class.
@@ -313,7 +377,16 @@ def test_local_extrema_points_print_h_or_l_unless_the_spec_restyles_them():
     lows = make_station(n_station=3, n_time=1).isel(time=0)
     lows["precip"].attrs["extremum_kind"] = "low"
     lows["precip"].values[1] = np.nan
-    spec = {"data": [_trace("a"), _trace("c", type="scatter", meta={"bind": "points"})]}
+    spec = {
+        "data": [
+            _trace("a", meta={"z": "msl"}),
+            _trace(
+                "c",
+                type="scatter",
+                meta={"x": "longitude", "y": "latitude", "marker": {"color": "precip"}},
+            ),
+        ]
+    }
     fig = compile(spec, {"a": _pressure(), "c": lows})
     text = next(t for t in fig.data if t["uid"] == "c")
     assert text["mode"] == "text" and text["texttemplate"].startswith("<b>L</b>")
@@ -327,7 +400,7 @@ def test_local_extrema_points_print_h_or_l_unless_the_spec_restyles_them():
 def test_non_precip_gets_continuous_scale_symmetric_when_diverging():
     ds = make_gridded(n_time=1, name="t2m", units="degree_Celsius")
     ds["t2m"].values[:] = np.linspace(-2, 4, 12).reshape(1, 3, 4)
-    axis = _layout(compile({"data": [_trace("a")]}, {"a": ds}))["coloraxis"]
+    axis = _layout(compile({"data": [_trace("a", meta={"z": "t2m"})]}, {"a": ds}))["coloraxis"]
     assert (axis["cmin"], axis["cmax"]) == (-4, 4)
     assert "ticktext" not in axis["colorbar"]
 
@@ -338,7 +411,7 @@ def test_sea_level_pressure_is_red_blue_with_white_at_standard_atmosphere():
         ds = make_gridded(n_time=1, name="msl", units=units)
         ds["msl"].values[:] = np.linspace(1008, 1036, 12).reshape(1, 3, 4) * scale
         ds["msl"].attrs["standard_name"] = "air_pressure_at_mean_sea_level"
-        axis = _layout(compile({"data": [_trace("a")]}, {"a": ds}))["coloraxis"]
+        axis = _layout(compile({"data": [_trace("a", meta={"z": "msl"})]}, {"a": ds}))["coloraxis"]
         assert axis["colorscale"][0][1] == "rgb(5,48,97)"  # RdBu_r: blue lows
         assert (axis["cmin"], axis["cmax"]) == pytest.approx((990.5 * scale, 1036 * scale))
 
@@ -353,8 +426,12 @@ def test_points_layer_over_field_and_static_outline(tmp_path):
     )
     spec = {
         "data": [
-            _trace("a"),
-            _trace("b", type="scatter", meta={"bind": "points"}),
+            _trace("a", meta={"z": "precip"}),
+            _trace(
+                "b",
+                type="scatter",
+                meta={"x": "longitude", "y": "latitude", "marker": {"color": "precip"}},
+            ),
             {
                 "uid": "edge",
                 "type": "scatter",
@@ -377,11 +454,14 @@ def test_points_layer_over_field_and_static_outline(tmp_path):
 
 def test_overlays_switch_off_and_restyle():
     ds = make_gridded(n_time=1)
-    off = compile({"data": [_trace("a")], "layout": {"meta": {"overlays": False}}}, {"a": ds})
+    grid = {"z": "precip"}
+    off = compile(
+        {"data": [_trace("a", meta=grid)], "layout": {"meta": {"overlays": False}}}, {"a": ds}
+    )
     assert not [t for t in _data(off) if t["uid"].startswith("overlay")]
     styled = compile(
         {
-            "data": [_trace("a")],
+            "data": [_trace("a", meta=grid)],
             "layout": {
                 "meta": {"overlays": {"coastline": False, "borders": {"line": {"color": "red"}}}}
             },
@@ -400,7 +480,12 @@ def test_series_spaghetti_band_and_cycle():
     same = compile(
         {
             "data": [
-                _trace("a", type="scatter", source=src, meta={"bind": "series", "along": "number"})
+                _trace(
+                    "a",
+                    type="scatter",
+                    source=src,
+                    meta={"x": "step", "y": "tp", "along": "number"},
+                )
             ]
         },
         {"a": ds},
@@ -414,7 +499,7 @@ def test_series_spaghetti_band_and_cycle():
                     "a",
                     type="scatter",
                     source=src,
-                    meta={"bind": "series", "along": "number", "band": [10, 90]},
+                    meta={"x": "step", "y": "tp", "along": "number", "band": [10, 90]},
                 )
             ]
         },
@@ -430,7 +515,13 @@ def test_series_spaghetti_band_and_cycle():
                     "a",
                     type="scatter",
                     source=src,
-                    meta={"bind": "series", "along": "number", "band": [10, 90], "members": False},
+                    meta={
+                        "x": "step",
+                        "y": "tp",
+                        "along": "number",
+                        "band": [10, 90],
+                        "members": False,
+                    },
                 )
             ]
         },
@@ -444,7 +535,7 @@ def test_series_spaghetti_band_and_cycle():
                     "a",
                     type="scatter",
                     source=src,
-                    meta={"bind": "series", "along": "number", "along_color": "cycle"},
+                    meta={"x": "step", "y": "tp", "along": "number", "along_color": "cycle"},
                 )
             ]
         },
@@ -454,9 +545,10 @@ def test_series_spaghetti_band_and_cycle():
 
 
 def test_series_needs_select_or_along():
-    with pytest.raises(UsageError, match="remain besides.*summarize-dim"):
+    with pytest.raises(UsageError, match="has dims.*that x 'time' lacks.*summarize-dim"):
         compile(
-            {"data": [_trace("a", type="scatter", meta={"bind": "series"})]}, {"a": make_gridded()}
+            {"data": [_trace("a", type="scatter", meta={"x": "time", "y": "precip"})]},
+            {"a": make_gridded()},
         )
 
 
@@ -465,17 +557,15 @@ def test_several_variables_need_one_chosen():
     ds = xr.Dataset(
         {"east": (("time",), [1.0, 2, 3]), "dmi": (("time",), [0.1, 0.2, 0.3])}, {"time": t}
     )
-    with pytest.raises(UsageError, match=r"variable is not set.*east, dmi"):
-        compile({"data": [_trace("a", type="scatter", meta={"bind": "series"})]}, {"a": ds})
-    spec = {
-        "data": [_trace("a", type="scatter", source={"variable": "dmi"}, meta={"bind": "series"})]
-    }
+    with pytest.raises(UsageError, match=r"y is not set.*east, dmi"):
+        compile({"data": [_trace("a", type="scatter", meta={"x": "time"})]}, {"a": ds})
+    spec = {"data": [_trace("a", type="scatter", meta={"x": "time", "y": "dmi"})]}
     assert list(_data(compile(spec, {"a": ds}))[0]["y"]) == [0.1, 0.2, 0.3]
 
 
 def test_series_forecast_plots_valid_time():
     ds = make_forecast(n_number=0, n_step=3).mean(["latitude", "longitude"], keep_attrs=True)
-    fig = compile({"data": [_trace("a", type="scatter", meta={"bind": "series"})]}, {"a": ds})
+    fig = compile({"data": [_trace("a", type="scatter", meta={"x": "step", "y": "tp"})]}, {"a": ds})
     assert _data(fig)[0]["x"][0].startswith("2026-01-01")
     assert "tickformat" not in _layout(fig)["xaxis"]  # Plotly's own date ticks
 
@@ -602,14 +692,16 @@ def test_xy_against_time_points_to_along_and_align():
         coords={"time": time, "number": np.arange(4)},
     )
     spec = {"data": [{"uid": "0", "type": "scatter", "meta": {"x": "doy", "y": "tp"}}]}
-    with pytest.raises(UsageError, match='"along": \'number\'.*"align": "dayofyear"'):
+    with pytest.raises(
+        UsageError, match=r'meta.x "time" and .*along \'number\'.*align "dayofyear"'
+    ):
         compile(spec, {"0": ds})
 
 
 @pytest.mark.parametrize("key, value", [("along", "number"), ("align", "dayofyear")])
 def test_xy_rejects_series_keys(key, value):
-    meta = {"x": "a", "y": "b", key: value}
-    with pytest.raises(UsageError, match=f"{key} draws a series over time.*align"):
+    meta = {"x": "latitude", "y": "precip", key: value}
+    with pytest.raises(UsageError, match=f"{key} needs x to be the time or step dimension"):
         compile({"data": [{"uid": "0", "type": "scatter", "meta": meta}]}, {"0": make_gridded()})
 
 
@@ -648,7 +740,16 @@ def test_windrose_bins():
     for k in ("u10", "v10"):
         ds[k].attrs["units"] = "m s-1"
     fig = compile(
-        {"data": [{"uid": "a", "type": "barpolar", "meta": {"source": {"input": "a"}}}]}, {"a": ds}
+        {
+            "data": [
+                {
+                    "uid": "a",
+                    "type": "barpolar",
+                    "meta": {"bind": "windrose", "source": {"input": "a"}},
+                }
+            ]
+        },
+        {"a": ds},
     )
     bars = _data(fig, "barpolar")
     assert [t["name"] for t in bars] == ["0–2 m/s", "2–4 m/s"]
@@ -688,20 +789,31 @@ def test_arrows_and_speed_quiver():
 
 
 def test_bind_type_mismatch():
-    with pytest.raises(UsageError, match="draws as type contour or heatmap.*series"):
-        compile({"data": [_trace("a", type="bar", meta={"bind": "field"})]}, {"a": make_gridded()})
+    with pytest.raises(
+        UsageError, match="bind 'speed' draws as type contour or heatmap, not 'bar'"
+    ):
+        compile({"data": [_trace("a", type="bar", meta={"bind": "speed"})]}, {"a": make_gridded()})
 
 
 def test_unknown_input():
     with pytest.raises(UsageError, match="input 'zz' is not an input"):
-        compile({"data": [_trace("a", input="zz")]}, {"a": make_gridded()})
+        compile({"data": [_trace("a", input="zz", meta={"z": "precip"})]}, {"a": make_gridded()})
 
 
 def test_two_scales_on_one_panel_do_not_overlap():
     grid = make_gridded(n_time=1, lats=(-1.0, 0.0, 1.0), lons=(36.0, 37.0, 38.0))
     stations = make_station(n_station=3, n_time=1)
     stations["precip"].attrs["units"] = "mm"  # different label → its own colorbar
-    spec = {"data": [_trace("a"), _trace("b", type="scatter", meta={"bind": "points"})]}
+    spec = {
+        "data": [
+            _trace("a", meta={"z": "precip"}),
+            _trace(
+                "b",
+                type="scatter",
+                meta={"x": "longitude", "y": "latitude", "marker": {"color": "precip"}},
+            ),
+        ]
+    }
     layout = _layout(compile(spec, {"a": grid, "b": stations}))
     bar1, bar2 = layout["coloraxis"]["colorbar"], layout["coloraxis2"]["colorbar"]
     # Two bars sit side by side along the bottom, each in its own half.
@@ -726,12 +838,22 @@ def test_align_dayofyear_lines_up_leap_and_non_leap_years():
             {
                 "uid": "a",
                 "type": "scatter",
-                "meta": {"bind": "series", "align": "dayofyear", "source": {"input": "a"}},
+                "meta": {
+                    "x": "time",
+                    "y": "precip",
+                    "align": "dayofyear",
+                    "source": {"input": "a"},
+                },
             },
             {
                 "uid": "b",
                 "type": "scatter",
-                "meta": {"bind": "series", "align": "dayofyear", "source": {"input": "b"}},
+                "meta": {
+                    "x": "time",
+                    "y": "precip",
+                    "align": "dayofyear",
+                    "source": {"input": "b"},
+                },
             },
         ]
     }
@@ -746,7 +868,13 @@ def test_align_dayofyear_folds_29_february():
     times = np.array(["2024-02-28", "2024-02-29", "2024-03-01"], dtype="datetime64[ns]")
     ds = xr.Dataset({"precip": (("time",), [1.0, 2.0, 3.0])}, coords={"time": times})
     spec = {
-        "data": [{"uid": "a", "type": "scatter", "meta": {"bind": "series", "align": "dayofyear"}}]
+        "data": [
+            {
+                "uid": "a",
+                "type": "scatter",
+                "meta": {"x": "time", "y": "precip", "align": "dayofyear"},
+            }
+        ]
     }
     x = list(_data(compile(spec, {"a": ds}))[0]["x"])
     assert [v[:10] for v in x] == ["2001-02-28", "2001-02-28", "2001-03-01"]
@@ -756,7 +884,7 @@ def test_cf_flag_field_gets_named_classes():
     ds = make_gridded(n_time=1, name="event_hit", units=None)
     ds["event_hit"].values[:] = np.resize([-1.0, 0.0, 1.0], ds["event_hit"].shape)
     ds["event_hit"].attrs.update(flag_values=[-1, 0, 1], flag_meanings="disagree below hit")
-    fig = compile({"data": [_trace("a")]}, {"a": ds})
+    fig = compile({"data": [_trace("a", meta={"z": "event_hit"})]}, {"a": ds})
     bar = _layout(fig)["coloraxis"]["colorbar"]
     assert bar["ticktext"] == ["disagree", "below", "hit"]
     assert bar["tickvals"] == [0, 1, 2]
@@ -772,12 +900,12 @@ def test_default_precip_palette_names_follow_aggregation_window():
     ds = make_gridded(n_time=1, name="diff", units="mm")
     ds["diff"].values[:] = 12.0
     ds["diff"].attrs["aggregation_period"] = "30 day"
-    spec = {"data": [_trace("a", meta={"palette": "Default_Precip_Anom"})]}
+    spec = {"data": [_trace("a", meta={"z": "diff", "palette": "Default_Precip_Anom"})]}
     bar = _layout(compile(spec, {"a": ds}))["coloraxis"]["colorbar"]
     month = precip_window_palette("ppt_anom_month", load_theme()["palettes"])
     assert bar["ticktext"] == [f"{b:g}" for b in month["bounds"]]
 
-    spec = {"data": [_trace("a", meta={"palette": "default_precip"})]}
+    spec = {"data": [_trace("a", meta={"z": "diff", "palette": "default_precip"})]}
     bar = _layout(compile(spec, {"a": ds}))["coloraxis"]["colorbar"]
     assert bar["ticktext"][-1] == "400"  # ppt_month window
 
@@ -794,7 +922,7 @@ def test_spread_from_summarize_dim_is_not_drawn_as_rain_totals():
         long_name="Standard deviation of Total precipitation across number",
         cell_methods="number: standard_deviation",
     )
-    axis = _layout(compile({"data": [_trace("a")]}, {"a": ds}))["coloraxis"]
+    axis = _layout(compile({"data": [_trace("a", meta={"z": "precip"})]}, {"a": ds}))["coloraxis"]
     # A continuous scale (no class ticks) and a label that says what it is.
     assert "ticktext" not in axis["colorbar"]
     assert axis["colorbar"]["title"]["text"] == "Precipitation std. dev. (number) [mm]"
@@ -802,7 +930,7 @@ def test_spread_from_summarize_dim_is_not_drawn_as_rain_totals():
 
 def test_member_panels_titled_and_bad_panel_title_named():
     ds = make_forecast(n_number=3, n_step=1).isel(step=0)
-    fig = compile({"data": [_trace("a", meta={"facet": "number"})]}, {"a": ds})
+    fig = compile({"data": [_trace("a", meta={"z": "tp", "facet": "number"})]}, {"a": ds})
     titles = [
         a["text"] for a in _layout(fig)["annotations"] if a.get("name", "").startswith("panel")
     ]
@@ -814,7 +942,7 @@ def test_member_panels_titled_and_bad_panel_title_named():
     ):
         compile(
             {
-                "data": [_trace("a", meta={"facet": "number"})],
+                "data": [_trace("a", meta={"z": "tp", "facet": "number"})],
                 "layout": {"annotations": [{"name": "panel-title-0", "text": "x"}]},
             },
             {"a": ds},
@@ -850,12 +978,13 @@ def test_panel_titles_follow_axis_number_not_trace_order():
 def test_user_annotations_add_to_panel_titles():
     ds = make_gridded(n_time=2)
     ann = {"text": "Mine", "xref": "x2 domain", "yref": "y2 domain", "x": 0.5, "y": 1.04}
-    fig = compile({"data": [_trace("a")], "layout": {"annotations": [ann]}}, {"a": ds})
+    spec = {"data": [_trace("a", meta={"z": "precip"})], "layout": {"annotations": [ann]}}
+    fig = compile(spec, {"a": ds})
     assert [a["text"] for a in _layout(fig)["annotations"]] == ["1 Jan '26", "2 Jan '26", "Mine"]
     # A chart has no panel titles; an annotation above it is just an annotation.
     series = ds.mean(["latitude", "longitude"])
     spec = {
-        "data": [_trace("s", type="scatter")],
+        "data": [_trace("s", type="scatter", meta={"x": "time", "y": "precip"})],
         "layout": {"annotations": [dict(ann, yref="y domain")]},
     }
     assert [a["text"] for a in _layout(compile(spec, {"s": series}))["annotations"]] == ["Mine"]
@@ -865,7 +994,7 @@ def test_string_bbox_and_horizontal_colorbar_below():
     ds = make_gridded(n_time=2)
     fig = compile(
         {
-            "data": [_trace("a")],
+            "data": [_trace("a", meta={"z": "precip"})],
             "layout": {
                 "coloraxis": {"colorbar": {"orientation": "h"}},
                 "meta": {"geo": {"bbox": "1/10/0/11"}},
@@ -887,7 +1016,14 @@ def test_same_standard_name_shares_a_bar_and_small_bbox_keeps_overlapped_cells()
     for ds in (grid, stations):
         ds[list(ds.data_vars)[0]].attrs["units"] = "degree_Celsius"
     spec = {
-        "data": [_trace("a"), _trace("b", type="scatter", meta={"bind": "points"})],
+        "data": [
+            _trace("a", meta={"z": "t2m"}),
+            _trace(
+                "b",
+                type="scatter",
+                meta={"x": "longitude", "y": "latitude", "marker": {"color": "temperature"}},
+            ),
+        ],
         # Smaller than one 1.5° cell and centred on none.
         "layout": {"meta": {"geo": {"bbox": [0.2, 36.5, -0.6, 37.1]}}},
     }
@@ -917,16 +1053,18 @@ def test_theme_file_sets_palette_colorway_and_overlays(tmp_path):
     theme = load_theme(path)
     ds = make_gridded(n_time=1)
     ds["precip"].attrs.update(units="mm", aggregation_period="7 day")
-    fig = compile({"data": [_trace("a")]}, {"a": ds}, theme=theme)
+    fig = compile({"data": [_trace("a", meta={"z": "precip"})]}, {"a": ds}, theme=theme)
     bar = _layout(fig)["coloraxis"]["colorbar"]
     assert list(bar["ticktext"]) == ["0", "1", "10"]
     borders = [t for t in _data(fig, "scatter") if str(t["uid"]).startswith("overlay-borders")]
     assert borders and all(t["line"]["color"] == "#ff0000" for t in borders)
     # A palette that exists only in the theme file is a known meta.palette name.
-    fig = compile({"data": [_trace("a", meta={"palette": "agency"})]}, {"a": ds}, theme=theme)
+    fig = compile(
+        {"data": [_trace("a", meta={"z": "precip", "palette": "agency"})]}, {"a": ds}, theme=theme
+    )
     assert list(_layout(fig)["coloraxis"]["colorbar"]["ticktext"]) == ["0", "1", "10"]
     # Explicit series colors (ensemble members, band) follow the template's colorway.
-    meta = {"bind": "series", "along": "number", "band": [10, 90]}
+    meta = {"x": "step", "y": "tp", "along": "number", "band": [10, 90]}
     area_mean = make_forecast(n_number=5, n_step=4).mean(["latitude", "longitude"], keep_attrs=True)
     fig = compile({"data": [_trace("a", type="scatter", meta=meta)]}, {"a": area_mean}, theme=theme)
     assert _data(fig)[0]["line"]["color"] == "#123456"
@@ -937,7 +1075,7 @@ def test_colorblind_template_keeps_its_colorway_under_a_theme(tmp_path):
 
     path = tmp_path / "theme.json"
     path.write_text(json.dumps({"template": {"layout": {"colorway": ["#123456", "#654321"]}}}))
-    meta = {"bind": "series", "along": "number"}
+    meta = {"x": "step", "y": "tp", "along": "number"}
     area_mean = make_forecast(n_number=2, n_step=4).mean(["latitude", "longitude"], keep_attrs=True)
     spec = {
         "data": [_trace("a", type="scatter", meta=meta)],
@@ -952,19 +1090,22 @@ def test_precip_rate_keeps_its_mm_units_for_a_spec_palette():
     ds = make_gridded(n_time=1, fill=2.0, units="mm h-1")
     ds["precip"].attrs["standard_name"] = "lwe_precipitation_rate"
     palette = {"colors": ["#ffffff", "#7fff7f", "#3dc83d", "#ff4d4d"], "bounds": [0, 1, 3, 5, 100]}
-    fig = compile({"data": [_trace("a", meta={"palette": palette})]}, {"a": ds})
+    fig = compile({"data": [_trace("a", meta={"z": "precip", "palette": palette})]}, {"a": ds})
     heat = _data(fig, "heatmap")[0]
     assert np.allclose(np.asarray(heat["customdata"], dtype=float), 2.0)
     assert "mm/h" in _layout(fig)["coloraxis"]["colorbar"]["title"]["text"]
     # A selected 6 hour mean (aggregation_period set, no step axis left) stays mm/h too.
     one = ds.isel(time=0)
     one["precip"].attrs["aggregation_period"] = "6 hour"
-    heat = _data(compile({"data": [_trace("a", meta={"palette": palette})]}, {"a": one}), "heatmap")
+    heat = _data(
+        compile({"data": [_trace("a", meta={"z": "precip", "palette": palette})]}, {"a": one}),
+        "heatmap",
+    )
     assert np.allclose(np.asarray(heat[0]["customdata"], dtype=float), 2.0)
     # A flux not in mm is drawn as stored, with a note to unit-convert.
     ds = make_gridded(n_time=1, fill=1 / 86400, units="kg m-2 s-1")
     ds["precip"].attrs["standard_name"] = "lwe_precipitation_rate"
-    heat = _data(compile({"data": [_trace("a")]}, {"a": ds}), "heatmap")[0]
+    heat = _data(compile({"data": [_trace("a", meta={"z": "precip"})]}, {"a": ds}), "heatmap")[0]
     raw = heat["customdata"] if heat["customdata"] is not None else heat["z"]
     assert np.allclose(np.asarray(raw, dtype=float), 1 / 86400)
 
@@ -977,7 +1118,16 @@ def test_dateline_grid_and_points_draw_on_one_continuous_window():
     station = station.assign_coords(
         latitude=("station_id", [0.0]), longitude=("station_id", [-150.0])
     )
-    spec = {"data": [_trace("a"), _trace("b", type="scatter", meta={"bind": "points"})]}
+    spec = {
+        "data": [
+            _trace("a", meta={"z": "precip"}),
+            _trace(
+                "b",
+                type="scatter",
+                meta={"x": "longitude", "y": "latitude", "marker": {"color": "precip"}},
+            ),
+        ]
+    }
     fig = compile(spec, {"a": grid, "b": station})
     lo, hi = _layout(fig)["xaxis"]["range"]
     assert 140 < lo < 155 and 275 < hi < 290
@@ -993,7 +1143,7 @@ def test_sel_on_a_model_calendar_picks_the_nearest_date():
     times = [cftime.datetime(2099, m, 16, calendar="360_day") for m in (1, 2, 3)]
     ds = make_gridded(n_time=3).assign_coords(time=times)
     for day in ("2099-02-20", "2099-02-30"):
-        spec = {"data": [_trace("a", source={"sel": {"time": day}})]}
+        spec = {"data": [_trace("a", source={"sel": {"time": day}}, meta={"z": "precip"})]}
         heat = _data(compile(spec, {"a": ds}), "heatmap")
         assert len(heat) == 1
 
@@ -1001,17 +1151,18 @@ def test_sel_on_a_model_calendar_picks_the_nearest_date():
 def test_temperature_difference_is_diverging_and_absolute_is_not():
     warm = make_gridded(n_time=1, name="sst", fill=2.0, units="delta_degC")
     warm["sst"].attrs["standard_name"] = "sea_surface_temperature"
-    axis = _layout(compile({"data": [_trace("a")]}, {"a": warm}))["coloraxis"]
+    grid = {"z": "sst"}
+    axis = _layout(compile({"data": [_trace("a", meta=grid)]}, {"a": warm}))["coloraxis"]
     # An all-positive anomaly is still centred on zero.
     assert axis["cmin"] == -axis["cmax"]
     sst = make_gridded(n_time=1, name="sst", units="degree_Celsius")
     sst["sst"].values[..., 0] = -1.8
     sst["sst"].values[..., 1:] = 28.0
     sst["sst"].attrs["standard_name"] = "sea_surface_temperature"
-    axis = _layout(compile({"data": [_trace("a")]}, {"a": sst}))["coloraxis"]
+    axis = _layout(compile({"data": [_trace("a", meta=grid)]}, {"a": sst}))["coloraxis"]
     assert axis["cmin"] == pytest.approx(-1.8) and axis["cmax"] == pytest.approx(28.0)
     # Side by side they are two quantities: two colorbars.
-    spec = {"data": [_trace("a"), _trace("b", xaxis="x2", yaxis="y2")]}
+    spec = {"data": [_trace("a", meta=grid), _trace("b", xaxis="x2", yaxis="y2", meta=grid)]}
     heat = _data(compile(spec, {"a": sst, "b": warm}), "heatmap")
     assert heat[0]["coloraxis"] != heat[1]["coloraxis"]
 
@@ -1020,8 +1171,8 @@ def test_input_names_title_side_by_side_panels_and_plain_traces_repeat():
     a, b = make_gridded(n_time=1), make_gridded(n_time=1, fill=3.0)
     spec = {
         "data": [
-            _trace("CHIRPS"),
-            _trace("IMERG", xaxis="x2", yaxis="y2"),
+            _trace("CHIRPS", meta={"z": "precip"}),
+            _trace("IMERG", xaxis="x2", yaxis="y2", meta={"z": "precip"}),
             {"uid": "city", "type": "scatter", "mode": "markers", "x": [11.0], "y": [2.0]},
         ]
     }
@@ -1057,8 +1208,17 @@ def test_second_y_axis_gets_its_own_round_ticks():
     b = xr.Dataset({"y": (("time",), [10.0, 30.0, 20.0, 40.0])}, coords={"time": t})
     spec = {
         "data": [
-            {"uid": "a", "type": "scatter", "meta": {"source": {"input": "a"}}},
-            {"uid": "b", "type": "scatter", "yaxis": "y2", "meta": {"source": {"input": "b"}}},
+            {
+                "uid": "a",
+                "type": "scatter",
+                "meta": {"source": {"input": "a"}, "x": "time", "y": "x"},
+            },
+            {
+                "uid": "b",
+                "type": "scatter",
+                "yaxis": "y2",
+                "meta": {"source": {"input": "b"}, "x": "time", "y": "y"},
+            },
         ],
         "layout": {"yaxis2": {"overlaying": "y", "side": "right"}},
     }
@@ -1068,23 +1228,31 @@ def test_second_y_axis_gets_its_own_round_ticks():
 
 def test_upside_down_bbox_and_several_leftover_dims_are_named():
     ds = make_gridded(n_time=1)
-    spec = {"data": [_trace("a")], "layout": {"meta": {"geo": {"bbox": [-5, 10, 5, 13]}}}}
+    grid = {"z": "precip"}
+    spec = {
+        "data": [_trace("a", meta=grid)],
+        "layout": {"meta": {"geo": {"bbox": [-5, 10, 5, 13]}}},
+    }
     with pytest.raises(UsageError, match="north is below south"):
         compile(spec, {"a": ds})
     cube = make_gridded(n_time=1).expand_dims(number=[0, 1], vertical=[500, 850])
     with pytest.raises(UsageError, match="dimensions 'number', 'vertical' remain"):
-        compile({"data": [_trace("a")]}, {"a": cube})
+        compile({"data": [_trace("a", meta=grid)]}, {"a": cube})
 
 
 def test_probability_spans_zero_to_one_and_precip_rate_change_is_brbg():
     prob = make_gridded(n_time=1, name="probability", fill=0.4, units="1")
     prob["probability"].values[..., 0] = 0.1
-    axis = _layout(compile({"data": [_trace("a")]}, {"a": prob}))["coloraxis"]
+    axis = _layout(compile({"data": [_trace("a", meta={"z": "probability"})]}, {"a": prob}))[
+        "coloraxis"
+    ]
     assert (axis["cmin"], axis["cmax"]) == (0.0, 1.0)
     change = make_gridded(n_time=1, fill=2.0, units="mm day-1")
     change["precip"].attrs["standard_name"] = "lwe_precipitation_rate"
     change["precip"].values[..., 0] = -3.0
-    axis = _layout(compile({"data": [_trace("a")]}, {"a": change}))["coloraxis"]
+    axis = _layout(compile({"data": [_trace("a", meta={"z": "precip"})]}, {"a": change}))[
+        "coloraxis"
+    ]
     assert "ticktext" not in axis["colorbar"]  # continuous, not the mm classes
     assert axis["cmin"] == -axis["cmax"]
 
@@ -1124,7 +1292,8 @@ def test_wind_speed_classes_are_one_ramp():
 
 def test_isel_range_picks_every_nth_position():
     ds = make_gridded(n_time=6)
-    spec = {"data": [_trace("a", source={"isel": {"time": {"start": 0, "stop": 6, "step": 2}}})]}
+    isel = {"time": {"start": 0, "stop": 6, "step": 2}}
+    spec = {"data": [_trace("a", source={"isel": isel}, meta={"z": "precip"})]}
     assert len(_data(compile(spec, {"a": ds}), "heatmap")) == 3
 
 
@@ -1132,7 +1301,7 @@ def test_a_subtitle_moves_the_maps_down_and_survives_the_merge():
     ds = make_gridded(n_time=2)
     title = {"text": "ECMWF rainfall"}
     sub = {**title, "subtitle": {"text": "Week 1: 16–22 Oct"}}
-    data = [_trace("0")]
+    data = [_trace("0", meta={"z": "precip"})]
     plain = _layout(compile({"data": data, "layout": {"title": title}}, {"0": ds}))
     with_sub = _layout(compile({"data": data, "layout": {"title": sub}}, {"0": ds}))
     assert with_sub["margin"]["t"] > plain["margin"]["t"]
@@ -1152,7 +1321,13 @@ def test_br_title_lines_get_room():
 def test_fixed_marker_color_draws_without_a_scale():
     spec = {
         "data": [
-            _trace("s", type="scatter", marker={"color": "black"}, source={"isel": {"time": 0}})
+            _trace(
+                "s",
+                type="scatter",
+                marker={"color": "black"},
+                source={"isel": {"time": 0}},
+                meta={"x": "station_id", "y": "precip"},
+            )
         ]
     }
     fig = compile(spec, {"s": make_station()})
@@ -1163,36 +1338,52 @@ def test_fixed_marker_color_draws_without_a_scale():
 def test_zmid_centres_the_scale():
     ds = make_gridded(n_time=1, units="degC")
     ds["precip"][:] = np.arange(12.0).reshape(1, 3, 4)  # 0 … 11
-    axis = _layout(compile({"data": [_trace("a", zmid=2)]}, {"a": ds}))["coloraxis"]
+    axis = _layout(compile({"data": [_trace("a", zmid=2, meta={"z": "precip"})]}, {"a": ds}))[
+        "coloraxis"
+    ]
     assert (axis["cmin"], axis["cmax"]) == (-7, 11)
 
 
 def test_limits_on_one_map_stay_on_that_map():
     a, b = make_gridded(n_time=1), make_gridded(n_time=1)
-    spec = {"data": [_trace("a"), _trace("b", xaxis="x2", yaxis="y2", zmin=0, zmax=50)]}
+    grid = {"z": "precip"}
+    spec = {
+        "data": [
+            _trace("a", meta=grid),
+            _trace("b", xaxis="x2", yaxis="y2", zmin=0, zmax=50, meta=grid),
+        ]
+    }
     layout = _layout(compile(spec, {"a": a, "b": b}))
     assert layout["coloraxis2"]["cmax"] == 50 and layout["coloraxis"]["cmax"] != 50
 
 
 def test_layers_at_different_times_are_an_error():
     rain, msl = make_gridded(n_time=3), make_gridded(n_time=3, name="msl", units="hPa")
-    spec = {"data": [_trace("r", source={"isel": {"time": 0}}), _trace("m", type="contour")]}
+    rain_map, msl_map = {"z": "precip"}, {"z": "msl"}
+    spec = {
+        "data": [
+            _trace("r", source={"isel": {"time": 0}}, meta=rain_map),
+            _trace("m", type="contour", meta=msl_map),
+        ]
+    }
     with pytest.raises(UsageError, match="'r' is one map.*3 panels"):
         compile(spec, {"r": rain, "m": msl})
     later = msl.isel(time=[1, 2])
+    spec = {"data": [_trace("r", meta=rain_map), _trace("m", type="contour", meta=msl_map)]}
     with pytest.raises(UsageError, match="different times"):
-        compile({"data": [_trace("r"), _trace("m", type="contour")]}, {"r": rain, "m": later})
+        compile(spec, {"r": rain, "m": later})
 
 
 def test_chart_traces_stay_on_their_own_axes():
     s = make_gridded(n_time=3).mean(["latitude", "longitude"], keep_attrs=True)
+    line = {"x": "time", "y": "precip"}
     spec = {
-        "data": [_trace(u, type="scatter", name=u) for u in "abc"],
+        "data": [_trace(u, type="scatter", name=u, meta=line) for u in "abc"],
         "layout": {"grid": {"rows": 2, "columns": 1}, "showlegend": True},
     }
     fig = compile(spec, {u: s for u in "abc"})
     assert {(t["xaxis"], t["yaxis"]) for t in _data(fig)} == {("x", "y")}
-    one = {"data": [_trace("a", type="scatter", name="a", showlegend=True)]}
+    one = {"data": [_trace("a", type="scatter", name="a", showlegend=True, meta=line)]}
     assert _layout(compile(one, {"a": s})).get("showlegend") is not False
 
 
@@ -1213,7 +1404,7 @@ def test_station_labels_read_the_name_coordinate():
                 type="scatter",
                 mode="markers+text",
                 source={"isel": {"time": 0}},
-                meta={"bind": "points"},
+                meta={"x": "longitude", "y": "latitude", "marker": {"color": "precip"}},
             )
         ]
     }
@@ -1225,7 +1416,10 @@ def test_station_labels_read_the_name_coordinate():
 def test_chart_title_sits_above_the_legend_rows():
     s = make_gridded(n_time=3).mean(["latitude", "longitude"], keep_attrs=True)
     spec = {
-        "data": [_trace(u, type="scatter", name=f"series {u}") for u in "abc"],
+        "data": [
+            _trace(u, type="scatter", name=f"series {u}", meta={"x": "time", "y": "precip"})
+            for u in "abc"
+        ],
         "layout": {"title": {"text": "T", "subtitle": {"text": "S"}}},
     }
     title = _layout(compile(spec, {u: s for u in "abc"}))["title"]
@@ -1239,7 +1433,7 @@ def test_chart_title_sits_above_the_legend_rows():
 
 def test_temperature_is_drawn_in_the_files_units(capsys):
     ds = make_gridded(n_time=1, name="t2m", units="K", fill=290.0)
-    spec = {"data": [_trace("a", zmin=280, zmax=300)]}
+    spec = {"data": [_trace("a", zmin=280, zmax=300, meta={"z": "t2m"})]}
     axis = _layout(compile(spec, {"a": ds}))["coloraxis"]
     assert (axis["cmin"], axis["cmax"]) == (280, 300)
     assert "K" in axis["colorbar"]["title"]["text"]
@@ -1248,7 +1442,7 @@ def test_temperature_is_drawn_in_the_files_units(capsys):
 def test_band_parts_are_styled_by_their_own_uids():
     ds = make_forecast(n_number=5, n_step=4).mean(["latitude", "longitude"], keep_attrs=True)
     ds["tp"][:] = np.arange(20.0).reshape(5, 4)
-    meta = {"bind": "series", "along": "number", "band": [0, 100]}
+    meta = {"x": "step", "y": "tp", "along": "number", "band": [0, 100]}
     spec = {
         "data": [
             _trace("f", type="scatter", name="Mean", line={"color": "red", "width": 4}, meta=meta),
@@ -1311,3 +1505,164 @@ def test_xy_isel_picks_only_where_the_dim_is():
     meta["source"] = {"isel": {"step": 0}}
     with pytest.raises(UsageError, match="isel dimension 'step' is not in the data"):
         compile({"data": [{"uid": "0", "meta": meta}]}, {"0": ds})
+
+
+def _three_side_by_side(**layout):
+    data = {k: make_gridded(n_time=1, fill=f) for k, f in (("A", 1.0), ("B", 2.0), ("C", 3.0))}
+    spec = {
+        "data": [
+            _trace("A"),
+            _trace("B", xaxis="x2", yaxis="y2"),
+            _trace("C", xaxis="x3", yaxis="y3"),
+        ],
+        "layout": layout,
+    }
+    return compile(spec, data)
+
+
+def test_grid_subplots_puts_each_map_in_its_cell():
+    fig = _three_side_by_side(grid={"subplots": [["x3y3", "xy"], ["", "x2y2"]]})
+    lay = _layout(fig)
+    left, right = lay["xaxis3"]["domain"], lay["xaxis"]["domain"]
+    assert left[1] < right[0]  # C in the left column, A to its right
+    assert lay["xaxis2"]["domain"] == right  # B under A
+    assert lay["yaxis2"]["domain"][1] < lay["yaxis"]["domain"][0]
+    assert "grid" not in lay  # the plotter places the panels; Plotly gets explicit domains
+    # Each map keeps its own axes, so its traces need no xaxis of their own.
+    heat = {t["uid"]: t["xaxis"] for t in _data(fig, "heatmap")}
+    assert heat == {"A-p1": "x", "B-p2": "x2", "C-p3": "x3"}
+
+
+def test_grid_subplots_empty_panel_left_out_draws_nothing():
+    # x, x3: panel 2 has no map; subplots need not name it.
+    data = {k: make_gridded(n_time=1) for k in ("A", "C")}
+    spec = {
+        "data": [_trace("A"), _trace("C", xaxis="x3", yaxis="y3")],
+        "layout": {"grid": {"subplots": [["xy", "x3y3"]]}},
+    }
+    fig = compile(spec, data)
+    lay = _layout(fig)
+    assert "xaxis2" not in lay
+    assert not [t for t in fig.data if t["uid"].startswith("empty")]
+
+
+@pytest.mark.parametrize(
+    "grid, match",
+    [
+        ({"subplots": [["xy", "x2y2"]]}, "leaves out x3y3"),
+        ({"subplots": [["xy", "x2y2", "x3y3", "x4y4"]]}, "'x4y4' names no map"),
+        ({"subplots": [["xy", "xy", "x2y2", "x3y3"]]}, "names 'xy' twice"),
+        ({"subplots": [["xy", "x2y3", "x3y3"]]}, "must name one map's axes"),
+        ({"subplots": [["xy", "x2y2"], ["x3y3"]]}, "same length"),
+        ({"subplots": "xy"}, "subplots. property"),
+    ],
+)
+def test_grid_subplots_errors_say_what_to_fix(grid, match):
+    with pytest.raises(UsageError, match=match):
+        _three_side_by_side(grid=grid)
+
+
+def test_maps_of_one_window_label_only_the_outer_axes():
+    fig = compile({"data": [_trace("a")]}, {"a": make_gridded(n_time=4)})
+    lay = _layout(fig)  # 2 x 2: x1 x2 / x3 x4
+    hidden_x = [
+        a for a in ("xaxis", "xaxis2", "xaxis3", "xaxis4") if lay[a].get("showticklabels") is False
+    ]
+    hidden_y = [
+        a for a in ("yaxis", "yaxis2", "yaxis3", "yaxis4") if lay[a].get("showticklabels") is False
+    ]
+    assert hidden_x == ["xaxis", "xaxis2"]
+    assert hidden_y == ["yaxis2", "yaxis4"]
+
+
+def test_maps_of_different_windows_keep_every_tick_label():
+    a = make_gridded(n_time=1)
+    b = make_gridded(n_time=1, lats=(40.0, 41.0, 42.0), lons=(100.0, 101.0, 102.0, 103.0))
+    spec = {"data": [_trace("a"), _trace("b", xaxis="x2", yaxis="y2")]}
+    lay = _layout(compile(spec, {"a": a, "b": b}))
+    assert all("showticklabels" not in lay[k] for k in ("xaxis", "yaxis", "xaxis2", "yaxis2"))
+
+
+def test_a_map_above_an_empty_cell_keeps_its_longitudes():
+    fig = _three_side_by_side(grid={"subplots": [["xy", "x2y2"], ["x3y3", ""]]})
+    lay = _layout(fig)
+    assert lay["xaxis"].get("showticklabels") is False  # C labels the column below A
+    assert "showticklabels" not in lay["xaxis2"]  # nothing under B
+    assert lay["yaxis2"].get("showticklabels") is False
+
+
+def test_narrow_panels_put_name_and_dates_on_two_lines():
+    names = ["KMSA downscaled", "ECMWF AIFS ENS", "WeatherNext 2", "Cumulus AI"]
+    data = {n: make_gridded(n_time=1, start=f"2026-10-{26 + i:02d}") for i, n in enumerate(names)}
+    traces = [
+        _trace(n, **({"xaxis": f"x{i + 1}", "yaxis": f"y{i + 1}"} if i else {}))
+        for i, n in enumerate(names)
+    ]
+    wide = _layout(compile({"data": traces}, data))
+    narrow = _layout(
+        compile({"data": traces, "layout": {"grid": {"columns": 4}, "width": 700}}, data)
+    )
+    title = lambda lay: next(a["text"] for a in lay["annotations"] if a["name"] == "panel-title-1")  # noqa: E731
+    assert " · " in title(wide)
+    assert title(narrow).startswith("KMSA downscaled<br>")
+    assert narrow["margin"]["t"] > wide["margin"]["t"]
+
+
+def _maps_with_stations(**station):
+    """Two side-by-side maps with a station layer (no axes of its own) drawn on both."""
+    grid = make_gridded(n_time=1)
+    stations = make_station(n_time=1).isel(time=0)
+    stations["precip"].attrs = dict(grid["precip"].attrs)
+    stations["precip"].values[:] = [1.0, 2.0, 3.0]
+    spec = {
+        "data": [
+            _trace("a", xaxis="x", yaxis="y"),
+            _trace("b", xaxis="x2", yaxis="y2"),
+            _trace(
+                "s",
+                type="scatter",
+                meta={"x": "longitude", "y": "latitude", "marker": {"color": "precip"}},
+                **station,
+            ),
+        ]
+    }
+    return compile(spec, {"a": grid, "b": grid, "s": stations})
+
+
+def test_stations_on_side_by_side_maps_share_the_maps_colorbar():
+    fig = _maps_with_stations()
+    maps = {t["coloraxis"] for t in _data(fig, "heatmap")}
+    dots = {t["marker"]["coloraxis"] for t in _data(fig, "scatter") if t["uid"].startswith("s")}
+    assert maps == dots == {"coloraxis"}
+    assert "coloraxis2" not in _layout(fig)
+
+
+def test_stations_on_every_map_are_one_legend_entry():
+    fig = _maps_with_stations(name="TAHMO stations", showlegend=True)
+    dots = [t for t in _data(fig, "scatter") if t["uid"].startswith("s")]
+    assert len(dots) == 2 and {t["legendgroup"] for t in dots} == {"s"}
+    assert [t["showlegend"] for t in dots] == [True, False]
+
+
+def test_a_map_legend_is_a_row_under_the_title_not_beside_the_maps():
+    legend = _layout(_maps_with_stations(name="TAHMO stations", showlegend=True))["legend"]
+    assert legend["orientation"] == "h" and legend["yref"] == "container"
+    assert _layout(_maps_with_stations()).get("legend", {}).get("orientation") != "h"
+
+
+def test_aligned_and_unaligned_lines_on_one_axis_are_an_error():
+    def year(y):
+        t = np.arange(f"{y}-10-01", f"{y}-10-11", dtype="datetime64[D]").astype("datetime64[ns]")
+        return xr.Dataset({"precip": ("time", np.ones(10))}, coords={"time": t})
+
+    line = {"x": "time", "y": "precip"}
+    spec = {
+        "data": [
+            _trace("a", type="scatter", meta={**line, "align": "dayofyear"}),
+            _trace("b", type="scatter", meta=line),
+        ]
+    }
+    with pytest.raises(UsageError, match=r"align dayofyear: a\) and on their own dates \(b\)"):
+        compile(spec, {"a": year(2024), "b": year(2025)})
+    spec["data"][1]["meta"]["align"] = "dayofyear"
+    assert len(_data(compile(spec, {"a": year(2024), "b": year(2025)}), "scatter")) == 2

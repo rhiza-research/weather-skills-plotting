@@ -4,7 +4,7 @@ General-purpose weather and climate data plotting: heatmaps, filled-contour
 maps, station maps, time series, xy scatter, wind roses, quiver, ECMWF-style
 mediograms, lead-week event-verification grids, and animated maps, from weather-skills
 standard dataset Zarrs, all from one `plot` skill. Figures are Plotly: its `--spec` is
-a standard Plotly figure JSON, and output is PNG, JPG, interactive HTML, or animated GIF. Built on [`weather-skills-core`](https://github.com/weather-skills/weather-skills-core)
+a standard Plotly figure JSON, and output is PNG, JPG, PDF, SVG, interactive HTML, or animated GIF. Built on [`weather-skills-core`](https://github.com/weather-skills/weather-skills-core)
 for dataset loading, the CLI decorator, and a handful of shared utilities.
 
 ## Skill
@@ -30,12 +30,12 @@ along the bottom.
 uv sync --group dev
 uv run pytest
 
-# A heatmap, one panel per step
-uv run skills/plot/scripts/plot.py -i /tmp/forecast.zarr -o /tmp/out.png \
+# A heatmap, one panel per step (an ensemble mean: one value per cell and step)
+uv run skills/plot/scripts/plot.py -i /tmp/forecast_mean.zarr -o /tmp/out.png \
   --spec '{"layout": {"title": {"text": "S2S precip"}}}'
 
 # The same figure, interactive
-uv run skills/plot/scripts/plot.py -i /tmp/forecast.zarr -o /tmp/out.html
+uv run skills/plot/scripts/plot.py -i /tmp/forecast_mean.zarr -o /tmp/out.html
 
 # A timeseries overlay of two area means (each from summarize-dim --lat-weighted)
 uv run skills/plot/scripts/plot.py -i /tmp/a_area.zarr -i /tmp/b_area.zarr \
@@ -46,14 +46,14 @@ uv run skills/plot/scripts/plot.py --obs /tmp/obs.zarr \
   --forecast /tmp/wk1.zarr --verify /tmp/v1.zarr --forecast /tmp/wk2.zarr --verify /tmp/v2.zarr \
   -o /tmp/verify.png
 
-# A mediogram
+# A mediogram (the full ensemble, with its members)
 uv run skills/plot/scripts/plot.py --mediogram \
   -i /tmp/forecast.zarr -i /tmp/mclimate.zarr -o /tmp/medio.png \
   --spec '{"layout": {"meta": {"geo": {"point": {"lat": -1.3, "lon": 36.8}}}}}' 
 
 # An animated map (HTML or GIF)
 uv run skills/plot/scripts/plot.py --animate \
-  -i /tmp/forecast.zarr -o /tmp/forecast.html -o /tmp/forecast.gif
+  -i /tmp/forecast_mean.zarr -o /tmp/forecast.html -o /tmp/forecast.gif
 ```
 
 ## Install as a Claude plugin
@@ -67,8 +67,7 @@ claude plugin install rhiza-plotting@weather-skills-plotting
 
 ## Layout
 
-Same packaging model as [`chc-skills`](https://github.com/rhiza-research/chc-skills):
-canonical skills under `skills/<name>/`, Claude plugin via `.claude-plugin/` +
+Canonical skills under `skills/<name>/`, Claude plugin via `.claude-plugin/` +
 `agents/`. The one skill carries its own rendering engine,
 `skills/plot/scripts/weather_skills_plotting/`, next to its script: the skill
 folder is self-contained (Python finds the package on the script's own path),

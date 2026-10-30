@@ -92,7 +92,7 @@ def _week_title(da):
 
 def _user_variable(user, uid):
     trace = next((t for t in user.get("data") or [] if t.get("uid") == uid), {})
-    return ((trace.get("meta") or {}).get("source") or {}).get("variable")
+    return (trace.get("meta") or {}).get("z")
 
 
 def build_verify_spec(obs, forecast, verify, spec):
@@ -134,12 +134,12 @@ def build_verify_spec(obs, forecast, verify, spec):
         **{f"verify{i}": v for i, v in enumerate(verifies, 1)},
     }
 
-    obs_var = pick_variable(obs, _user_variable(user, "obs"), 'the "obs" trace\'s meta.source')
+    obs_var = pick_variable(obs, _user_variable(user, "obs"), 'the "obs" trace\'s meta', "z")
     obs_da = _single_map(obs, obs_var, "--obs")
     fc_vars = []
     for i, fc in enumerate(forecasts, 1):
         uid = f"forecast{i}"
-        var = pick_variable(fc, _user_variable(user, uid), f"the {uid!r} trace's meta.source")
+        var = pick_variable(fc, _user_variable(user, uid), f"the {uid!r} trace's meta", "z")
         fc_vars.append(var)
         _single_map(fc, var, f"--forecast {i}")
         u_fc, u_obs = variable_units(fc[var]), variable_units(obs_da)
@@ -160,7 +160,7 @@ def build_verify_spec(obs, forecast, verify, spec):
             "uid": "obs",
             "type": "heatmap",
             "coloraxis": "coloraxis",
-            "meta": {"source": {"input": "obs", "variable": obs_var}},
+            "meta": {"source": {"input": "obs"}, "z": obs_var},
         }
     ]
     for i, var in enumerate(fc_vars, 1):
@@ -171,7 +171,7 @@ def build_verify_spec(obs, forecast, verify, spec):
                 "coloraxis": "coloraxis",
                 "xaxis": f"x{i + 1}",
                 "yaxis": f"y{i + 1}",
-                "meta": {"source": {"input": f"forecast{i}", "variable": var}},
+                "meta": {"source": {"input": f"forecast{i}"}, "z": var},
             }
         )
     # Theme palettes: hits red / white / green ("below" is white, so the map's no-data
@@ -190,7 +190,8 @@ def build_verify_spec(obs, forecast, verify, spec):
                 "xaxis": f"x{p}",
                 "yaxis": f"y{p}",
                 "meta": {
-                    "source": {"input": f"verify{i}", "variable": VERIFY_VARS[metric]},
+                    "source": {"input": f"verify{i}"},
+                    "z": VERIFY_VARS[metric],
                     "palette": palette,
                 },
             }
@@ -224,7 +225,7 @@ def build_verify_spec(obs, forecast, verify, spec):
         )
     event_title = "Event"
     try:
-        # verify stamps the threshold on the variable; older files carry it on the dataset.
+        # verify stamps the threshold on the variable, or on the dataset.
         hits = verifies[0][VERIFY_VARS[metric]]
         threshold = float(
             hits.attrs.get("event_threshold", verifies[0].attrs.get("event_threshold"))

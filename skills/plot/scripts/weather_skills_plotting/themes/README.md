@@ -103,7 +103,7 @@ merges into the standard one.
 | `maps` | A map figure's layout. `plot_bgcolor` is the no-data grey seen where cells are NaN, darker than a dry class or a diverging zero |
 | `classed_colorbar` | The colorbar of a class palette; the outline keeps white classes visible |
 | `isobars` | A contour trace with no colors of its own, drawn over shading |
-| `map_marks` | A plain trace (no `meta.bind`) repeated on every map panel |
+| `map_marks` | A plain trace (its own `x` / `y` arrays, no `meta` data) repeated on every map panel |
 | `highs`, `lows` | Station points from local-extrema (`extremum_kind` high / low): an H or L with the central value |
 | `boundary` | A GeoJSON outline of five polygons or fewer (more use `overlays.admin1`) |
 | `arrows` | Wind arrows and the reference arrow |

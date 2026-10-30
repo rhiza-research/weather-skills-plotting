@@ -41,7 +41,7 @@ def precip_window_name(days: float | None) -> str:
     if days < 2:
         return "ppt_daily"
     if days <= 10:
-        # A dekad is the week window, as chc-plot-theme picks it.
+        # A dekad takes the week window.
         return "ppt_week"
     if days < 40:
         return "ppt_month"

@@ -29,6 +29,7 @@ from weather_skills_plotting.geodata import (
     geoms_to_xy,
     overlay_geoms,
     overlay_settings,
+    point_dim,
 )
 from weather_skills_plotting.kinds import (
     ISOBAR_INTERVAL_HPA,
@@ -39,6 +40,7 @@ from weather_skills_plotting.kinds import (
 )
 from weather_skills_plotting.layout import (
     DEFAULT_TEMPLATE,
+    LINE,
     WIDE_MAP,
     axis_suffix,
     choose_grid,
@@ -47,10 +49,13 @@ from weather_skills_plotting.layout import (
     map_axes,
     map_layout,
     panel_title_annotation,
+    pinned_title,
     place_colorbars,
+    subplot_cells,
     title_lines,
 )
 from weather_skills_plotting.palettes import (
+    PRECIP_WINDOW_VMAX,
     _class_slots,
     continuous_colorscale,
     default_palette,
@@ -75,12 +80,13 @@ _TRACE_LIMIT_KEYS = {"zmin": "cmin", "zmax": "cmax", "zmid": "cmid"}
 _MARKER_LIMIT_KEYS = {"cmin": "cmin", "cmax": "cmax", "cmid": "cmid"}
 
 
-def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
+def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None, locs=None):
     """Return a validated ``plotly.graph_objects.Figure``."""
     import plotly.graph_objects as go
 
     theme = theme or load_theme()
-    spec = validate(copy.deepcopy(spec), theme)
+    spec = validate(copy.deepcopy(spec), theme, locs)
+    locs = locs or [f"data[{i}]" for i in range(len(spec.get("data") or []))]
     user_layout = copy.deepcopy(spec.get("layout") or {})
     lmeta = user_layout.pop("meta", None) or {}
     geo = lmeta.get("geo") or {}
@@ -99,6 +105,7 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
         polygon=polygon_from_geojson(geo["mask_geojson"]) if geo.get("mask_geojson") else None,
         point=geo.get("point"),
     )
+    _wrap_title(user_layout)
     colorway = list(
         layout_value(user_layout, "colorway") or theme["template"]["layout"]["colorway"]
     )
@@ -125,17 +132,43 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
         if trace.get("uid") in banded:
             trace = {**trace, "meta": {**trace["meta"], "_parts": parts.get(trace["uid"], {})}}
         bound = None
+        source = (trace.get("meta") or {}).get("source")
+        if not bind_of(trace) and source:
+            ds = datasets.get(str(source.get("input"))) or (
+                next(iter(datasets.values())) if len(datasets) == 1 else None
+            )
+            fields = [str(v) for v in ds.data_vars] if ds is not None else []
+            # The variable to name: the one source.variable gave, else the file's only one.
+            name = source.get("variable") or (fields[0] if len(fields) == 1 else None)
+            var = f'"{name}"' if name else f"one of {', '.join(fields)}"
+            loc = f"{locs[i]}.meta"
+            if trace.get("type") in ("heatmap", "contour"):
+                where = f"{loc}.z {var}"
+            elif ds is not None and point_dim(ds) is not None:
+                where = f'{loc}.x "longitude", y "latitude" and marker.color {var} (stations)'
+            else:
+                where = f'{loc}.x (a dim such as "time") and y {var}'
+            raise UsageError(
+                f"{loc}.source names data but nothing says where it goes: set {where}"
+                + (" in place of meta.source.variable" if source.get("variable") else "")
+            )
         if bind_of(trace):
-            bound = bind_trace(trace, ctx, f"data[{i}]", color=colorway[n_colored % len(colorway)])
+            bound = bind_trace(trace, ctx, locs[i], color=colorway[n_colored % len(colorway)])
             n_colored += 1
         items.append((i, trace, bound))
     if not items:
         raise UsageError("plot spec has no traces to draw")
 
     if any(b is not None and b.is_map for _, _, b in items):
+        charts = [i for i, _, b in items if b is not None and not b.is_map]
+        if charts:
+            raise UsageError(
+                f"{locs[charts[0]]} is a chart but this figure is a map (a heatmap, or x "
+                "longitude with y latitude); draw the chart in its own plot"
+            )
         data, layout = _assemble_map(items, user_layout, lmeta, ctx)
     else:
-        data, layout = _assemble_chart(items, user_layout)
+        data, layout = _assemble_chart(items, user_layout, ctx)
     layout.setdefault("template", DEFAULT_TEMPLATE)
     built = {a.get("name"): a for a in layout.get("annotations") or []}
     for ann in user_layout.get("annotations") or []:
@@ -166,6 +199,40 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
         return go.Figure({"data": data, "layout": out_layout})
     except ValueError as exc:
         raise plotly_error(exc) from None
+
+
+TITLE_CHAR_WIDTH = 0.55  # a title's average glyph width, in multiples of its font size
+TITLE_ROOM_PX = 560  # wrap width when the spec sets none; a single map is often this narrow
+
+
+def _wrap_title(layout: dict) -> None:
+    """Break a title or subtitle too wide for the canvas at spaces, as ``<br>`` (Plotly cuts
+    it off at both edges). Runs before layout, which makes room for every line."""
+    title = layout.get("title")
+    if not isinstance(title, dict):
+        return
+    font = layout_value(layout, "font.size") or 12
+    room = layout["width"] - 40 if layout.get("width") else TITLE_ROOM_PX
+    parts = [(title, font * 1.4)]  # Plotly's title font is 1.4x the figure font
+    if isinstance(title.get("subtitle"), dict):
+        parts.append((title["subtitle"], font))
+    for part, default_size in parts:
+        size = (part.get("font") or {}).get("size") or default_size
+        chars = max(int(room / (TITLE_CHAR_WIDTH * size)), 10)
+        given = re.split(r"<br\s*/?>", str(part.get("text") or ""), flags=re.IGNORECASE)
+        lines = []
+        for line in given:
+            current = ""
+            for word in line.split(" "):
+                # Markup such as <b> takes no width.
+                if current and len(re.sub(r"<[^>]+>", "", f"{current} {word}")) > chars:
+                    lines.append(current)
+                    current = word
+                else:
+                    current = f"{current} {word}" if current else word
+            lines.append(current)
+        if len(lines) > len(given):
+            part["text"] = "<br>".join(lines)
 
 
 # ---------------------------------------------------------------- trace merge
@@ -301,6 +368,26 @@ def _resolve_coloraxis(name, members, user_axis, ctx, *, contour_traces):
             "continuous scale; drop them to keep its classes, or set bounds in the palette",
             file=sys.stderr,
         )
+    window = str((palette or {}).get("name") or "")
+    if (
+        window in PRECIP_WINDOW_VMAX
+        and not palette_raw
+        and finite.size
+        and float(np.percentile(finite, 95)) > PRECIP_WINDOW_VMAX[window]
+    ):
+        # The window follows aggregation_period; a sum the file still stamps as one day
+        # (summarize-dim over step) would saturate it without a word.
+        period = next((d.attrs.get("aggregation_period") for d in color_das), None)
+        units = next((variable_units(d) for d in color_das), None)
+        source = f"aggregation_period {period!r}" if period else f"units {units!r}"
+        bigger = [w for w, top in PRECIP_WINDOW_VMAX.items() if top >= np.percentile(finite, 95)]
+        print(
+            f"Note: values reach {hi:.0f} mm but the {window} colors stop at "
+            f"{PRECIP_WINDOW_VMAX[window]:.0f} mm (picked from its {source}); "
+            f'set meta.palette "{bigger[0] if bigger else "ppt_season"}" for this range, or '
+            "fix the file's aggregation_period",
+            file=sys.stderr,
+        )
     if palette and palette.get("bounds") and not stretch and "colorscale" not in user:
         under, classes, over = _class_slots(palette)
         if under and finite.size and finite.min() >= palette["bounds"][0]:
@@ -400,8 +487,15 @@ def _input_label(ctx, trace):
 
 def _assemble_map(items, user_layout, lmeta, ctx):
     groups: dict[int, list] = {}
-    # A plain Plotly trace (city markers, a box) with no axis of its own goes on every map.
-    floating = [item for item in items if item[2] is None and not item[1].get("xaxis")]
+    # A plain Plotly trace (city markers, a box) or a static layer (an outline) with no axis of
+    # its own goes on every map; side by side (some trace names its axes), stations too.
+    placed = any(item[1].get("xaxis") for item in items)
+    floating = [
+        item
+        for item in items
+        if not item[1].get("xaxis")
+        and (item[2] is None or item[2].static or (placed and item[2].kind == "points"))
+    ]
     for item in items:
         if not any(item is f for f in floating):
             groups.setdefault(_anchor(item[1]), []).append(item)
@@ -445,7 +539,9 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     if len(order) > 1 and any(len(keys) > 1 for keys in plan):
         raise UsageError(
             "side-by-side map traces (different xaxis) must each already be a single map; "
-            "select one time/step per input (meta.source.isel / sel) or aggregate first"
+            "select one time/step per input (meta.source.isel / sel) or aggregate first. For "
+            "one panel per step beside other maps, pass the file once per step "
+            '(-i a.zarr -i a.zarr …) with {"meta": {"source": {"isel": {"step": N}}}} on each'
         )
     panels = []  # (group index or None for an empty cell, key)
     if len(order) > 1:
@@ -497,13 +593,27 @@ def _assemble_map(items, user_layout, lmeta, ctx):
                 tr = _concrete(
                     spec_trace, gen, pid if j == 0 or "uid_suffix" in gen else f"{pid}-{j}"
                 )
-                panel_traces[p].append((_MAP_RANK[bind_of(spec_trace)], tr, spec_trace, bound))
+                panel_traces[p].append((_MAP_RANK[bound.kind], tr, spec_trace, bound))
         if extents[p] is None:
             extents[p] = next(
-                (b.extent for _, _, b in groups[g] if b is not None and b.extent), None
+                (b.extent for _, _, b in [*groups[g], *floating] if b is not None and b.extent),
+                None,
             )
         if extents[p] is None:
             raise UsageError("a map panel has no data extent; set layout.meta.geo.bbox")
+    # A trace drawn on every map (stations, city markers) is one legend entry, which
+    # shows and hides all its copies.
+    shown = set()
+    for p in range(n):
+        count = {}
+        for _, tr, spec_trace, _ in panel_traces[p]:
+            if not any(spec_trace is f[1] for f in floating):
+                continue
+            k = count[id(spec_trace)] = count.get(id(spec_trace), -1) + 1
+            tr.setdefault("legendgroup", tr["uid"].removesuffix(f"-p{p + 1}"))
+            if (id(spec_trace), k) in shown:
+                tr["showlegend"] = False
+            shown.add((id(spec_trace), k))
     if len(order) > 1:
         # Side by side, a panel is named for its input (-i UID, else file name),
         # and keeps its date too when the panels show different dates.
@@ -526,60 +636,55 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     axis_members: dict[str, list] = {}
     next_axis = 1
     auto = {}
-    for g in order:
-        for _, spec_trace, bound in groups[g]:
-            if bound is None or not bound.color_values or _uncolored(spec_trace):
-                continue
-            name = (
-                spec_trace.get("coloraxis")
-                if bound.color_key == "z"
-                else (spec_trace.get("marker") or {}).get("coloraxis")
+    for _, spec_trace, bound in [*(item for g in order for item in groups[g]), *floating]:
+        if bound is None or not bound.color_values or _uncolored(spec_trace):
+            continue
+        name = (
+            spec_trace.get("coloraxis")
+            if bound.color_key == "z"
+            else (spec_trace.get("marker") or {}).get("coloraxis")
+        )
+        if not name:
+            # One quantity is one CF standard_name in one unit: station "Surface air
+            # temperature" and a forecast's "2 m temperature" share a bar. Anomalies
+            # and spreads of it do not.
+            title = bound.color_title or ""
+            sn = bound.color_da.attrs.get("standard_name") if bound.color_da is not None else None
+            difference = bound.color_da is not None and "delta_" in str(
+                variable_units(bound.color_da) or ""
             )
-            if not name:
-                # One quantity is one CF standard_name in one unit: station "Surface air
-                # temperature" and a forecast's "2 m temperature" share a bar. Anomalies
-                # and spreads of it do not.
-                title = bound.color_title or ""
-                sn = (
-                    bound.color_da.attrs.get("standard_name")
-                    if bound.color_da is not None
-                    else None
+            quantity = (
+                (
+                    sn,
+                    title.rpartition("[")[2],
+                    "anomaly" in title,
+                    "std. dev." in title,
+                    difference,
                 )
-                difference = bound.color_da is not None and "delta_" in str(
-                    variable_units(bound.color_da) or ""
-                )
-                quantity = (
-                    (
-                        sn,
-                        title.rpartition("[")[2],
-                        "anomaly" in title,
-                        "std. dev." in title,
-                        difference,
-                    )
-                    if sn
-                    else title
-                )
-                key = (
-                    json.dumps(quantity),
-                    json.dumps((spec_trace.get("meta") or {}).get("palette"), sort_keys=True),
-                    # The trace's own scale and limits apply to that trace, not to every
-                    # map of the same quantity (colorbar / showscale still style the shared bar).
-                    json.dumps(
-                        {
-                            k: v
-                            for k, v in _lift_color(spec_trace, bound.color_key).items()
-                            if k not in ("colorbar", "showscale")
-                        },
-                        sort_keys=True,
-                    ),
-                    bound.color_da is not None and is_precip_anomaly(bound.color_da),
-                )
-                name = auto.get(key)
-                if name is None:
-                    name = "coloraxis" if next_axis == 1 else f"coloraxis{next_axis}"
-                    next_axis += 1
-                    auto[key] = name
-            axis_of[id(spec_trace)] = name
+                if sn
+                else title
+            )
+            key = (
+                json.dumps(quantity),
+                json.dumps((spec_trace.get("meta") or {}).get("palette"), sort_keys=True),
+                # The trace's own scale and limits apply to that trace, not to every
+                # map of the same quantity (colorbar / showscale still style the shared bar).
+                json.dumps(
+                    {
+                        k: v
+                        for k, v in _lift_color(spec_trace, bound.color_key).items()
+                        if k not in ("colorbar", "showscale")
+                    },
+                    sort_keys=True,
+                ),
+                bound.color_da is not None and is_precip_anomaly(bound.color_da),
+            )
+            name = auto.get(key)
+            if name is None:
+                name = "coloraxis" if next_axis == 1 else f"coloraxis{next_axis}"
+                next_axis += 1
+                auto[key] = name
+        axis_of[id(spec_trace)] = name
     for p in range(n):
         for _, tr, spec_trace, bound in panel_traces[p]:
             if _uncolored(spec_trace):
@@ -624,9 +729,7 @@ def _assemble_map(items, user_layout, lmeta, ctx):
             else:
                 entry[2].append(tr)
 
-    outlines = [
-        b.extent for _, st, b in items if b is not None and bind_of(st) == "geojson" and b.extent
-    ]
+    outlines = [b.extent for _, _, b in items if b is not None and b.kind == "geojson" and b.extent]
     if outlines and ctx.bbox is None and len(order) == 1:
         # An outline names the place of interest: frame it, with a margin.
         w, e = min(o[0] for o in outlines), max(o[1] for o in outlines)
@@ -659,7 +762,12 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     # under the columns they colour when the panels split that way.
     aspect = float(np.median([(e[1] - e[0]) / max(e[3] - e[2], 1e-6) for e in extents if e]))
     grid_in = user_layout.pop("grid", None) or {}
-    rows, cols = choose_grid(n, aspect, grid_in.get("rows"), grid_in.get("columns"))
+    if grid_in.get("subplots") is not None:
+        # Plotly's grid.subplots: the map whose axes sit in each cell, "" for an empty one.
+        rows, cols, cells = subplot_cells(grid_in["subplots"], n, [e is not None for e in extents])
+    else:
+        rows, cols = choose_grid(n, aspect, grid_in.get("rows"), grid_in.get("columns"))
+        cells = list(range(n))
     # Trace-level colorbar / showscale lift onto the trace's color axis, under the
     # spec's layout.<coloraxis>. On a shared axis one trace asking for the bar shows
     # it: showscale false on the other traces only means "not drawn from me".
@@ -685,7 +793,9 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     placed = {name for name in panels_of if {"x", "y"} & (asked[name].get("colorbar") or {}).keys()}
     auto_of = {name: ps for name, ps in panels_of.items() if name not in placed}
     placed_h = {name for name in placed if asked[name]["colorbar"].get("orientation") == "h"}
-    mode = colorbar_mode(auto_of, cols)
+    # Bars go beside the rows or under the columns of the cells their maps sit in.
+    auto_cells = {name: [cells[p] for p in ps] for name, ps in auto_of.items()}
+    mode = colorbar_mode(auto_cells, cols)
     if mode in ("right", "rows") and aspect > WIDE_MAP:
         # A strip (a Pacific band, a polar belt) is too short for a vertical bar's title.
         mode = "below"
@@ -694,17 +804,56 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     ):
         # A horizontal bar asked for in the spec gets room under the maps.
         mode = "below"
-    layout, domains = map_layout(
-        rows,
-        cols,
-        aspect,
-        titled=title_lines(user_layout.get("title")),
-        panel_titles=any(panel_titles),
-        right=(bool(auto_of) and mode in ("right", "rows")) or bool(placed - placed_h),
-        below=(bool(auto_of) and mode in ("columns", "below")) or bool(placed_h),
-        user={**user_layout, "grid": grid_in},
+    # Maps of one window share their lon/lat: only the outer ones need tick labels.
+    drawn = {c for c, e in zip(cells, extents, strict=True) if c is not None and e is not None}
+    outer_ticks = len(drawn) > 1 and len({tuple(e) for e in extents if e}) == 1
+    # A legend on a map goes in a row under the title: on the right (Plotly's place) it
+    # narrows the plot, and maps of fixed aspect shrink and leave gaps.
+    legend = user_layout.get("showlegend") is True or (
+        user_layout.get("showlegend") is not False
+        and any(tr.get("showlegend") is True for pt in panel_traces for _, tr, _, _ in pt)
     )
-    slots = place_colorbars(mode, auto_of, domains)
+    sizing = {
+        "titled": title_lines(user_layout.get("title")),
+        "legend": legend,
+        "right": (bool(auto_of) and mode in ("right", "rows")) or bool(placed - placed_h),
+        "below": (bool(auto_of) and mode in ("columns", "below")) or bool(placed_h),
+        "outer_ticks": outer_ticks,
+        "user": {**user_layout, "grid": grid_in},
+    }
+    title = user_layout.get("title")
+    title_text = title.get("text") if isinstance(title, dict) else title
+    # One map under the spec's own title: the title says what it shows, with no date line
+    # beneath it. panel-title-1 still names the (empty) title so a spec can set it.
+    quiet = n == 1 and bool(title_text)
+    if quiet:
+        panel_titles = [None]
+    layout, cell_domains = map_layout(
+        rows, cols, aspect, panel_titles=int(any(panel_titles)), **sizing
+    )
+    em = float(layout_value(user_layout, "font.size") or 12)
+    if title_text:
+        # The top margin holds the title's lines; start them at its top edge.
+        layout["title"] = pinned_title(title, em)
+    # A "name · dates" title wider than a column runs into the next panel's title:
+    # put the dates on a second line.
+    plot_w = layout["width"] - layout["margin"]["l"] - layout["margin"]["r"]
+    column_w = (cell_domains[1][0] - cell_domains[0][0] if cols > 1 else 1.0) * plot_w
+    if any(t and " · " in t and len(t) * 0.5 * em > column_w for t in panel_titles):
+        panel_titles = [t.replace(" · ", "<br>", 1) if t else t for t in panel_titles]
+        layout, cell_domains = map_layout(rows, cols, aspect, panel_titles=2, **sizing)
+    if legend:
+        top = (LINE * sizing["titled"] + (1 if sizing["titled"] > 1 else 0) + 0.5) * em
+        layout["legend"] = {
+            "orientation": "h",
+            "x": 0,
+            "xanchor": "left",
+            "yref": "container",
+            "y": 1 - top / layout["height"],
+            "yanchor": "top",
+        }
+    slots = place_colorbars(mode, auto_cells, cell_domains)
+    domains = [cell_domains[c] if c is not None else None for c in cells]
     # No-data cells show the plot background (the theme's maps style): a neutral grey,
     # not the template's tint, darker than a diverging zero or a dry class, so a missing
     # cell never reads as zero.
@@ -712,6 +861,8 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     layout["annotations"] = []
     for p in range(n):
         s = axis_suffix(p)
+        if cells[p] is None:
+            continue
         if extents[p] is None:
             # An empty cell keeps a hidden axis so annotations can still target it,
             # painted with the page colour so the template's panel background
@@ -735,9 +886,18 @@ def _assemble_map(items, user_layout, lmeta, ctx):
                 }
             )
             continue
-        layout[f"xaxis{s}"], layout[f"yaxis{s}"] = map_axes(p, extents[p], domains[p])
+        xaxis, yaxis = map_axes(p, extents[p], domains[p])
+        if outer_ticks:
+            # A map below or to the left already labels these longitudes / latitudes.
+            if cells[p] + cols in drawn:
+                xaxis["showticklabels"] = False
+            if cells[p] % cols and cells[p] - 1 in drawn:
+                yaxis["showticklabels"] = False
+        layout[f"xaxis{s}"], layout[f"yaxis{s}"] = xaxis, yaxis
         if panel_titles[p]:
             layout["annotations"].append(panel_title_annotation(p, panel_titles[p]))
+        elif quiet:
+            layout["annotations"].append(panel_title_annotation(p, ""))
     for name, members in axis_members.items():
         contours = [tr for _, b, trs in members for tr in trs if tr.get("type") == "contour"]
         for tr in contours:
@@ -770,6 +930,8 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     data = []
     for p in range(n):
         s = axis_suffix(p)
+        if cells[p] is None:
+            continue
         if extents[p] is None:
             # plotly.js only builds axes a trace uses; keep the empty cell's axis alive.
             data.append(
@@ -829,10 +991,38 @@ def _key(value):
 # ----------------------------------------------------------------- chart figure
 
 
-def _assemble_chart(items, user_layout):
+AXIS_TITLE_CHARS = 40
+
+
+def _two_lines(text: str) -> str:
+    """A long axis title (a long_name such as "Sum of Total precipitation across step [mm]")
+    broken at the space nearest its middle, so it is not cut off at the plot's edge."""
+    if len(text) <= AXIS_TITLE_CHARS or "<br>" in text or " " not in text:
+        return text
+    middle = len(text) // 2
+    cut = min((i for i, c in enumerate(text) if c == " "), key=lambda i: abs(i - middle))
+    return f"{text[:cut]}<br>{text[cut + 1 :]}"
+
+
+def _assemble_chart(items, user_layout, ctx):
+    # Lines put on one calendar by align and lines on their own dates share no dates:
+    # on one axis they would sit years apart.
+    dated: dict[str, dict] = {}  # x axis -> aligned or not -> uids
+    for _, spec_trace, bound in items:
+        if bound is not None and bound.x_dates:
+            sides = dated.setdefault(spec_trace.get("xaxis") or "x", {})
+            sides.setdefault(bool(bound.x_tickformat), []).append(str(spec_trace.get("uid")))
+    for sides in dated.values():
+        if len(sides) == 2:
+            raise UsageError(
+                f"lines on one calendar (align dayofyear: {', '.join(sides[True])}) and on "
+                f"their own dates ({', '.join(sides[False])}) share no dates; set meta.align "
+                '"dayofyear" on every line (step-to-time a forecast first), or on none'
+            )
     data = []
     layout = {}
     axis_titles: dict[str, dict] = {}
+    axis_members: dict[str, list] = {}  # color axis -> (spec_trace, bound, concrete traces)
     for i, spec_trace, bound in items:
         uid = spec_trace.get("uid") or f"trace{i}"
         xa, ya = spec_trace.get("xaxis") or "x", spec_trace.get("yaxis") or "y"
@@ -845,13 +1035,24 @@ def _assemble_chart(items, user_layout):
             tr = _concrete(spec_trace, gen, uid if j == 0 or "uid_suffix" in gen else f"{uid}-{j}")
             if tr.get("type") != "barpolar":
                 tr["xaxis"], tr["yaxis"] = xa, ya
+            if bound.color_key == "z" and "z" in tr:
+                # A chart heatmap / contour (a cross-section) takes the theme's colors.
+                name = spec_trace.get("coloraxis") or "coloraxis"
+                tr["coloraxis"] = name
+                axis_members.setdefault(name, []).append((spec_trace, bound, [tr]))
             data.append(tr)
         layout = deep_merge(layout, bound.layout)
         xs, ys = xa[1:], ya[1:]
         if bound.axis_titles.get("x") is not None:
-            axis_titles.setdefault(f"xaxis{xs}", {"title": {"text": bound.axis_titles["x"]}})
+            text = _two_lines(bound.axis_titles["x"])
+            axis_titles.setdefault(f"xaxis{xs}", {"title": {"text": text}})
         if bound.axis_titles.get("y") is not None:
-            axis_titles.setdefault(f"yaxis{ys}", {"title": {"text": bound.axis_titles["y"]}})
+            text = _two_lines(bound.axis_titles["y"])
+            axis_titles.setdefault(f"yaxis{ys}", {"title": {"text": text}})
+        user_y = user_layout.get(f"yaxis{ys}") or {}
+        if bound.axis_titles.get("y_reversed") and "range" not in user_y:
+            # A pressure axis: 1000 hPa at the bottom. A range the spec sets is drawn as given.
+            axis_titles.setdefault(f"yaxis{ys}", {}).setdefault("autorange", "reversed")
         if bound.axis_titles.get("y_nonnegative"):
             axis_titles.setdefault(f"yaxis{ys}", {}).setdefault("rangemode", "nonnegative")
         if bound.x_tickformat:
@@ -862,6 +1063,17 @@ def _assemble_chart(items, user_layout):
         if bound.title:
             layout.setdefault("title", {"text": bound.title})
     layout.update(axis_titles)
+    for name, members in axis_members.items():
+        contours = [tr for _, _, trs in members for tr in trs if tr.get("type") == "contour"]
+        for tr in contours:
+            fill_defaults(tr, {"contours": {"coloring": "fill"}})
+        axis = _resolve_coloraxis(
+            name, members, user_layout.get(name), ctx, contour_traces=contours
+        )
+        # A trace-level colorscale / zmin / zmax / colorbar is drawn from its coloraxis.
+        for spec_trace, bound, _ in members:
+            axis = deep_merge(axis, _lift_color(spec_trace, bound.color_key))
+        layout[name] = axis
     # Room above the plot only for what is there: a title, a legend row.
     lines = title_lines(user_layout.get("title") or layout.get("title"))
     named = [tr for tr in data if tr.get("name") and tr.get("showlegend") is not False]
@@ -881,13 +1093,9 @@ def _assemble_chart(items, user_layout):
     if lines:
         # Plotly centres the title in the top margin; a tall margin (legend rows) would push
         # it down into the legend. Pin it to the top instead (a spec title.y still wins).
-        layout["title"] = {
-            **(layout.get("title") or {}),
-            "yref": "container",
-            "y": 1,
-            "yanchor": "top",
-            "pad": {"t": 12},
-        }
+        em = float(layout_value(user_layout, "font.size") or 12)
+        title = user_layout.get("title") or layout.get("title")
+        layout["title"] = {**(layout.get("title") or {}), **pinned_title(title, em)}
     for name, axis in user_layout.items():
         if name.startswith("yaxis") and isinstance(axis, dict) and axis.get("overlaying"):
             # Plotly syncs an overlaid axis to the left grid (ticks at 1.01, 2.02, …);

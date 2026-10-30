@@ -24,21 +24,11 @@ SPEC_VERSION = 3
 
 TOP_KEYS = frozenset({"data", "layout"})
 
-# How a trace's arrays are filled from a dataset. See ``bind.py``.
-BINDS = frozenset(
-    {"field", "speed", "arrows", "points", "series", "xy", "samples", "windrose", "geojson"}
-)
-# Bind used when ``meta.bind`` is unset, by Plotly trace type.
-DEFAULT_BIND = {
-    "heatmap": "field",
-    "contour": "field",
-    "scatter": "series",
-    "scattergl": "series",
-    "bar": "series",
-    "box": "samples",
-    "barpolar": "windrose",
-}
-MAP_BINDS = frozenset({"field", "speed", "arrows", "points", "geojson"})
+# Presets: traces whose arrays are computed (wind speed, arrows, roses, boxes, boundaries),
+# named by ``meta.bind``. See ``bind.py``.
+BINDS = frozenset({"speed", "arrows", "samples", "windrose", "geojson"})
+# Every other data trace names the variable or coordinate that fills each Plotly attribute.
+MAPPING_KEYS = ("x", "y", "z", "marker")
 
 TRACE_META_KEYS = frozenset(
     {
@@ -46,6 +36,8 @@ TRACE_META_KEYS = frozenset(
         "source",
         "x",
         "y",
+        "z",
+        "marker",
         "facet",
         "along",
         "along_color",
@@ -161,6 +153,21 @@ def check_shape(data: dict) -> None:
             raise UsageError(f"plot spec data[{i}] must be an object")
         if "uid" in trace and not isinstance(trace["uid"], str):
             raise UsageError(f"plot spec data[{i}].uid must be a string")
+        meta = trace.get("meta") or {}
+        source = meta.get("source") if isinstance(meta, dict) else None
+        if source is not None and not isinstance(source, dict):
+            raise UsageError(
+                f"plot spec data[{i}].meta.source must be an object such as "
+                '{"input": "0"}; a file goes in layout.meta.inputs or -i'
+            )
+    layout_meta = (data.get("layout") or {}).get("meta") or {}
+    inputs = layout_meta.get("inputs") if isinstance(layout_meta, dict) else None
+    if inputs is not None and not (
+        isinstance(inputs, dict) and all(isinstance(v, str) for v in inputs.values())
+    ):
+        raise UsageError(
+            'plot spec layout.meta.inputs must map input ids to paths: {"0": "x.zarr"}'
+        )
 
 
 # --------------------------------------------------------------------- merging
@@ -236,9 +243,16 @@ def merge_traces(base: list, overlay: list) -> list:
                     # Only styling for a uid nothing has: a typo, not a new trace.
                     have = [str(t.get("uid")) for t in out if t.get("uid") is not None]
                     near = [h for h in have if h.lower() == str(uid).lower()]
+                    # Say what each uid draws, so an outline's number is plain to see.
+                    kinds = [
+                        f"{t.get('uid')} ({'outline' if (t.get('meta') or {}).get('bind') == 'geojson' else t.get('type') or 'scatter'})"
+                        for t in out
+                        if t.get("uid") is not None
+                    ]
                     raise UsageError(
                         f"--spec data[{i}] uid {uid!r} matches no trace (uids: "
-                        f"{', '.join(have) or 'none'})"
+                        f"{', '.join(kinds) or 'none'}; inputs and layers, outlines included, "
+                        "are numbered by position, or named with PATH=NAME)"
                         + (f"; did you mean {near[0]!r}?" if near else "")
                         + "; a new trace needs data of its own (x / y, or meta.source)"
                         + (
@@ -255,8 +269,9 @@ def merge_traces(base: list, overlay: list) -> list:
                 }
                 inputs.pop(None, None)
                 if (
-                    len(inputs) > 1
-                    and (meta.get("x") or meta.get("y") or meta.get("bind") or source)
+                    # Several inputs, or a position uid ("0") where the inputs are named.
+                    (len(inputs) > 1 or (inputs and str(uid).isdigit()))
+                    and (any(meta.get(k) for k in MAPPING_KEYS) or meta.get("bind") or source)
                     and not source.get("input")
                     and not source.get("geojson")
                 ):
@@ -280,6 +295,21 @@ def merge_traces(base: list, overlay: list) -> list:
         used.add(idx)
         out[idx] = deep_merge(out[idx], trace)
     return out
+
+
+def spec_locs(merged: dict, user: dict | None) -> list[str]:
+    """How errors name each trace of ``merged``: ``data[j]`` at its place in the user's own
+    --spec, or ``data[uid="0"]`` for a trace the command built (-i, --layer) and the spec
+    left alone, whose uid is what a spec writes to restyle it."""
+    user_data = (user or {}).get("data") or []
+    by_uid = {t.get("uid"): j for j, t in enumerate(user_data) if t.get("uid") is not None}
+    locs = []
+    for i, trace in enumerate(merged.get("data") or []):
+        j = by_uid.get(trace.get("uid"))
+        if j is None and i < len(user_data) and user_data[i].get("uid") is None:
+            j = i  # a trace with no uid restyles the trace at its own position
+        locs.append(f"data[{j}]" if j is not None else f"data[uid={trace.get('uid')!r}]")
+    return locs
 
 
 def merge_spec(base: dict, overlay: dict | None) -> dict:
@@ -314,8 +344,13 @@ def _check_keys(obj, allowed, loc: str) -> None:
             hint = f'; a dotted name is a nested path: write {{"{head}": {{"{rest}": …}}}}'
         elif key == "theme":
             hint = _THEME_HINT
+        elif key == "variable" and "z" in allowed:
+            hint = (
+                "; name the variable in meta.z (maps), meta.y (lines) or meta.marker.color "
+                "(stations)"
+            )
         elif key in SOURCE_KEYS and "source" in allowed:
-            # meta.variable / meta.isel / …: the data keys live one level down.
+            # meta.isel / meta.input / …: the data keys live one level down.
             hint = f'; the data to draw is chosen in meta.source: {{"source": {{"{key}": …}}}}'
         elif loc.endswith("geo") and key in _PLACE_NAME_KEYS:
             hint = (
@@ -347,23 +382,31 @@ def check_trace_meta(meta, loc: str, palettes: dict) -> None:
 
     _check_keys(meta, TRACE_META_KEYS, loc)
     bind = meta.get("bind")
+    mapped = [k for k in MAPPING_KEYS if meta.get(k) is not None]
     if bind is not None and bind not in BINDS:
-        raise UsageError(f"plot spec {loc}.bind {bind!r} must be one of {', '.join(sorted(BINDS))}")
+        raise UsageError(
+            f"plot spec {loc}.bind {bind!r} must be one of {', '.join(sorted(BINDS))}; a line, "
+            f"scatter, station map or heatmap names its variables in {loc}.x / y / z instead"
+        )
+    if bind is not None and mapped:
+        raise UsageError(
+            f"plot spec {loc}.bind {bind!r} computes its own arrays; drop {loc}.{mapped[0]}"
+        )
     if meta.get("source") is not None:
         _check_source(meta["source"], f"{loc}.source")
-    for key in ("x", "y"):
-        if meta.get(key) is not None and not isinstance(meta[key], str):
-            raise UsageError(f"plot spec {loc}.{key} must be a variable name")
-    if (meta.get("x") is None) != (meta.get("y") is None):
-        raise UsageError(f"plot spec {loc}: a scatter of two variables needs both x and y")
-    # x / y draw one point per shared position; the series-over-time keys do not apply.
-    series_only = [k for k in ("along", "align", "band") if meta.get(k) is not None]
-    if meta.get("x") is not None and series_only:
+    if mapped and (meta.get("source") or {}).get("variable"):
         raise UsageError(
-            f"plot spec {loc}.{series_only[0]} draws a series over time and does not work with "
-            f"{loc}.x / y. Drop x and y to plot the variable along time; to overlay years on one "
-            f'seasonal axis, set "align": "dayofyear" on each line instead of an x of day numbers'
+            f"plot spec {loc}.source.variable: name the variable in {loc}.y, z or marker.color "
+            "instead"
         )
+    for key in ("x", "y", "z"):
+        if meta.get(key) is not None and not isinstance(meta[key], str):
+            raise UsageError(f"plot spec {loc}.{key} must be a variable or coordinate name")
+    marker = meta.get("marker")
+    if marker is not None:
+        _check_keys(marker, {"color"}, f"{loc}.marker")
+        if not isinstance(marker.get("color"), str):
+            raise UsageError(f"plot spec {loc}.marker.color must be a variable name")
     if meta.get("arrows") is not None:
         _check_keys(meta["arrows"], ARROW_KEYS, f"{loc}.arrows")
     if meta.get("along_color") not in (None, "same", "cycle"):
@@ -393,13 +436,6 @@ def check_layout_meta(meta) -> None:
     if version is not None and version != SPEC_VERSION:
         raise UsageError(
             f"plot spec layout.meta.version {version!r} is not supported; expected {SPEC_VERSION}"
-        )
-    inputs = meta.get("inputs")
-    if inputs is not None and not (
-        isinstance(inputs, dict) and all(isinstance(v, str) for v in inputs.values())
-    ):
-        raise UsageError(
-            'plot spec layout.meta.inputs must map input ids to paths: {"0": "x.zarr"}'
         )
     geo = meta.get("geo")
     if geo is not None:
@@ -457,10 +493,12 @@ def check_layout_meta(meta) -> None:
                 )
 
 
-def check_meta(spec: dict, palettes: dict) -> None:
-    """Check every ``meta`` block (Plotly does not look inside them)."""
+def check_meta(spec: dict, palettes: dict, locs: list[str] | None = None) -> None:
+    """Check every ``meta`` block (Plotly does not look inside them). ``locs`` name each
+    trace as the user's spec does (``spec_locs``); by default ``data[i]``."""
     seen = set()
     for i, trace in enumerate(spec.get("data") or []):
+        loc = locs[i] if locs else f"data[{i}]"
         uid = trace.get("uid")
         if uid is not None:
             if uid in seen:
@@ -470,13 +508,13 @@ def check_meta(spec: dict, palettes: dict) -> None:
             ("scattergeo", "scattermap", "choropleth", "densitymap")
         ):
             raise UsageError(
-                f"plot spec data[{i}].type {trace['type']!r}: maps here are plain x/y axes "
+                f"plot spec {loc}.type {trace['type']!r}: maps here are plain x/y axes "
                 '(x = longitude, y = latitude). Use "type": "scatter" with x / y for markers '
                 "and lines, and layout.shapes for boxes"
             )
         meta = trace.get("meta")
         if meta is not None:
-            check_trace_meta(meta, f"data[{i}].meta", palettes)
+            check_trace_meta(meta, f"{loc}.meta", palettes)
     for key in spec.get("layout") or {}:
         if re.fullmatch(r"geo\d*", key):
             raise UsageError(
@@ -501,6 +539,13 @@ def plotly_error(exc: Exception, loc: str = "") -> UsageError:
     names = [m.group(1) for line in tail.splitlines() if (m := _VALID_PROP_RE.match(line))]
     lines = [line for line in head.splitlines() if line.strip()]
     msg = "\n".join(lines[:12])
+    bad = re.search(r"Invalid property specified for object of type \S+: '(\w+)'", head)
+    if "'color' property of scatter.marker" in head:
+        # A variable name where Plotly wants a color: the plotter's mapping lives in meta.
+        msg += "\nTo color by a variable, name it in meta.marker.color (stations) or meta.z (maps)"
+    if bad and bad.group(1) in TRACE_META_KEYS:
+        # align, along, palette …: the plotter's own keys, which Plotly does not know.
+        msg += f'\n{bad.group(1)!r} is a meta key: write {{"meta": {{"{bad.group(1)}": …}}}}'
     if names:
         msg += f"\nAllowed here: {', '.join(names)}"
     elif len(lines) > 12:
@@ -525,7 +570,7 @@ def plotly_error(exc: Exception, loc: str = "") -> UsageError:
     )
 
 
-def validate(spec: dict, theme: dict | None = None) -> dict:
+def validate(spec: dict, theme: dict | None = None, locs: list[str] | None = None) -> dict:
     """Check the meta blocks, then let Plotly validate everything else.
 
     ``theme`` is ``load_theme()``'s (read here when None): palette names resolve in
@@ -538,7 +583,7 @@ def validate(spec: dict, theme: dict | None = None) -> dict:
 
     theme = theme or load_theme()
     check_shape(spec)
-    check_meta(spec, theme["palettes"])
+    check_meta(spec, theme["palettes"], locs)
     # Our template names must exist before Plotly checks layout.template.
     register_templates(theme)
     try:
@@ -557,7 +602,7 @@ DUMP_SPEC_HELP = (
 )
 SPEC_ARGUMENT_HELP = (
     "Plotly figure JSON (inline or a path), deep-merged onto the figure built from the "
-    "input files. data[] merges by uid (else position); layout.annotations / shapes merge "
+    "input files. data[] merges by uid (else position); layout.annotations / shapes / images merge "
     "by name. Dataset bindings live in each trace's meta. Example: "
     '{"data": [{"uid": "0", "type": "contour"}], "layout": {"title": {"text": "Week 1"}}}'
 )

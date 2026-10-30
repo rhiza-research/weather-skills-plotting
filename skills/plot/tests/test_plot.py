@@ -1,6 +1,7 @@
 """End-to-end tests for the plot skill."""
 
 import json
+import re
 
 import pytest
 import xarray as xr
@@ -32,8 +33,21 @@ def test_dump_spec_defaults_by_data_shape(tmp_path, plot_fn, capsys):
     pts = write_zarr(make_point_obs(), tmp_path / "pts.zarr")
     spec = _dump(plot_fn, capsys, "-i", str(grid), "-i", str(pts))
     a, b = spec["data"]
-    assert a == {"uid": "0", "type": "heatmap", "meta": {"source": {"input": "0"}}}
-    assert b["meta"]["bind"] == "points" and b["xaxis"] == "x2"
+    # Side by side, each map names its axes (the first is x / y).
+    assert a == {
+        "uid": "0",
+        "type": "heatmap",
+        "xaxis": "x",
+        "yaxis": "y",
+        "meta": {"source": {"input": "0"}, "z": "precip"},
+    }
+    assert b["meta"] == {
+        "source": {"input": "1"},
+        "x": "longitude",
+        "y": "latitude",
+        "marker": {"color": "precip"},
+    }
+    assert b["type"] == "scatter" and b["xaxis"] == "x2"
     meta = spec["layout"]["meta"]
     assert meta["version"] == 3 and meta["skill"] == "plot"
     assert meta["inputs"] == {"0": str(grid), "1": str(pts)}
@@ -44,7 +58,7 @@ def test_inputs_named_on_the_command_line(tmp_path, plot_fn, capsys):
     pts = write_zarr(make_point_obs(), tmp_path / "pts.zarr")
     spec = _dump(plot_fn, capsys, "-i", f"{grid}=OBS", "-i", str(pts))
     assert [t["uid"] for t in spec["data"]] == ["OBS", "1"]
-    assert spec["data"][0]["meta"] == {"source": {"input": "OBS"}}
+    assert spec["data"][0]["meta"] == {"source": {"input": "OBS"}, "z": "precip"}
     assert spec["layout"]["meta"]["inputs"] == {"OBS": str(grid), "1": str(pts)}
 
     spec = _dump(plot_fn, capsys, "--layer", f"heatmap:{grid}=RAIN", "--layer", f"scatter:{pts}")
@@ -84,7 +98,7 @@ def test_dump_merges_user_spec(tmp_path, plot_fn, capsys):
     user = {"data": [{"uid": "0", "type": "contour"}], "layout": {"title": {"text": "Hi"}}}
     spec = _dump(plot_fn, capsys, "-i", str(grid), "--spec", json.dumps(user))
     assert spec["data"][0]["type"] == "contour"
-    assert spec["data"][0]["meta"] == {"source": {"input": "0"}}
+    assert spec["data"][0]["meta"] == {"source": {"input": "0"}, "z": "precip"}
     assert spec["layout"]["title"] == {"text": "Hi"}
 
 
@@ -161,7 +175,8 @@ def test_series_of_a_forecast(tmp_path, plot_fn):
                         "uid": "0",
                         "type": "scatter",
                         "meta": {
-                            "bind": "series",
+                            "x": "step",
+                            "y": "tp",
                             "along": "number",
                             "band": [10, 90],
                         },
@@ -223,9 +238,11 @@ def test_layers(tmp_path, plot_fn, capsys):
         f"mask:{edge}",
     ]
     spec = _dump(plot_fn, capsys, *argv)
+    # Every layer, outlines included, is numbered by position.
     assert [t["uid"] for t in spec["data"]] == ["0", "1", "2"]
     assert spec["layout"]["meta"]["geo"]["mask_geojson"] == str(edge)
-    run_skill(plot_fn, *argv, "-o", str(tmp_path / "layers.png"))
+    restyle = json.dumps({"data": [{"uid": "2", "line": {"color": "#333333"}}]})
+    run_skill(plot_fn, *argv, "--spec", restyle, "-o", str(tmp_path / "layers.png"))
 
 
 @pytest.mark.parametrize(
@@ -250,7 +267,7 @@ def test_errors_are_actionable(tmp_path, plot_fn, capsys):
         ('{"layout": {"geo": {"showcountries": true}}}', "layout.meta.overlays"),
         ('{"annotations": [{"text": "n=5"}]}', '{"layout": {"annotations": …}}'),
         ('{"config": {"displaylogo": false}}', "plot takes none"),
-        ('{"data": [{"uid": "0", "meta": {"variable": "precip"}}]}', '{"source": {"variable"'),
+        ('{"data": [{"uid": "0", "meta": {"variable": "precip"}}]}', "name the variable in meta.z"),
         # A grid draws as a heatmap: line styling says how to get a line chart.
         ('{"data": [{"uid": "0", "line": {"color": "red"}}]}', "summarize-dim"),
         (
@@ -327,7 +344,7 @@ def test_each_series_keeps_only_its_own_settings(tmp_path, plot_fn, capsys):
     b = write_zarr(_area(make_gridded(n_time=3)), tmp_path / "b.zarr")
     user = {
         "data": [
-            {"uid": "0", "meta": {"source": {"variable": "precip"}}},
+            {"uid": "0", "meta": {"x": "time", "y": "precip"}},
             {"uid": "1", "type": "bar"},
         ]
     }
@@ -392,7 +409,7 @@ def test_series_with_no_common_dates_warn(tmp_path, plot_fn, capsys):
 
 def test_gridded_input_as_a_series_names_the_fix(tmp_path, plot_fn, capsys):
     a = write_zarr(make_gridded(n_time=2), tmp_path / "a.zarr")
-    user = {"data": [{"uid": "0", "type": "scatter", "meta": {"bind": "series"}}]}
+    user = {"data": [{"uid": "0", "type": "scatter", "meta": {"x": "time", "y": "precip"}}]}
     with pytest.raises(SystemExit):
         run_skill(plot_fn, "-i", str(a), "-o", str(tmp_path / "x.png"), "--spec", json.dumps(user))
     assert "summarize-dim" in capsys.readouterr().err
@@ -490,3 +507,146 @@ def test_one_figure_to_several_outputs(tmp_path, plot_fn):
     png, html = tmp_path / "a.png", tmp_path / "a.html"
     run_skill(plot_fn, "-i", str(grid), "-o", str(png), "-o", str(html))
     assert png.is_file() and "Plotly.newPlot" in html.read_text()
+
+
+def test_preset_restyles_an_input_by_uid(tmp_path, plot_fn):
+    # The input's own trace would be a line (x time, y …); a preset on its uid replaces that.
+    import numpy as np
+
+    time = np.arange("2026-01-01", "2026-01-11", dtype="datetime64[D]").astype("datetime64[ns]")
+    winds = xr.Dataset(
+        {"u10": ("time", np.linspace(-5, 5, 10)), "v10": ("time", np.linspace(3, -3, 10))},
+        coords={"time": time},
+    )
+    winds["u10"].attrs["units"] = winds["v10"].attrs["units"] = "m s-1"
+    path = write_zarr(winds, tmp_path / "winds.zarr")
+    spec = json.dumps({"data": [{"uid": "0", "type": "barpolar", "meta": {"bind": "windrose"}}]})
+    run_skill(plot_fn, "-i", str(path), "--spec", spec, "-o", str(tmp_path / "rose.png"))
+
+
+def test_geojson_input_is_an_outline_on_every_map(tmp_path, plot_fn, capsys):
+    grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
+    edge = tmp_path / "edge.geojson"
+    edge.write_text(
+        json.dumps({"type": "Polygon", "coordinates": [[[9, 0], [14, 0], [14, 4], [9, 4], [9, 0]]]})
+    )
+    argv = ["-i", str(grid), "-i", str(grid), "-i", str(edge)]
+    spec = _dump(plot_fn, capsys, *argv)
+    # Inputs are numbered by position whatever their file type; the GeoJSON is one trace.
+    assert [t["uid"] for t in spec["data"]] == ["0", "1", "2"]
+    assert spec["data"][2]["meta"] == {"bind": "geojson", "source": {"geojson": str(edge)}}
+    # --layer outline: beside -i is the same input.
+    layered = _dump(plot_fn, capsys, "-i", str(grid), "-i", str(grid), "--layer", f"outline:{edge}")
+    assert layered["data"] == spec["data"]
+    from weather_skills_plotting import compile
+
+    restyle = {"data": [{"uid": "2", "line": {"color": "red"}}]}
+    merged = plot_mod.merge_spec(spec, restyle)
+    datasets = {"0": make_gridded(n_time=1), "1": make_gridded(n_time=1)}
+    fig = compile(merged, datasets)
+    lines = [t for t in fig.data if str(t.uid).startswith("2")]
+    # One restyle reaches the outline on both maps.
+    assert {t.xaxis for t in lines} == {"x", "x2"}
+    assert all(t.line.color == "red" for t in lines)
+
+
+def test_one_dim_file_along_years_draws_with_no_spec(tmp_path, plot_fn, capsys):
+    import numpy as np
+
+    ds = xr.Dataset({"dmi": ("year", np.arange(5.0))}, coords={"year": np.arange(2000, 2005)})
+    path = write_zarr(ds, tmp_path / "year.zarr")
+    spec = _dump(plot_fn, capsys, "-i", str(path))
+    assert spec["data"][0]["meta"] == {"source": {"input": "0"}, "x": "year", "y": "dmi"}
+    run_skill(plot_fn, "-i", str(path), "-o", str(tmp_path / "year.png"))
+
+
+def test_outline_only_input_draws(tmp_path, plot_fn):
+    edge = tmp_path / "edge.geojson"
+    edge.write_text(
+        json.dumps({"type": "Polygon", "coordinates": [[[9, 0], [14, 0], [14, 4], [9, 4], [9, 0]]]})
+    )
+    run_skill(plot_fn, "-i", str(edge), "-o", str(tmp_path / "edge.png"))
+    run_skill(plot_fn, "--layer", f"outline:{edge}", "-o", str(tmp_path / "edge2.png"))
+
+
+def test_spec_trace_with_no_uid_restyles_input_zero(tmp_path, plot_fn, capsys):
+    ds = make_gridded(n_time=1)
+    ds["t2m"] = ds["precip"] * 0 + 290.0
+    path = write_zarr(ds, tmp_path / "multi.zarr")
+    spec = _dump(plot_fn, capsys, "-i", str(path), "--spec", '{"data": [{"meta": {"z": "t2m"}}]}')
+    assert [t["uid"] for t in spec["data"]] == ["0"]
+    assert spec["data"][0]["meta"]["z"] == "t2m"
+
+
+def test_wind_rose_on_an_input_keeps_its_speed_legend(tmp_path, plot_fn, capsys):
+    import numpy as np
+
+    time = np.arange("2026-01-01", "2026-01-11", dtype="datetime64[D]").astype("datetime64[ns]")
+    winds = xr.Dataset(
+        {"u10": ("time", np.linspace(-5, 5, 10)), "v10": ("time", np.linspace(3, -3, 10))},
+        coords={"time": time},
+    )
+    winds["u10"].attrs["units"] = winds["v10"].attrs["units"] = "m s-1"
+    path = write_zarr(winds, tmp_path / "winds.zarr")
+    user = {"data": [{"uid": "0", "type": "barpolar", "meta": {"bind": "windrose"}}]}
+    spec = _dump(plot_fn, capsys, "-i", str(path), "--spec", json.dumps(user))
+    # The rose names its own speed bins; the input's file name is not stamped on it.
+    assert "name" not in spec["data"][0]
+
+
+def test_station_layer_is_drawn_on_every_side_by_side_map(tmp_path, plot_fn, capsys):
+    a = write_zarr(make_gridded(n_time=1), tmp_path / "a.zarr")
+    b = write_zarr(make_gridded(n_time=1), tmp_path / "b.zarr")
+    pts = write_zarr(make_point_obs(n_time=1), tmp_path / "pts.zarr")
+    argv = ["-i", str(a), "-i", str(b), "--layer", f"scatter:{pts}"]
+    spec = _dump(plot_fn, capsys, *argv)
+    assert [t["uid"] for t in spec["data"]] == ["0", "1", "2"]
+    assert "xaxis" not in spec["data"][2]  # no axis of its own: on every map
+    from weather_skills_plotting import compile
+
+    fig = compile(
+        spec,
+        {"0": make_gridded(n_time=1), "1": make_gridded(n_time=1), "2": make_point_obs(n_time=1)},
+    )
+    stations = [t for t in fig.data if str(t.uid).startswith("2")]
+    assert {t.xaxis for t in stations} == {"x", "x2"}
+    run_skill(plot_fn, *argv, "-o", str(tmp_path / "both.png"))
+
+
+@pytest.mark.parametrize(
+    "trace, match",
+    [
+        (
+            {"uid": "T", "type": "heatmap", "meta": {"source": {"input": "R"}}},
+            r"data\[1\]\.meta\.source",
+        ),
+        ({"uid": "T", "type": "scattergeo"}, r"plot spec data\[1\]\.type 'scattergeo'"),
+    ],
+)
+def test_errors_cite_the_specs_own_index(tmp_path, plot_fn, capsys, trace, match):
+    # The layers' own traces come first in the figure; errors still count the spec's traces.
+    grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
+    edge = tmp_path / "edge.geojson"
+    edge.write_text(
+        json.dumps({"type": "Polygon", "coordinates": [[[9, 0], [14, 0], [14, 4], [9, 4], [9, 0]]]})
+    )
+    spec = {"data": [{"uid": "R", "zmax": 5}, trace]}
+    argv = [
+        "--layer",
+        f"outline:{edge}",
+        "--layer",
+        f"outline:{edge}",
+        "--layer",
+        f"heatmap:{grid}=R",
+    ]
+    with pytest.raises(SystemExit):
+        run_skill(plot_fn, *argv, "--spec", json.dumps(spec), "-o", str(tmp_path / "x.png"))
+    assert re.search(match, capsys.readouterr().err)
+
+
+def test_one_line_the_spec_names_shows_its_legend(tmp_path, plot_fn, capsys):
+    path = write_zarr(_area(make_gridded(n_time=3)), tmp_path / "a.zarr")
+    assert "showlegend" not in _dump(plot_fn, capsys, "-i", str(path))["data"][0]
+    for trace in ({"uid": "0", "name": "CHIRPS mean"}, {"name": "CHIRPS mean"}):
+        spec = _dump(plot_fn, capsys, "-i", str(path), "--spec", json.dumps({"data": [trace]}))
+        assert spec["data"][0]["showlegend"] is True

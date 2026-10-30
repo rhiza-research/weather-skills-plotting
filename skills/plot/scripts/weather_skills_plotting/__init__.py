@@ -75,13 +75,13 @@ def parse_spec_arg(value):
     return SpecArg(parse_plot_spec(value))
 
 
-def compile(spec, datasets, *, theme=None):
+def compile(spec, datasets, *, theme=None, locs=None):
     """Compile a spec against ``{input id: Dataset}`` into a Plotly figure."""
     from weather_skills_plotting.figure import compile_figure
 
     if isinstance(spec, SpecArg):
         spec = spec.data
-    return compile_figure(spec, datasets, theme=theme)
+    return compile_figure(spec, datasets, theme=theme, locs=locs)
 
 
 def export(fig, output, *, datasets=None, scale=None):
@@ -149,12 +149,15 @@ def _float32(obj):
 
     Plotly writes each array as base64 ``{"dtype": "f8", "bdata": ...}``. The
     HTML embeds every one; 32-bit floats halve its size and keep ~7
-    significant digits, finer than any plotted value or hover label needs.
+    significant digits, finer than any plotted value or hover label needs. Plotly
+    leaves an empty array as a numpy array, which becomes an empty list.
     """
     import base64
 
     import numpy as np
 
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
     if isinstance(obj, dict) and obj.get("dtype") == "f8" and "bdata" in obj:
         values = np.frombuffer(base64.b64decode(obj["bdata"]), dtype="<f8").astype("<f4")
         return {**obj, "dtype": "f4", "bdata": base64.b64encode(values.tobytes()).decode()}
