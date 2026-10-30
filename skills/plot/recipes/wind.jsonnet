@@ -1,8 +1,9 @@
 // Wind speed shading with an arrow (shaft and head) on every 2nd cell, all one length.
 // wind_speed and wind_from_direction come from the wind-speed-direction skill.
-// Each arrow is two Plotly markers at the cell: a line-ns shaft turned to the wind,
-// and an arrow-down head turned to the from-direction and moved half the shaft
-// length downwind with standoff, so it sits on the downwind tip.
+// Each arrow is two Plotly markers centred on the cell, turned to the from-direction:
+// a line-ns shaft (Plotly draws it 1.4 times its size long) and an arrow-down head,
+// whose tip is at the cell, moved half the length downwind with standoff so it
+// ends where the shaft does.
 // plot.py -i wind_sd.zarr=WD --spec wind.jsonnet -o wind.png
 local ws = import 'ws.libsonnet';
 local inputs = std.extVar('inputs');
@@ -18,7 +19,7 @@ local at = {
   data: [
     { type: 'heatmap', x: '@WD.lon', y: '@WD.lat', z: '@WD.wind_speed' + sel, colorscale: 'YlGn',
       colorbar: { title: { text: 'm/s' } } },
-    at { marker: { symbol: 'line-ns', size: length, line: { width: 1.5, color: 'black' },
+    at { marker: { symbol: 'line-ns', size: length / 1.4, line: { width: 1.5, color: 'black' },
                    angle: '@WD.wind_from_direction' + thin + '.flat()' } },
     at { marker: { symbol: 'arrow-down', size: 8, color: 'black', standoff: length / 2,
                    angle: '@WD.wind_from_direction' + thin + '.flat()' } },
