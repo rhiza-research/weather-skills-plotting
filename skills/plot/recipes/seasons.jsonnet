@@ -1,0 +1,21 @@
+// Past seasons and this year's forecast plume on one day-of-year axis. Each year is
+// its own input; the forecast is on valid dates (step-to-time) with a number dim.
+// plot.py -i y2024.zarr=Y2024 -i y2025.zarr=Y2025 -i fc_valid.zarr=FCA --spec seasons.jsonnet -o seasons.png
+local inputs = std.extVar('inputs');
+local years = ['Y2024', 'Y2025'];
+{
+  data: [
+    { type: 'scatter', mode: 'lines', name: std.lstripChars(y, 'Y'),
+      x: '@%s.time.dt.dayofyear' % y, y: '@%s.precip' % y }
+    for y in years
+  ] + [
+    { type: 'scatter', mode: 'lines', x: '@FCA.time.dt.dayofyear', y: '@FCA.tp.isel(number=%d)' % m,
+      line: { color: 'grey', width: 0.6 }, legendgroup: 'fc', showlegend: m == 0, name: 'Forecast members' }
+    for m in std.range(0, inputs.FCA.dims.number - 1)
+  ],
+  layout: {
+    title: { text: 'Daily rainfall by day of year' },
+    xaxis: { title: { text: 'Day of year' }, tickvals: [1, 32, 60, 91], ticktext: ['1 Jan', '1 Feb', '1 Mar', '1 Apr'] },
+    yaxis: { title: { text: 'mm/day' }, rangemode: 'tozero' },
+  },
+}

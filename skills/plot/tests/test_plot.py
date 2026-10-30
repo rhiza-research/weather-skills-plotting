@@ -1,7 +1,10 @@
-"""End-to-end tests for the plot skill."""
+"""End-to-end tests for the plot skill: Jsonnet spec, @ references, outputs."""
 
 import json
+import re
+from pathlib import Path
 
+import numpy as np
 import pytest
 import xarray as xr
 from skill_conftest import (
@@ -15,6 +18,7 @@ from skill_conftest import (
 from weather_skills_core.provenance import load_figure_history
 
 plot_mod = load_skill("plot", "plot")
+RECIPES = Path(__file__).resolve().parents[1] / "recipes"
 
 
 @pytest.fixture(scope="module")
@@ -22,471 +26,260 @@ def plot_fn():
     return plot_mod.plot
 
 
-def _dump(plot_fn, capsys, *argv):
-    run_skill(plot_fn, *argv, "--dump-spec", "-")
-    return json.loads(capsys.readouterr().out)
+def _series(name, values, start="2026-01-01", **extra_dims):
+    times = np.arange(np.datetime64(start), np.datetime64(start) + np.timedelta64(len(values), "D"))
+    ds = xr.Dataset({name: ("time", np.asarray(values, float))}, coords={"time": times})
+    ds[name].attrs["units"] = "mm day-1"
+    return ds
 
 
-def test_dump_spec_defaults_by_data_shape(tmp_path, plot_fn, capsys):
-    grid = write_zarr(make_gridded(), tmp_path / "grid.zarr")
-    pts = write_zarr(make_point_obs(), tmp_path / "pts.zarr")
-    spec = _dump(plot_fn, capsys, "-i", str(grid), "-i", str(pts))
-    a, b = spec["data"]
-    assert a == {"uid": "0", "type": "heatmap", "meta": {"source": {"input": "0"}}}
-    assert b["meta"]["bind"] == "points" and b["xaxis"] == "x2"
-    meta = spec["layout"]["meta"]
-    assert meta["version"] == 3 and meta["skill"] == "plot"
-    assert meta["inputs"] == {"0": str(grid), "1": str(pts)}
+def _geojson(path):
+    ring = [[10, 1], [13, 1], [13, 3], [10, 3], [10, 1]]
+    path.write_text(json.dumps({"type": "Polygon", "coordinates": [ring]}))
+    return path
 
 
-def test_inputs_named_on_the_command_line(tmp_path, plot_fn, capsys):
-    grid = write_zarr(make_gridded(), tmp_path / "grid.zarr")
-    pts = write_zarr(make_point_obs(), tmp_path / "pts.zarr")
-    spec = _dump(plot_fn, capsys, "-i", f"{grid}=OBS", "-i", str(pts))
-    assert [t["uid"] for t in spec["data"]] == ["OBS", "1"]
-    assert spec["data"][0]["meta"] == {"source": {"input": "OBS"}}
-    assert spec["layout"]["meta"]["inputs"] == {"OBS": str(grid), "1": str(pts)}
+def _inputs(tmp_path):
+    """A synthetic file for every NAME the recipes use."""
+    rng = np.random.default_rng(0)
+    grid = make_gridded(n_time=3)
+    grid["precip"].values = rng.uniform(0, 40, grid["precip"].shape)
+    fc = make_forecast(n_step=4, lats=(1.0, 2.0, 3.0), lons=(10.0, 11.0, 12.0))
+    fc["tp"].values = rng.uniform(0, 30, fc["tp"].shape)
+    ens = xr.Dataset(
+        {"tp": (("number", "time", "latitude", "longitude"), rng.uniform(0, 20, (3, 5, 2, 2)))},
+        coords={
+            "number": [0, 1, 2],
+            "time": np.arange(np.datetime64("2026-03-10"), np.datetime64("2026-03-15")),
+            "latitude": [1.0, 2.0],
+            "longitude": [10.0, 11.0],
+        },
+    )
+    quant = xr.Dataset(
+        {"tp": (("quantile", "time"), np.array([[1.0, 2, 3], [5, 6, 7]]))},
+        coords={
+            "quantile": [0.1, 0.9],
+            "time": np.arange(np.datetime64("2026-01-01"), np.datetime64("2026-01-04")),
+        },
+    )
+    wind = make_gridded(
+        n_time=1, lats=(1.0, 2.0, 3.0, 4.0), lons=(10.0, 11.0, 12.0, 13.0), name="wind_speed"
+    )
+    wind["wind_speed"].values = rng.uniform(0, 12, wind["wind_speed"].shape)
+    wind["wind_to_direction"] = wind["wind_speed"] * 0 + 90.0
+    rh = xr.Dataset(
+        {"r": (("vertical", "latitude", "longitude"), rng.uniform(20, 90, (3, 2, 4)))},
+        coords={
+            "vertical": [1000.0, 850.0, 500.0],
+            "latitude": [-1.0, 0.0],
+            "longitude": [34.0, 35.0, 36.0, 37.0],
+        },
+    )
+    rh["latitude"].attrs.update(standard_name="latitude", units="degrees_north")
+    rh["longitude"].attrs.update(standard_name="longitude", units="degrees_east")
+    cty = xr.Dataset(
+        {"precip": ("county", [12.0, 30.0, 4.0])},
+        coords={"county": ["Kisumu", "Turkana", "Nairobi"]},
+    )
+    idx = _series("precip", [100, 200, 150]).assign(nino34=("time", [-1.0, 0.8, 1.6]))
+    for ds in (ens, quant, cty):
+        ds[list(ds.data_vars)[0]].attrs["units"] = "mm day-1"
+    idx["nino34"].attrs["units"] = "K"
+    files = {
+        "OBS": grid,
+        "STN": make_point_obs(n_time=3, n_points=3),
+        "FC": fc,
+        "ENS": ens,
+        "MEAN": ens.mean("number"),
+        "Q": quant,
+        "AREA": _series("precip", [2.0, 4.0, 1.0]),
+        "FCA": ens.isel(latitude=0, longitude=0, drop=True),
+        "Y2024": _series("precip", [1, 5, 2, 8], start="2024-03-01"),
+        "Y2025": _series("precip", [3, 0, 4, 6], start="2025-03-01"),
+        "WD": wind,
+        "RH": rh,
+        "CTY": cty,
+        "IDX": idx,
+    }
+    paths = {name: write_zarr(ds, tmp_path / f"{name}.zarr") for name, ds in files.items()}
+    paths["KENYA"] = _geojson(tmp_path / "kenya.geojson")
+    return paths, files
 
-    spec = _dump(plot_fn, capsys, "--layer", f"heatmap:{grid}=RAIN", "--layer", f"scatter:{pts}")
-    assert [t["uid"] for t in spec["data"]] == ["RAIN", "1"]
+
+def _recipe_inputs(recipe: Path, paths: dict) -> list[str]:
+    """``-i PATH=NAME`` for each NAME on the recipe's usage line."""
+    usage = next(line for line in recipe.read_text().splitlines() if "plot.py" in line)
+    names = re.findall(r"-i \S+=(\w+)", usage)
+    assert names, f"{recipe.name}: usage line names no inputs"
+    argv = []
+    for name in names:
+        argv += ["-i", f"{paths[name]}={name}"]
+    return argv
+
+
+@pytest.mark.parametrize("recipe", sorted(RECIPES.glob("*.jsonnet")), ids=lambda p: p.stem)
+def test_every_recipe_draws_only_stored_values(tmp_path, plot_fn, capsys, recipe):
+    """Each recipe renders, and every data value it draws is a value stored in its input."""
+    from weather_skills_plotting.geodata import load_geojson
+    from weather_skills_plotting.refs import GeoLines, resolve
+    from weather_skills_plotting.spec import SpecArg, evaluate, input_metadata
+
+    paths, files = _inputs(tmp_path)
+    argv = _recipe_inputs(recipe, paths)
+    suffix = ".gif" if "frames" in recipe.read_text() else ".png"
+    out = tmp_path / f"{recipe.stem}{suffix}"
+    run_skill(plot_fn, *argv, "--spec", str(recipe), "-o", str(out))
+    assert out.exists() and "data: not null" in capsys.readouterr().out
+
+    names = [a.split("=")[-1] for a in argv[1::2]]
+    values = {n: load_geojson(paths[n]) if n == "KENYA" else files[n] for n in names}
+    meta = {n: input_metadata(v) for n, v in values.items()}
+    sources = {n: GeoLines(v, n) if isinstance(v, list) else v for n, v in values.items()}
+    resolved, found = resolve(evaluate(SpecArg(str(recipe)), meta), sources)
+    for path, ref in found.items():
+        name = ref[1:].split(".")[0]
+        # Labels (.dt / .attrs), display limits and base-map lines are not stored data.
+        if (
+            name not in files
+            or ".dt." in ref
+            or ref.endswith(("min()", "max()"))
+            or "quantile(" in ref.split(".")[-1]
+        ):
+            continue
+        ds = files[name]
+        stored = np.concatenate(
+            [
+                np.asarray(v.values, float).ravel()
+                for v in ds.variables.values()
+                if v.dtype.kind in "biuf"
+            ]
+        )
+        value = _at(resolved, path)
+        drawn = (
+            np.asarray(value, dtype=float).ravel()
+            if np.asarray(value).dtype.kind in "biuf"
+            else None
+        )
+        if drawn is None:
+            continue
+        drawn = drawn[np.isfinite(drawn)]
+        assert np.isin(drawn, stored).all(), (
+            f"{recipe.name} {path} = {ref} draws values not in {name}"
+        )
+
+
+def _at(tree, path):
+    for part in re.findall(r"[^.\[\]]+|\[\d+\]", path):
+        tree = tree[int(part[1:-1])] if part.startswith("[") else tree[part]
+    return tree
+
+
+def test_png_with_provenance_and_qa(tmp_path, plot_fn, capsys):
+    grid = write_zarr(make_gridded(n_time=2), tmp_path / "grid.zarr")
+    out = tmp_path / "map.png"
+    spec = "{data: [{type: 'heatmap', uid: 'R', x: '@G.lon', y: '@G.lat', z: '@G.precip.isel(time=0)'}]}"
+    run_skill(plot_fn, "-i", f"{grid}=G", "--spec", spec, "-o", str(out))
+    text = capsys.readouterr().out
+    assert "plot hash:" in text and "data: not null (R 12/12 finite)" in text
+    entry = load_figure_history(out)[-1]
+    assert entry["skill"] == "plot"
+    # Provenance keeps the evaluated figure, which replays as --spec by itself.
+    assert entry["args"]["spec"]["data"][0]["z"] == "@G.precip.isel(time=0)"
+    assert entry["args"]["inputs"] == [f"{grid}=G"]
+
+
+def test_html_pdf_svg_outputs(tmp_path, plot_fn, capsys):
+    grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
+    spec = "{data: [{type: 'heatmap', x: '@G.lon', y: '@G.lat', z: '@G.precip.isel(time=0)'}]}"
+    html, pdf, svg = tmp_path / "m.html", tmp_path / "m.pdf", tmp_path / "m.svg"
+    run_skill(
+        plot_fn, "-i", f"{grid}=G", "--spec", spec, "-o", str(html), "-o", str(pdf), "-o", str(svg)
+    )
+    assert "Plotly.newPlot" in html.read_text() and "weather_skills_history" in html.read_text()
+    assert pdf.read_bytes().startswith(b"%PDF") and "<svg" in svg.read_text()
+    hashes = [line for line in capsys.readouterr().out.splitlines() if "plot hash:" in line]
+    assert len(hashes) == 2 and hashes[0] == hashes[1]
+
+
+def test_dump_spec_prints_evaluated_jsonnet(tmp_path, plot_fn, capsys):
+    grid = write_zarr(make_gridded(n_time=2), tmp_path / "grid.zarr")
+    spec = (
+        "local v = '@G.precip'; local t = std.extVar('inputs').G.coords.time; "
+        "{data: [{type: 'heatmap', z: v + '.isel(time=1)'}], layout: {title: {text: t[1] + ' ' + std.extVar('who')}}}"
+    )
+    run_skill(
+        plot_fn, "-i", f"{grid}=G", "--spec", spec, "--ext-str", "who=CHIRPS", "--dump-spec", "-"
+    )
+    dumped = json.loads(capsys.readouterr().out)
+    assert dumped["data"][0]["z"] == "@G.precip.isel(time=1)"
+    assert dumped["layout"]["title"]["text"] == "2026-01-02 CHIRPS"
+
+
+def test_inputs_metadata(tmp_path, plot_fn, capsys):
+    fc = write_zarr(make_forecast(n_step=2, members=3), tmp_path / "fc.zarr")
+    spec = "local i = std.extVar('inputs').F; {layout: {meta: i}}"
+    run_skill(plot_fn, "-i", f"{fc}=F", "--spec", spec, "--dump-spec", "-")
+    meta = json.loads(capsys.readouterr().out)["layout"]["meta"]
+    assert meta["dims"] == {"number": 3, "step": 2, "latitude": 2, "longitude": 2}
+    assert meta["vars"]["tp"]["dims"] == ["number", "step", "latitude", "longitude"]
+    assert meta["coords"]["time"] == "2026-01-01" and meta["coords"]["number"] == [0, 1, 2]
+    assert meta["bbox"] == {"n": 2.0, "w": 10.0, "s": 1.0, "e": 11.0}
+
+
+def test_gif_needs_frames(tmp_path, plot_fn, capsys):
+    grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
+    with pytest.raises(SystemExit):
+        run_skill(plot_fn, "-i", f"{grid}=G", "--spec", "{data: []}", "-o", str(tmp_path / "a.gif"))
+    assert "a GIF plays the figure's frames" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
     ("argv", "match"),
     [
-        (["-i", "x.zarr=bad-name"], "PATH=UID"),
-        (["-i", "=OBS"], "PATH=UID"),
-        (["--layer", "heatmap:x.zarr=a.b"], "PATH=UID"),
-        # The error spells out the fix: an id for -i and the text as the trace's name.
-        (
-            ["-i", "x.zarr=CHIRPS total (mm)"],
-            '=CHIRPS_total_mm and pass --spec {"data": [{"uid": "CHIRPS_total_mm", '
-            '"name": "CHIRPS total (mm)"}]}',
-        ),
-        (["--layer", "heatmap:x.zarr=IMERG Late"], "end it with =IMERG_Late"),
+        (["-i", "x.zarr"], "-i expects PATH=NAME"),
+        (["-i", "x.zarr=IMERG Final"], "-i expects PATH=NAME"),
+        (["-i", "x.zarr=NE"], "built-in Natural Earth"),
     ],
 )
 def test_bad_input_name(plot_fn, capsys, argv, match):
     with pytest.raises(SystemExit):
-        run_skill(plot_fn, *argv, "-o", "x.png")
+        run_skill(plot_fn, *argv, "--spec", "{}", "-o", "x.png")
     assert match in capsys.readouterr().err
-
-
-def test_duplicate_input_names(tmp_path, plot_fn, capsys):
-    grid = write_zarr(make_gridded(), tmp_path / "grid.zarr")
-    with pytest.raises(SystemExit):
-        run_skill(plot_fn, "-i", f"{grid}=1", "-i", str(grid), "-o", str(tmp_path / "x.png"))
-    assert "two inputs have the id '1'" in capsys.readouterr().err
-
-
-def test_dump_merges_user_spec(tmp_path, plot_fn, capsys):
-    grid = write_zarr(make_gridded(), tmp_path / "grid.zarr")
-    user = {"data": [{"uid": "0", "type": "contour"}], "layout": {"title": {"text": "Hi"}}}
-    spec = _dump(plot_fn, capsys, "-i", str(grid), "--spec", json.dumps(user))
-    assert spec["data"][0]["type"] == "contour"
-    assert spec["data"][0]["meta"] == {"source": {"input": "0"}}
-    assert spec["layout"]["title"] == {"text": "Hi"}
-
-
-def test_dumped_spec_replays_without_file_flags(tmp_path, plot_fn, capsys):
-    grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
-    spec = _dump(plot_fn, capsys, "-i", str(grid))
-    out = tmp_path / "replay.png"
-    run_skill(plot_fn, "--spec", json.dumps(spec), "-o", str(out))
-    assert out.is_file()
-
-
-def test_png_render_with_provenance_and_qa(tmp_path, plot_fn, capsys):
-    grid = write_zarr(make_gridded(n_time=2), tmp_path / "grid.zarr")
-    out = tmp_path / "map.png"
-    run_skill(
-        plot_fn,
-        "-i",
-        str(grid),
-        "-o",
-        str(out),
-        "--spec",
-        '{"layout": {"title": {"text": "Precip"}}}',
-    )
-    text = capsys.readouterr().out
-    assert "plot hash:" in text and "data: not null (0 24/24 finite)" in text
-    history = load_figure_history(out)
-    assert history and history[-1]["skill"] == "plot"
-
-
-def test_html_output(tmp_path, plot_fn):
-    grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
-    out = tmp_path / "map.html"
-    run_skill(plot_fn, "-i", str(grid), "-o", str(out))
-    html = out.read_text()
-    assert "weather_skills_history" in html
-    assert "Plotly.newPlot" in html
-
-
-def test_pdf_and_svg_outputs_with_provenance_and_qa(tmp_path, plot_fn, capsys):
-    grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
-    png, pdf, svg = tmp_path / "map.png", tmp_path / "map.pdf", tmp_path / "map.svg"
-    run_skill(plot_fn, "-i", str(grid), "-o", str(png), "-o", str(pdf), "-o", str(svg))
-    assert pdf.read_bytes().startswith(b"%PDF")
-    assert "<svg" in svg.read_text()
-    for out in (pdf, svg):
-        history = load_figure_history(out)
-        assert history and history[-1]["skill"] == "plot"
-    # PDF and SVG are hashed from the figure JSON, so they agree with each other
-    # and not with the PNG's pixel hash.
-    png_hash, pdf_hash, svg_hash = [
-        line for line in capsys.readouterr().out.splitlines() if "plot hash:" in line
-    ]
-    assert pdf_hash == svg_hash != png_hash
-
-
-def test_series_of_a_forecast(tmp_path, plot_fn):
-    # An area mean, as summarize-dim --dim latitude --dim longitude writes it.
-    fc = write_zarr(
-        make_forecast(members=3).mean(["latitude", "longitude"], keep_attrs=True),
-        tmp_path / "fc.zarr",
-    )
-    out = tmp_path / "ts.png"
-    run_skill(
-        plot_fn,
-        "-i",
-        str(fc),
-        "-o",
-        str(out),
-        "--spec",
-        json.dumps(
-            {
-                "data": [
-                    {
-                        "uid": "0",
-                        "type": "scatter",
-                        "meta": {
-                            "bind": "series",
-                            "along": "number",
-                            "band": [10, 90],
-                        },
-                    }
-                ]
-            }
-        ),
-    )
-    assert out.is_file()
-
-
-def test_scatter_of_two_variables(tmp_path, plot_fn, capsys):
-    ds = xr.Dataset(
-        {"dmi": (("year",), [1.9, -0.2, -0.3]), "precip": (("year",), [210.0, 60.0, 45.0])},
-        coords={"year": [2019, 2020, 2021]},
-    )
-    ds["dmi"].attrs["units"] = "degree_Celsius"
-    ds["precip"].attrs["units"] = "mm"
-    path = write_zarr(ds, tmp_path / "iod_rain.zarr")
-    user = {"data": [{"uid": "0", "meta": {"x": "dmi", "y": "precip"}}]}
-    spec = _dump(plot_fn, capsys, "-i", str(path), "--spec", json.dumps(user))
-    assert spec["data"][0]["meta"] == {"source": {"input": "0"}, "x": "dmi", "y": "precip"}
-    run_skill(plot_fn, "-i", str(path), "-o", str(tmp_path / "xy.png"), "--spec", json.dumps(user))
-    assert "data: not null (0 3/3 finite)" in capsys.readouterr().out
-
-
-@pytest.mark.parametrize("kind", ["scatter", "bar"])
-def test_xy_of_stations_is_not_a_station_map(tmp_path, plot_fn, capsys, kind):
-    pts = write_zarr(make_point_obs(n_time=1), tmp_path / "pts.zarr")
-    user = {
-        "data": [
-            {
-                "uid": "0",
-                "type": kind,
-                "meta": {"x": "point_id", "y": "precip", "source": {"isel": {"time": 0}}},
-            }
-        ]
-    }
-    spec = _dump(plot_fn, capsys, "-i", str(pts), "--spec", json.dumps(user))
-    assert "bind" not in spec["data"][0]["meta"]
-    run_skill(plot_fn, "-i", str(pts), "-o", str(tmp_path / "xy.png"), "--spec", json.dumps(user))
-
-
-def test_layers(tmp_path, plot_fn, capsys):
-    grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
-    pts = write_zarr(make_point_obs(n_time=1), tmp_path / "pts.zarr")
-    edge = tmp_path / "edge.geojson"
-    edge.write_text(
-        json.dumps({"type": "Polygon", "coordinates": [[[9, 0], [14, 0], [14, 4], [9, 4], [9, 0]]]})
-    )
-    argv = [
-        "--layer",
-        f"heatmap:{grid}",
-        "--layer",
-        f"scatter:{pts}",
-        "--layer",
-        f"outline:{edge}",
-        "--layer",
-        f"mask:{edge}",
-    ]
-    spec = _dump(plot_fn, capsys, *argv)
-    assert [t["uid"] for t in spec["data"]] == ["0", "1", "2"]
-    assert spec["layout"]["meta"]["geo"]["mask_geojson"] == str(edge)
-    run_skill(plot_fn, *argv, "-o", str(tmp_path / "layers.png"))
 
 
 @pytest.mark.parametrize(
-    "argv, match",
+    ("spec", "match"),
     [
-        (["--layer", "heatmap"], "KIND:PATH"),
-        (["--layer", "pie:x.zarr"], "KIND:PATH"),
+        # Jsonnet syntax errors come back from the evaluator.
+        ("{data: [", "--spec:"),
+        # Plotly keys are checked by Plotly, naming the trace.
+        ("{data: [{type: 'scatter', align: 'x'}]}", "data[0] (scatter)"),
+        # A scatter's colour-scale keys go under marker.
+        ("{data: [{type: 'scatter', showscale: false}]}", "showscale goes under marker"),
+        ("{data: [{type: 'heatmap', z: '@G.precip'}]}", "needs 2-D"),
+        ("{data: [{type: 'heatmap', z: '@G.prcp.isel(time=0)'}]}", "data variables: precip"),
+        ("{data: [{type: 'heatmap', z: '@X.precip'}]}", "'X' is not an input; inputs are G"),
+        ("{data: [{type: 'scatter', y: [1,2,3,4,5,6,7,8,9,10,11]}]}", "11 typed-in numbers"),
     ],
 )
-def test_bad_layer_flag(plot_fn, capsys, argv, match):
+def test_spec_errors(tmp_path, plot_fn, capsys, spec, match):
+    grid = write_zarr(make_gridded(n_time=2), tmp_path / "grid.zarr")
     with pytest.raises(SystemExit):
-        run_skill(plot_fn, *argv, "-o", "x.png")
+        run_skill(plot_fn, "-i", f"{grid}=G", "--spec", spec, "-o", str(tmp_path / "x.png"))
     assert match in capsys.readouterr().err
 
 
-def test_errors_are_actionable(tmp_path, plot_fn, capsys):
-    grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
-    bad = [
-        ('{"inputs": [{"variable": "tp"}]}', "are not allowed"),
-        ('{"data": [{"uid": "0", "colorscal": "Blues"}]}', "Did you mean"),
-        ('{"layout": {"meta": {"geo": {"region": "Kenya"}}}}', "resolve-region"),
-        ('{"layout": {"geo": {"showcountries": true}}}', "layout.meta.overlays"),
-        ('{"annotations": [{"text": "n=5"}]}', '{"layout": {"annotations": …}}'),
-        ('{"config": {"displaylogo": false}}', "plot takes none"),
-        ('{"data": [{"uid": "0", "meta": {"variable": "precip"}}]}', '{"source": {"variable"'),
-        # A grid draws as a heatmap: line styling says how to get a line chart.
-        ('{"data": [{"uid": "0", "line": {"color": "red"}}]}', "summarize-dim"),
-        (
-            '{"layout": {"meta": {"overlays": {"lakes": {"color": "#1f4e9c"}}}}}',
-            '{"lakes": {"fillcolor"',
-        ),
-    ]
-    for spec, match in bad:
-        with pytest.raises(SystemExit):
-            run_skill(plot_fn, "-i", str(grid), "-o", str(tmp_path / "x.png"), "--spec", spec)
-        assert match in capsys.readouterr().err
+def test_literal_at_sign(tmp_path, plot_fn, capsys):
+    spec = "{data: [{type: 'scatter', x: [1], y: [1], text: ['@@rhiza'], mode: 'text'}]}"
+    run_skill(plot_fn, "--spec", spec, "--dump-spec", "-")
+    assert json.loads(capsys.readouterr().out)["data"][0]["text"] == ["@@rhiza"]
+    out = tmp_path / "t.html"
+    run_skill(plot_fn, "--spec", spec, "-o", str(out))
+    assert '"@rhiza"' in out.read_text()
 
 
-def test_help_lists_meta_reference(plot_fn, capsys):
+def test_still_image_refuses_more_than_100_panels(tmp_path, plot_fn, capsys):
+    spec = "{layout: {['xaxis%d' % i]: {} for i in std.range(2, 102)}}"
     with pytest.raises(SystemExit):
-        run_skill(plot_fn, "--help")
-    out = capsys.readouterr().out
-    for needle in ("BINDS", "data[].meta.source", "layout.meta", "RECIPES", "plotly.com"):
-        assert needle in out
-
-
-def test_mask_removing_every_station(tmp_path, plot_fn, capsys):
-    pts = write_zarr(make_point_obs(n_time=1), tmp_path / "pts.zarr")
-    far = tmp_path / "far.geojson"
-    far.write_text(
-        json.dumps({"type": "Polygon", "coordinates": [[[50, 50], [51, 50], [51, 51], [50, 50]]]})
-    )
-    with pytest.raises(SystemExit):
-        run_skill(
-            plot_fn,
-            "--layer",
-            f"scatter:{pts}",
-            "--layer",
-            f"mask:{far}",
-            "-o",
-            str(tmp_path / "x.png"),
-        )
-    assert "no stations remain" in capsys.readouterr().err
-
-
-def test_provenance_records_spec_and_layers(tmp_path, plot_fn):
-    grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
-    out = tmp_path / "p.png"
-    spec = {"layout": {"title": {"text": "T"}}}
-    run_skill(plot_fn, "--layer", f"heatmap:{grid}", "-o", str(out), "--spec", json.dumps(spec))
-    args = load_figure_history(out)[-1]["args"]
-    assert args["spec"] == spec
-    assert args["layer"] == [f"heatmap:{grid}"]
-
-
-# ------------------------------------------------------------ several series
-
-
-def _area(ds):
-    """An area mean, as summarize-dim --dim latitude --dim longitude writes it."""
-    return ds.mean(["latitude", "longitude"], keep_attrs=True)
-
-
-def test_series_share_one_axis_named_by_file(tmp_path, plot_fn, capsys):
-    a = write_zarr(_area(make_gridded(n_time=3)), tmp_path / "chirps.zarr")
-    b = write_zarr(_area(make_gridded(n_time=3, fill=2.0)), tmp_path / "imerg.zarr")
-    spec = _dump(plot_fn, capsys, "-i", str(a), "-i", str(b))
-    assert [(t["uid"], t["name"]) for t in spec["data"]] == [("0", "chirps"), ("1", "imerg")]
-    assert not any("xaxis" in t or "yaxis" in t for t in spec["data"])
-
-    from weather_skills_plotting import compile
-
-    fig = compile(spec, {"0": xr.open_zarr(a), "1": xr.open_zarr(b)})
-    assert {(t.xaxis, t.yaxis) for t in fig.data} == {("x", "y")}
-
-
-def test_each_series_keeps_only_its_own_settings(tmp_path, plot_fn, capsys):
-    a = write_zarr(_area(make_gridded(n_time=3)), tmp_path / "a.zarr")
-    b = write_zarr(_area(make_gridded(n_time=3)), tmp_path / "b.zarr")
-    user = {
-        "data": [
-            {"uid": "0", "meta": {"source": {"variable": "precip"}}},
-            {"uid": "1", "type": "bar"},
-        ]
-    }
-    spec = _dump(plot_fn, capsys, "-i", str(a), "-i", str(b), "--spec", json.dumps(user))
-    assert "variable" not in spec["data"][1]["meta"]["source"]
-    assert spec["data"][1]["type"] == "bar"
-    out = tmp_path / "ts.png"
-    run_skill(plot_fn, "-i", str(a), "-i", str(b), "-o", str(out), "--spec", json.dumps(user))
-    assert out.is_file()
-
-
-def test_along_passes_only_to_series_with_that_dim(tmp_path, plot_fn, capsys):
-    fc = write_zarr(_area(make_forecast(members=4)), tmp_path / "fc.zarr")
-    clim = write_zarr(_area(make_forecast(members=4)).isel(number=0), tmp_path / "clim.zarr")
-    user = {"data": [{"uid": "0", "meta": {"along": "number", "band": [10, 90]}}]}
-    spec = _dump(plot_fn, capsys, "-i", str(fc), "-i", str(clim), "--spec", json.dumps(user))
-    assert "along" not in spec["data"][1]["meta"] and "band" not in spec["data"][1]["meta"]
-    out = tmp_path / "ens.html"
-    run_skill(plot_fn, "-i", str(fc), "-i", str(clim), "-o", str(out), "--spec", json.dumps(user))
-    assert "Plotly.newPlot" in out.read_text()
-
-
-def test_station_series_named_by_station_id(tmp_path, plot_fn, capsys):
-    one = make_point_obs(n_points=2).isel(point_id=1)
-    path = write_zarr(one, tmp_path / "tahmo.zarr")
-    spec = _dump(plot_fn, capsys, "-i", str(path))
-    assert spec["data"][0]["name"] == "S1"
-
-
-def test_mixed_units_warns_on_one_axis_only(tmp_path, plot_fn, capsys):
-    a = _area(make_gridded(n_time=2))
-    b = _area(make_gridded(n_time=2))
-    b["precip"].attrs["units"] = "mm"
-    pa, pb = write_zarr(a, tmp_path / "a.zarr"), write_zarr(b, tmp_path / "b.zarr")
-    run_skill(plot_fn, "-i", str(pa), "-i", str(pb), "--dump-spec", "-")
-    assert "different units" in capsys.readouterr().err
-
-    # A line on its own axes in a grid is a separate y-axis: no warning.
-    grid = {
-        "data": [{"uid": "1", "xaxis": "x2", "yaxis": "y2"}],
-        "layout": {"grid": {"rows": 2, "columns": 1, "pattern": "coupled"}},
-    }
-    out = tmp_path / "panels.png"
-    run_skill(plot_fn, "-i", str(pa), "-i", str(pb), "-o", str(out), "--spec", json.dumps(grid))
-    assert "different units" not in capsys.readouterr().err
-    assert out.is_file()
-
-
-def test_series_with_no_common_dates_warn(tmp_path, plot_fn, capsys):
-    import numpy as np
-
-    a = _area(make_gridded(n_time=2))
-    b = a.assign_coords(time=np.array(["2027-01-01", "2027-01-02"], dtype="datetime64[ns]"))
-    pa, pb = write_zarr(a, tmp_path / "a.zarr"), write_zarr(b, tmp_path / "b.zarr")
-    c = write_zarr(a.assign_coords(time=a["time"] + np.timedelta64(800, "D")), tmp_path / "c.zarr")
-    run_skill(plot_fn, "-i", str(pa), "-i", str(pb), "-i", str(c), "--dump-spec", "-")
-    err = capsys.readouterr().err
-    # One warning for all three disjoint series, pointing at the seasonal overlay.
-    assert err.count("do not all share dates") == 1
-    assert '"align": "dayofyear"' in err
-
-
-def test_gridded_input_as_a_series_names_the_fix(tmp_path, plot_fn, capsys):
-    a = write_zarr(make_gridded(n_time=2), tmp_path / "a.zarr")
-    user = {"data": [{"uid": "0", "type": "scatter", "meta": {"bind": "series"}}]}
-    with pytest.raises(SystemExit):
-        run_skill(plot_fn, "-i", str(a), "-o", str(tmp_path / "x.png"), "--spec", json.dumps(user))
-    assert "summarize-dim" in capsys.readouterr().err
-
-
-def test_too_many_series(tmp_path, plot_fn, capsys):
-    path = write_zarr(_area(make_gridded(n_time=2)), tmp_path / "a.zarr")
-    argv = [arg for i in range(27) for arg in ("-i", f"{path}=s{i}")]
-    with pytest.raises(SystemExit):
-        run_skill(plot_fn, *argv, "--dump-spec", "-")
-    assert "at most 26" in capsys.readouterr().err
-
-
-def test_aggregated_precip_rate_is_drawn_as_a_rate(tmp_path, plot_fn, capsys):
-    """Plot draws the file's values: a weekly mean rate stays mm/day, with a hint."""
-    import numpy as np
-
-    daily = _area(make_gridded(n_time=14))
-    weekly = _area(make_gridded(n_time=2, fill=3.0)).assign_coords(
-        time=np.array(["2026-01-01", "2026-01-08"], dtype="datetime64[ns]")
-    )
-    weekly["precip"].attrs["aggregation_period"] = "7 day"
-    a = write_zarr(daily, tmp_path / "daily.zarr")
-    b = write_zarr(weekly, tmp_path / "weekly.zarr")
-    run_skill(plot_fn, *("-i", str(a), "-i", str(b), "-o", str(tmp_path / "ts.html")))
-    err = capsys.readouterr().err
-    assert "run convert-to-totals" in err
-    assert "different units" not in err
-
-
-def test_one_station_over_time_defaults_to_a_series(tmp_path, plot_fn, capsys):
-    stn = make_point_obs().isel(point_id=[0])
-    path = write_zarr(stn, tmp_path / "stn.zarr")
-    spec = _dump(plot_fn, capsys, "-i", f"{path}=STN")
-    (trace,) = spec["data"]
-    assert trace["type"] == "scatter" and "bind" not in trace["meta"]
-    assert trace["meta"]["source"]["isel"] == {"point_id": 0}
-    assert trace["name"] == "STN"
-
-
-def test_one_mode_at_a_time(tmp_path, plot_fn, capsys):
-    grid = write_zarr(make_gridded(), tmp_path / "grid.zarr")
-    with pytest.raises(SystemExit):
-        run_skill(plot_fn, "--animate", "--mediogram", "-i", str(grid), "-o", "x.html")
-    assert "pick one of" in capsys.readouterr().err
-
-
-def test_dumped_animation_replays_as_an_animation(tmp_path, plot_fn, capsys):
-    grid = write_zarr(make_gridded(n_time=3), tmp_path / "grid.zarr")
-    dumped = tmp_path / "spec.json"
-    run_skill(plot_fn, "--animate", "-i", str(grid), "-o", "x.html", "--dump-spec", str(dumped))
-    capsys.readouterr()
-    run_skill(plot_fn, "--spec", str(dumped), "-o", str(tmp_path / "v.html"))
-    assert "animation: 3 frames" in capsys.readouterr().err
-
-
-def test_station_picked_by_sel_is_a_line_on_the_shared_axes(tmp_path, plot_fn, capsys):
-    pts = write_zarr(make_point_obs(n_points=3), tmp_path / "pts.zarr")
-    sid = str(xr.open_zarr(pts)["point_id"].values[1])
-    user = {"data": [{"uid": u, "meta": {"source": {"sel": {"point_id": sid}}}} for u in "01"]}
-    spec = _dump(plot_fn, capsys, "-i", str(pts), "-i", str(pts), "--spec", json.dumps(user))
-    assert all("bind" not in t["meta"] and "xaxis" not in t for t in spec["data"])
-    out = tmp_path / "st.png"
-    run_skill(plot_fn, "-i", str(pts), "-i", str(pts), "-o", str(out), "--spec", json.dumps(user))
-    assert out.is_file()
-
-
-def test_along_stations_is_lines_not_a_station_map(tmp_path, plot_fn, capsys):
-    pts = write_zarr(make_point_obs(n_points=3), tmp_path / "pts.zarr")
-    user = {"data": [{"uid": "0", "meta": {"along": "point_id"}}]}
-    spec = _dump(plot_fn, capsys, "-i", str(pts), "--spec", json.dumps(user))
-    assert "bind" not in spec["data"][0]["meta"]
-
-
-def test_still_map_refuses_more_than_100_panels(tmp_path, plot_fn, capsys):
-    """Five years of days as panels never finished rendering; stop with a way out."""
-    grid = write_zarr(make_gridded(n_time=101), tmp_path / "grid.zarr")
-    with pytest.raises(SystemExit) as exc:
-        run_skill(plot_fn, "-i", str(grid), "-o", str(tmp_path / "map.png"))
-    assert exc.value.code == 2
-    err = capsys.readouterr().err
-    assert "101 panels" in err and "--animate" in err and "isel" in err
-    assert not (tmp_path / "map.png").exists()
-
-
-def test_animation_is_not_capped_by_the_still_panel_limit(tmp_path, plot_fn):
-    grid = write_zarr(make_gridded(n_time=101), tmp_path / "grid.zarr")
-    out = tmp_path / "anim.html"
-    run_skill(plot_fn, "--animate", "-i", str(grid), "-o", str(out))
-    assert "Plotly.newPlot" in out.read_text()
-
-
-def test_one_figure_to_several_outputs(tmp_path, plot_fn):
-    grid = write_zarr(make_gridded(), tmp_path / "grid.zarr")
-    png, html = tmp_path / "a.png", tmp_path / "a.html"
-    run_skill(plot_fn, "-i", str(grid), "-o", str(png), "-o", str(html))
-    assert png.is_file() and "Plotly.newPlot" in html.read_text()
+        run_skill(plot_fn, "--spec", spec, "-o", str(tmp_path / "x.png"))
+    assert "too many for one image" in capsys.readouterr().err

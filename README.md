@@ -1,28 +1,28 @@
 # Plotting Skills
 
-General-purpose weather and climate data plotting: heatmaps, filled-contour
-maps, station maps, time series, xy scatter, wind roses, quiver, ECMWF-style
-mediograms, lead-week event-verification grids, and animated maps, from weather-skills
-standard dataset Zarrs, all from one `plot` skill. Figures are Plotly: its `--spec` is
-a standard Plotly figure JSON, and output is PNG, JPG, interactive HTML, or animated GIF. Built on [`weather-skills-core`](https://github.com/weather-skills/weather-skills-core)
-for dataset loading, the CLI decorator, and a handful of shared utilities.
+General-purpose weather and climate data plotting from weather-skills standard
+dataset Zarrs, all from one `plot` skill: maps, panel grids, station maps, time
+series, ensemble plumes, bars, xy scatter, cross-sections and animated maps. The
+spec is Jsonnet that evaluates to a standard Plotly figure; strings starting with
+`@` name the data (`'@OBS.precip.isel(time=0)'`). Output is PNG, JPG, PDF, SVG,
+interactive HTML or animated GIF. Built on
+[`weather-skills-core`](https://github.com/weather-skills/weather-skills-core)
+for dataset loading, the CLI decorator, and provenance.
 
 ## Skill
 
 | Skill | Role |
 | --- | --- |
-| [`plot`](skills/plot/) | Heatmap, contour, timeseries, xy scatter, wind-rose, quiver, or layered map, one dataset or several side by side; several 1-D series share one time axis. `--obs`/`--forecast`/`--verify` draw a lead-week verification grid, `--mediogram` an ECMWF-style mediogram, and `--animate` plays any map (all its layers) through time as animated HTML or GIF |
+| [`plot`](skills/plot/) | Any Plotly figure from named inputs (`-i PATH=NAME`) and a Jsonnet spec; runnable recipes in [`skills/plot/recipes/`](skills/plot/recipes/) |
 
-The spec design (Plotly figure plus `meta` bindings) is documented in
-[`docs/plotting.md`](docs/plotting.md). PNG/JPG export needs Chrome: kaleido
-uses an installed one, or run `uv run plotly_get_chrome -y` once.
+The design is in [`docs/plotting.md`](docs/plotting.md). PNG/JPG/PDF/SVG/GIF
+export needs Chrome: kaleido uses an installed one, or run
+`uv run plotly_get_chrome -y` once.
 
 Prefer short titles and colorbar labels. A title names the subject in a few
-words (`CHIRPS weekly totals`, `Week 1`), not the whole pipeline; put
-methods, sources and caveats in the caption or report text. A colorbar label
-is the quantity and its units (`Rain [mm]`), not a sentence. Long text wraps
-badly, crowds multi-panel grids, and squeezes the side-by-side colorbars
-along the bottom.
+words (`CHIRPS weekly totals`, `Week 1`), not the whole pipeline; put methods,
+sources and caveats in the caption or report text. A colorbar label is the
+quantity and its units (`Rain [mm]`), not a sentence.
 
 ## Quick start
 
@@ -30,30 +30,15 @@ along the bottom.
 uv sync --group dev
 uv run pytest
 
-# A heatmap, one panel per step
-uv run skills/plot/scripts/plot.py -i /tmp/forecast.zarr -o /tmp/out.png \
-  --spec '{"layout": {"title": {"text": "S2S precip"}}}'
+# A map of the first time in a file, with the base map
+uv run skills/plot/scripts/plot.py -i /tmp/rain.zarr=OBS -o /tmp/map.png --spec "
+  local ws = import 'ws.libsonnet'; local b = std.extVar('inputs').OBS.bbox;
+  {data: [{type: 'heatmap', x: '@OBS.lon', y: '@OBS.lat', z: '@OBS.precip.isel(time=0)'}] + ws.basemap(b),
+   layout: ws.map(b) + {title: {text: 'Rainfall'}}}"
 
-# The same figure, interactive
-uv run skills/plot/scripts/plot.py -i /tmp/forecast.zarr -o /tmp/out.html
-
-# A timeseries overlay of two area means (each from summarize-dim --lat-weighted)
-uv run skills/plot/scripts/plot.py -i /tmp/a_area.zarr -i /tmp/b_area.zarr \
-  -o /tmp/timeseries.png
-
-# A lead-week verification grid
-uv run skills/plot/scripts/plot.py --obs /tmp/obs.zarr \
-  --forecast /tmp/wk1.zarr --verify /tmp/v1.zarr --forecast /tmp/wk2.zarr --verify /tmp/v2.zarr \
-  -o /tmp/verify.png
-
-# A mediogram
-uv run skills/plot/scripts/plot.py --mediogram \
-  -i /tmp/forecast.zarr -i /tmp/mclimate.zarr -o /tmp/medio.png \
-  --spec '{"layout": {"meta": {"geo": {"point": {"lat": -1.3, "lon": 36.8}}}}}' 
-
-# An animated map (HTML or GIF)
-uv run skills/plot/scripts/plot.py --animate \
-  -i /tmp/forecast.zarr -o /tmp/forecast.html -o /tmp/forecast.gif
+# A recipe
+uv run skills/plot/scripts/plot.py -i /tmp/rain_daily.zarr=OBS \
+  --spec skills/plot/recipes/animation.jsonnet -o /tmp/rain.html -o /tmp/rain.gif
 ```
 
 ## Install as a Claude plugin

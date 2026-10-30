@@ -1,22 +1,16 @@
-"""Plotly figures from weather-skills standard dataset Zarrs.
+"""Plotly figures from weather-skills Zarrs.
 
-The spec is a standard Plotly figure; weather-skills bindings live in each
-trace's ``meta`` and in ``layout.meta``.
+The spec is Jsonnet that evaluates to a standard Plotly figure. Where Plotly
+expects data, a string starting with ``@`` names it: ``"@OBS.precip.isel(time=0)"``.
 
 =====================  ========================================================
 Module                 Role
 =====================  ========================================================
-:mod:`.spec`           Load, merge (by uid / name), validate, dump the spec
-:mod:`.bind`           Fill traces from datasets (``meta.bind`` modes)
-:mod:`.figure`         Panels, color axes, overlays → ``go.Figure``
-:mod:`.layout`         Templates, template lookups and the map panel grid
-:mod:`.themes`         ``themes/default.json`` and ``--theme-file`` loading
-:mod:`.palettes`       Class palettes, the precip windows, Plotly colorscales
-:mod:`.kinds`          What a field is (precip, anomaly, SPI, temperature …)
-:mod:`.geodata`        Natural Earth overlays, spatial subsets, extents
-:mod:`.labels`         Figure text: dates, panel titles, product, variable, units
-:mod:`.wind`           u/v detection, arrows, wind-rose histograms, xy pairing
-:mod:`.qa`             Pixel hash + finite-data report printed by ``export()``
+:mod:`.spec`           Evaluate the Jsonnet, input metadata, Plotly validation
+:mod:`.refs`           Parse, check and resolve ``@`` references
+:mod:`.geodata`        Natural Earth (``NE``) and GeoJSON lines
+:mod:`.qa`             Pixel hash + finite-data report printed after export
+``lib/``               ``ws.libsonnet`` helpers, palettes and themes
 =====================  ========================================================
 """
 
@@ -24,72 +18,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from weather_skills_plotting.spec import SPEC_VERSION, dump_spec, load_spec, merge_spec, validate
+OUTPUT_SUFFIXES = (".png", ".jpg", ".jpeg", ".pdf", ".svg", ".html", ".htm", ".gif")
 
-__all__ = [
-    "SPEC_VERSION",
-    "SpecArg",
-    "compile",
-    "dump_spec",
-    "export",
-    "load_spec",
-    "merge_spec",
-    "validate",
-]
-
-OUTPUT_SUFFIXES = (".png", ".jpg", ".jpeg", ".pdf", ".svg", ".html", ".htm")
+# A GIF frame lasts this long (ms) unless the figure's play button sets a duration.
+DEFAULT_DURATION_MS = 500
 
 
-class SpecArg:
-    """A parsed ``--spec``. The skill decorator opens the Zarrs it lists.
+def export(fig, output, *, scale=1):
+    """Write ``output`` (.png, .jpg, .pdf, .svg, .html or .gif) and print QA lines for images.
 
-    ``layout.meta.inputs`` maps input ids to paths; those are opened only
-    when the command line names no dataset files.
-    """
-
-    def __init__(self, data: dict):
-        self.data = data
-        self.ds = None
-        self.datasets = None
-
-    def to_dict(self) -> dict:
-        """What provenance records for ``--spec``: the spec itself, not an object repr."""
-        return self.data
-
-    def input_paths(self) -> dict:
-        return dict(((self.data.get("layout") or {}).get("meta") or {}).get("inputs") or {})
-
-    def zarr_paths(self):
-        return [Path(p) for p in self.input_paths().values()]
-
-    def opened(self) -> dict:
-        """``{input id: Dataset}`` for the paths in ``layout.meta.inputs``."""
-        opened = list(self.datasets or ([self.ds] if self.ds is not None else []))
-        return dict(zip(self.input_paths(), opened, strict=False))
-
-
-def parse_spec_arg(value):
-    """Argparse converter for ``--spec`` → :class:`SpecArg`."""
-    from weather_skills_plotting.spec import parse_plot_spec
-
-    return SpecArg(parse_plot_spec(value))
-
-
-def compile(spec, datasets, *, theme=None):
-    """Compile a spec against ``{input id: Dataset}`` into a Plotly figure."""
-    from weather_skills_plotting.figure import compile_figure
-
-    if isinstance(spec, SpecArg):
-        spec = spec.data
-    return compile_figure(spec, datasets, theme=theme)
-
-
-def export(fig, output, *, datasets=None, scale=None):
-    """Write ``output`` (.png, .jpg, .pdf, .svg or .html) and print the QA lines for images.
-
-    Images print a ``plot hash`` and whether the plotted data is all-NaN: a
-    pixel hash for PNG and JPG, a hash of the figure JSON for PDF and SVG.
-    HTML embeds plotly.js so the file works offline.
+    HTML embeds plotly.js so the file works offline. A GIF plays the figure's frames.
     """
     from weather_skills_core.errors import UsageError
 
@@ -97,22 +35,23 @@ def export(fig, output, *, datasets=None, scale=None):
     suffix = output.suffix.lower()
     if suffix not in OUTPUT_SUFFIXES:
         raise UsageError(
-            f"output {output.name!r} must end in .png, .jpg, .pdf, .svg or .html "
+            f"output {output.name!r} must end in .png, .jpg, .pdf, .svg, .html or .gif "
             f"(got {suffix or 'no suffix'})"
         )
     output.parent.mkdir(parents=True, exist_ok=True)
-    if suffix in (".html", ".htm"):
-        import plotly.io as pio
+    import plotly.io as pio
 
+    from weather_skills_plotting.qa import report_figure
+
+    spec = _float32(fig.to_plotly_json())
+    if suffix in (".html", ".htm"):
         # An animation opens paused on its first frame; the viewer presses Play.
-        # The scroll wheel zooms, which Plotly leaves off by default.
         pio.write_html(
-            _float32(fig.to_plotly_json()),
+            spec,
             output,
             include_plotlyjs=True,
             full_html=True,
             auto_play=False,
-            # No Plotly Cloud upload or Plotly logo link.
             config={
                 "responsive": True,
                 "scrollZoom": True,
@@ -121,35 +60,74 @@ def export(fig, output, *, datasets=None, scale=None):
             },
         )
         return output
-    import plotly.io as pio
-
-    # An image never shows hover, so the heatmaps' customdata (a full copy of
-    # each field) stays out of what Chrome has to parse. Other traces keep it:
-    # a texttemplate may print it.
-    image = _float32(fig.to_plotly_json())
-    for trace in image["data"]:
-        if trace.get("type") in ("heatmap", "contour"):
-            trace.pop("customdata", None)
-    pio.write_image(image, output, scale=scale, validate=False)
-    from weather_skills_plotting.qa import report_figure
-
+    if suffix == ".gif":
+        if not spec.get("frames"):
+            raise UsageError(
+                f"output {output.name!r}: a GIF plays the figure's frames, and this spec has "
+                "none; add frames, or write a still image to .png"
+            )
+        write_gif(spec, output, scale=scale)
+        report_figure(output, fig)
+        return output
+    pio.write_image(spec, output, scale=scale, validate=False)
     digest = None
     if suffix in (".pdf", ".svg"):
         import hashlib
 
-        # A vector file has no pixels to hash, and its bytes carry a creation
-        # time and random ids; hash the figure JSON it was drawn from instead.
-        digest = hashlib.sha256(pio.to_json(image, validate=False).encode()).hexdigest()
-    report_figure(output, datasets, fig=fig, digest=digest)
+        # A vector file's bytes carry a creation time; hash the figure JSON instead.
+        digest = hashlib.sha256(pio.to_json(spec, validate=False).encode()).hexdigest()
+    report_figure(output, fig, digest=digest)
+    return output
+
+
+def write_gif(spec: dict, output, *, scale=1):
+    """Write a figure's frames as a looping GIF.
+
+    Each frame is drawn as a PNG by kaleido, then Pillow joins them on one
+    shared 256-colour palette. A frame lasts as long as the play button's
+    ``frame.duration`` (``ws.player``), else DEFAULT_DURATION_MS.
+    """
+    import tempfile
+
+    import plotly.io as pio
+    from PIL import Image
+
+    duration = DEFAULT_DURATION_MS
+    for menu in spec["layout"].get("updatemenus") or []:
+        for button in menu.get("buttons") or []:
+            args = button.get("args") or []
+            if len(args) > 1 and isinstance(args[1], dict) and "frame" in args[1]:
+                duration = args[1]["frame"].get("duration") or duration
+                break
+    layout = {k: v for k, v in spec["layout"].items() if k not in ("updatemenus", "sliders")}
+    stills = []
+    for frame in spec["frames"]:
+        # Plotly merges a frame's traces into the base traces it names, else by position.
+        data = list(spec["data"])
+        targets = frame.get("traces") or range(len(frame.get("data") or []))
+        for i, trace in zip(targets, frame.get("data") or [], strict=True):
+            data[i] = {**data[i], **trace}
+        stills.append({"data": data, "layout": {**layout, **(frame.get("layout") or {})}})
+    with tempfile.TemporaryDirectory() as tmp:
+        paths = [Path(tmp) / f"{i}.png" for i in range(len(stills))]
+        pio.write_images(stills, paths, scale=scale, validate=False)
+        images = [Image.open(p).convert("RGB") for p in paths]
+    # One palette picked from all frames stacked, so a colorbar bands the same in every frame.
+    w, h = images[0].size
+    stack = Image.new("RGB", (w, h * len(images)))
+    for i, im in enumerate(images):
+        stack.paste(im, (0, h * i))
+    palette = stack.quantize(256, dither=Image.Dither.NONE)
+    images = [im.quantize(palette=palette, dither=Image.Dither.NONE) for im in images]
+    images[0].save(output, save_all=True, append_images=images[1:], duration=duration, loop=0)
     return output
 
 
 def _float32(obj):
     """Copy of a figure dict with its float64 arrays stored as float32.
 
-    Plotly writes each array as base64 ``{"dtype": "f8", "bdata": ...}``. The
-    HTML embeds every one; 32-bit floats halve its size and keep ~7
-    significant digits, finer than any plotted value or hover label needs.
+    Plotly writes each array as base64 ``{"dtype": "f8", "bdata": ...}``; 32-bit
+    floats halve an HTML file and keep finer detail than any plot shows.
     """
     import base64
 

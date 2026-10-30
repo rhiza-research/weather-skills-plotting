@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "weather-skills-plotting"
 version = "0.1.0"
-description = "Plotly figures from weather-skills standard dataset Zarrs; the plot spec is a standard Plotly figure."
+description = "Plotly figures from weather-skills standard dataset Zarrs; the plot spec is Jsonnet that evaluates to a standard Plotly figure."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -25,6 +25,9 @@ dependencies = [
     # PNG/JPG export drives a headless Chrome. kaleido uses an installed Chrome,
     # or run `plotly_get_chrome -y` once to fetch one.
     "kaleido>=1.5",
+    # The --spec is Jsonnet; go-jsonnet has wheels for macOS arm64 and Linux x86_64 / aarch64.
+    "gojsonnet>=0.22",
+    "pillow>=11",
 ]
 
 [dependency-groups]
