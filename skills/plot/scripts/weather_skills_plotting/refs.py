@@ -25,6 +25,7 @@ METHODS = {
     "dropna": "select",
     "clip": "select",
     "squeeze": "reshape",
+    "lon360": "reshape",
     "transpose": "reshape",
     "flat": "reshape",
     "strftime": "label",
@@ -203,6 +204,13 @@ def _method(base, name, args, kwargs, ref):
         if len(args) != 1 or kwargs:
             raise UsageError(f"{ref}: .dropna(dim) takes one dim, e.g. .dropna('station_id')")
         return da.dropna(_dim(da, args[0], ref))
+    if name == "lon360":
+        # Longitudes as 0..360, in order: a field across the dateline drawn in one piece.
+        lon = _dim(da, "lon", ref) if "lon" not in da.coords else "lon"
+        if da.name == lon:
+            da = da.copy(data=np.asarray(da.values) % 360)
+        da = da.assign_coords({lon: da[lon] % 360})
+        return da.sortby(lon) if lon in da.dims else da
     if name == "squeeze":
         return da.squeeze()
     if name == "transpose":

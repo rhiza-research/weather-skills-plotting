@@ -200,3 +200,21 @@ def test_one_colorbar_in_two_units_warns(inputs, capsys):
     }
     resolve(spec, {"R": rate, "T": total})
     assert "colors traces in different units" in capsys.readouterr().err
+
+
+def test_a_grid_across_the_dateline_draws_in_one_piece():
+    import xarray as xr
+
+    from weather_skills_plotting.geodata import window_parts
+    from weather_skills_plotting.spec import input_metadata
+
+    lons = [170.0, 175.0, -180.0, -175.0]
+    ds = xr.Dataset(
+        {"sst": (("latitude", "longitude"), np.arange(8.0).reshape(2, 4))},
+        coords={"latitude": [0.0, 1.0], "longitude": lons},
+    )
+    bbox = input_metadata(ds)["bbox"]
+    assert (bbox["w"], bbox["e"]) == (170.0, 185.0)
+    assert one("@X.sst.lon360().lon", {"X": ds}).tolist() == [170, 175, 180, 185]
+    assert window_parts(170, -175) == [(170, 180, 0.0), (-180, -175, 360.0)]
+    assert window_parts(20, 120) == [(20, 120, 0.0)]

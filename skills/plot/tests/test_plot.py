@@ -121,7 +121,7 @@ def _inputs(tmp_path):
     idx["nino34"].attrs["units"] = "K"
     files = {
         "OBS": grid,
-        "STN": make_point_obs(n_time=3, n_points=3),
+        "STN": make_point_obs(n_time=3, n_points=3).rename(point_id="station_id"),
         "FC": fc,
         "ENS": ens,
         "MEAN": ens.mean("number"),
@@ -244,7 +244,8 @@ def test_html_pdf_svg_outputs(tmp_path, plot_fn, capsys):
     assert "Plotly.newPlot" in html.read_text() and "weather_skills_history" in html.read_text()
     assert pdf.read_bytes().startswith(b"%PDF") and "<svg" in svg.read_text()
     hashes = [line for line in capsys.readouterr().out.splitlines() if "plot hash:" in line]
-    assert len(hashes) == 2 and hashes[0] == hashes[1]
+    # HTML, PDF and SVG are hashed from the figure JSON; PDF and SVG draw the same figure.
+    assert len(hashes) == 3 and hashes[1] == hashes[2]
 
 
 def test_dump_spec_prints_evaluated_jsonnet(tmp_path, plot_fn, capsys):
@@ -349,3 +350,18 @@ def test_recipes_by_name_and_listing(tmp_path, plot_fn, capsys):
 def test_importstr_reads_a_recipe(plot_fn, capsys):
     run_skill(plot_fn, "--spec", "{text: importstr 'map.jsonnet'}", "--dump-spec", "-")
     assert "ws.basemap(bbox)" in json.loads(capsys.readouterr().out)["text"]
+
+
+def test_gif_size_is_reported_and_large_ones_warn(tmp_path, plot_fn, capsys, monkeypatch):
+    import weather_skills_plotting
+
+    grid = write_zarr(make_gridded(n_time=2), tmp_path / "grid.zarr")
+    spec = (
+        "local f(k) = {type: 'heatmap', x: '@G.lon', y: '@G.lat', z: '@G.precip.isel(time=%d)' % k};"
+        "{data: [f(0)], frames: [{name: 'a', data: [f(0)]}, {name: 'b', data: [f(1)]}]}"
+    )
+    monkeypatch.setattr(weather_skills_plotting, "LARGE_GIF_BYTES", 10)
+    run_skill(plot_fn, "-i", f"{grid}=G", "--spec", spec, "-o", str(tmp_path / "a.gif"))
+    err = capsys.readouterr().err
+    assert "gif: 2 frames" in err and "show images only up to" in err
+    assert "HTML will be large" not in err and "animation:" not in err

@@ -16,12 +16,17 @@ Module                 Role
 
 from __future__ import annotations
 
+import json
+import sys
 from pathlib import Path
 
 OUTPUT_SUFFIXES = (".png", ".jpg", ".jpeg", ".pdf", ".svg", ".html", ".htm", ".gif")
 
 # A GIF frame lasts this long (ms) unless the figure's play button sets a duration.
 DEFAULT_DURATION_MS = 500
+
+# Many chat clients and slide tools show images only up to about this size inline.
+LARGE_GIF_BYTES = 8 * 1024 * 1024
 
 
 def export(fig, output, *, scale=1):
@@ -59,6 +64,10 @@ def export(fig, output, *, scale=1):
                 "displaylogo": False,
             },
         )
+        import hashlib
+
+        # An HTML page has no pixels to hash; hash the figure JSON it embeds.
+        report_figure(output, fig, digest=hashlib.sha256(json.dumps(spec).encode()).hexdigest())
         return output
     if suffix == ".gif":
         if not spec.get("frames"):
@@ -67,6 +76,15 @@ def export(fig, output, *, scale=1):
                 "none; add frames, or write a still image to .png"
             )
         write_gif(spec, output, scale=scale)
+        size = output.stat().st_size
+        print(f"gif: {len(spec['frames'])} frames, {size / 1e6:.1f} MB", file=sys.stderr)
+        if size > LARGE_GIF_BYTES:
+            print(
+                f"Warning: {output.name} is {size / 1e6:.1f} MB; many chat clients and slide "
+                f"tools show images only up to about {LARGE_GIF_BYTES / 1e6:.0f} MB inline. Use "
+                "fewer frames, a smaller width / height, sparser markers or a smaller window",
+                file=sys.stderr,
+            )
         report_figure(output, fig)
         return output
     pio.write_image(spec, output, scale=scale, validate=False)

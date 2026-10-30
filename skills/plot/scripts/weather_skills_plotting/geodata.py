@@ -22,13 +22,21 @@ NE_LAYERS = {
 }
 
 
-def clip_box(n, w, s, e):
-    """Shapely box for a bbox; one that crosses the dateline (w > e) is two boxes."""
-    from shapely.geometry import box
+def window_parts(w, e):
+    """``[(west, east, shift)]``: a lon window in Natural Earth's [-180, 180] longitudes.
 
+    A window past 180° (170 to 200, or w > e as 170 to -160) is split at the
+    dateline; its far part is clipped at -180..-160 and moved by ``shift`` (360°)
+    to sit beside the near part on the map's continuous axis.
+    """
     if w > e:
-        return box(w, s, 180.0, n).union(box(-180.0, s, e, n))
-    return box(w, s, e, n)
+        e += 360.0
+    parts = []
+    for shift in (0.0, 360.0, -360.0):
+        west, east = max(w - shift, -180.0), min(e - shift, 180.0)
+        if west < east:
+            parts.append((west, east, shift))
+    return parts
 
 
 def load_ne_layer(layer: str, scale: str, n, w, s, e):
@@ -37,36 +45,43 @@ def load_ne_layer(layer: str, scale: str, n, w, s, e):
     If borders or coastline can't be fetched, the country outlines bundled with
     core stand in for both, with a warning; other layers are left out.
     """
-    category, name, agreed = NE_LAYERS[layer]
-    clip = clip_box(n, w, s, e)
-    try:
-        import cartopy.io.shapereader as shpreader
+    import shapely
+    from shapely.geometry import box
 
-        path = shpreader.natural_earth(resolution=scale, category=category, name=name)
-        records = list(shpreader.Reader(path, bbox=clip.bounds).records())
-    except Exception as exc:  # noqa: BLE001 — offline, or cartopy missing
-        if layer not in ("borders", "coastline"):
-            print(f"Warning: NE.{layer} unavailable ({exc}); not drawn.", file=sys.stderr)
-            return []
-        print(
-            f"Warning: NE.{layer} unavailable ({exc}); drawing the bundled country outlines.",
-            file=sys.stderr,
-        )
-        return _bundled_country_lines(clip)
+    category, name, agreed = NE_LAYERS[layer]
     geoms = []
-    for rec in records:
-        if agreed is not None:
-            is_agreed = str(rec.attributes.get("FEATURECLA", "")).startswith(
-                "International boundary"
+    for west, east, shift in window_parts(w, e):
+        clip = box(west, s, east, n)
+        try:
+            import cartopy.io.shapereader as shpreader
+
+            path = shpreader.natural_earth(resolution=scale, category=category, name=name)
+            records = list(shpreader.Reader(path, bbox=clip.bounds).records())
+        except Exception as exc:  # noqa: BLE001 — offline, or cartopy missing
+            if layer not in ("borders", "coastline"):
+                print(f"Warning: NE.{layer} unavailable ({exc}); not drawn.", file=sys.stderr)
+                return []
+            print(
+                f"Warning: NE.{layer} unavailable ({exc}); drawing the bundled country outlines.",
+                file=sys.stderr,
             )
-            if is_agreed != agreed:
-                continue
-        geom = rec.geometry
-        if geom is None or geom.is_empty or not geom.intersects(clip):
-            continue
-        clipped = geom.intersection(clip)
-        if not clipped.is_empty:
-            geoms.extend(getattr(clipped, "geoms", [clipped]))
+            parts = _bundled_country_lines(clip)
+        else:
+            parts = []
+            for rec in records:
+                if agreed is not None:
+                    is_agreed = str(rec.attributes.get("FEATURECLA", "")).startswith(
+                        "International boundary"
+                    )
+                    if is_agreed != agreed:
+                        continue
+                geom = rec.geometry
+                if geom is None or geom.is_empty or not geom.intersects(clip):
+                    continue
+                clipped = geom.intersection(clip)
+                if not clipped.is_empty:
+                    parts.extend(getattr(clipped, "geoms", [clipped]))
+        geoms += [shapely.transform(g, lambda xy, d=shift: xy + [d, 0.0]) for g in parts]
     return geoms
 
 

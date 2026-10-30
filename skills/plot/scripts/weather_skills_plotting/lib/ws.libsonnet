@@ -43,9 +43,11 @@ local basemapStyles = {
   // bbox widened on every side by frac of its larger span. A bbox from inputs.NAME.bbox
   // runs between the outermost cell centres, so without a pad the edge cells are cut
   // in half; ws.map, ws.grid and ws.basemap pad by 3% unless given pad=0.
+  // A box with w > e crosses the dateline; its east edge is taken past 180° (170 to 200).
   pad(bbox, frac=0.03):: {
-    local d = frac * std.max(bbox.e - bbox.w, bbox.n - bbox.s),
-    n: bbox.n + d, s: bbox.s - d, w: bbox.w - d, e: bbox.e + d,
+    local east = if bbox.w > bbox.e then bbox.e + 360 else bbox.e,
+    local d = frac * std.max(east - bbox.w, bbox.n - bbox.s),
+    n: bbox.n + d, s: bbox.s - d, w: bbox.w - d, e: east + d,
   },
 
   // Panel i's axis names (0 → x / y, 1 → x2 / y2, …), to add to a trace.

@@ -179,7 +179,7 @@ def plot(inputs, output, spec, jpath, ext_str, scale, recipe, dump_spec, **kwarg
             f"{n_panels} panels is too many for one image; the limit is {MAX_PANELS}. Pick "
             "fewer, or play them as frames in .html / .gif"
         )
-    if fig.frames:
+    if fig.frames and any(Path(p).suffix.lower() in (".html", ".htm") for p in outputs):
         size = len(fig.to_json()) / 1e6
         print(f"animation: {len(fig.frames)} frames, {size:.1f} MB of figure data", file=sys.stderr)
         if size > LARGE_HTML_MB:

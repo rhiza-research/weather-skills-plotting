@@ -127,14 +127,25 @@ def input_metadata(value) -> dict:
             meta["coords"][str(name)] = _plain(coord.values[()])
         elif coord.ndim == 1 and coord.size <= MAX_LISTED_COORD:
             meta["coords"][str(name)] = [_plain(v) for v in coord.values]
-    lat, lon = cf_dim(ds, "latitude"), cf_dim(ds, "longitude")
+    # CF-tagged coordinates, else the usual names.
+    lat = cf_dim(ds, "latitude") or next((n for n in ("latitude", "lat") if n in ds.coords), None)
+    lon = cf_dim(ds, "longitude") or next((n for n in ("longitude", "lon") if n in ds.coords), None)
     if lat and lon:
-        lats, lons = np.asarray(ds[lat].values, float), np.asarray(ds[lon].values, float)
+        lats = np.asarray(ds[lat].values, float)
+        lons = np.unique(np.asarray(ds[lon].values, float) % 360)
+        # The window is the circle of longitudes minus its widest gap, so a grid across
+        # the dateline (150..179, -180..-150) is 150 to 210, not -180 to 179.
+        gaps = np.diff(np.append(lons, lons[0] + 360))
+        k = int(np.argmax(gaps))
+        west = lons[(k + 1) % lons.size]
+        east = lons[k] + (360 if k + 1 < lons.size else 0)
+        if west >= 180:
+            west, east = west - 360, east - 360
         meta["bbox"] = {
             "n": float(np.nanmax(lats)),
-            "w": float(np.nanmin(lons)),
+            "w": float(west),
             "s": float(np.nanmin(lats)),
-            "e": float(np.nanmax(lons)),
+            "e": float(east),
         }
     return meta
 
@@ -164,7 +175,9 @@ def evaluate(spec: SpecArg, inputs_meta: dict, *, jpath=(), ext_strs=()) -> dict
             message += (
                 f"\nIf {name} is an input, pass it with -i FILE={name} (inputs given: "
                 f"{', '.join(inputs_meta) or 'none'}). If it is a palette, ws.palettes has "
-                f"{', '.join(palette_names())}."
+                f"{', '.join(palette_names())}, or write one inline: {{colors: [...], bounds: "
+                "[...]}. std.extVar('inputs').NAME.coords lists only coordinates up to "
+                f"{MAX_LISTED_COORD} long, and bbox needs lat / lon coordinates."
             )
         if missing and missing.group(1) == "coloraxis":
             message += (

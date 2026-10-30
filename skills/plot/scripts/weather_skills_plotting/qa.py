@@ -23,7 +23,13 @@ def figure_counts(fig) -> list[tuple[str, int, int]]:
     Base-map lines (``ws.basemap``, uids ``basemap-…``) are left out.
     """
     rows: dict[str, list[int]] = {}
-    for i, tr in enumerate(fig.data):
+    # A frame's traces count under the base trace they update.
+    traces = [(tr.uid or tr.name or f"data[{i}]", tr) for i, tr in enumerate(fig.data)]
+    for frame in fig.frames or []:
+        targets = frame.traces or range(len(frame.data))
+        for k, tr in zip(targets, frame.data, strict=False):
+            traces.append((traces[k][0] if k < len(fig.data) else f"data[{k}]", tr))
+    for name, tr in traces:
         if str(tr.uid or "").startswith("basemap-"):
             continue
         raw = None
@@ -48,7 +54,7 @@ def figure_counts(fig) -> list[tuple[str, int, int]]:
         if raw is None or values.size == 0:
             continue
         # Traces sharing a name (one per ensemble member) count as one row.
-        count = rows.setdefault(tr.uid or tr.name or f"data[{i}]", [0, 0])
+        count = rows.setdefault(name, [0, 0])
         count[0] += int(np.isfinite(values).sum())
         count[1] += values.size
     return [(name, finite, n) for name, (finite, n) in rows.items()]
@@ -71,4 +77,8 @@ def report_figure(path, fig, *, digest=None, file=None) -> str:
             "data is all NaN — inspect-zarr the input before treating this figure as valid",
             file=dest,
         )
+    elif rows:
+        for name, finite, n in rows:
+            if n and not finite:
+                print(f"data: {name} is all NaN and draws nothing", file=dest)
     return digest
