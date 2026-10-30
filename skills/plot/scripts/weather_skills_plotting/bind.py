@@ -417,6 +417,9 @@ def bind_field(trace, meta, ctx, loc, *, speed=False):
     else:
         da, _ = select(ctx, source, f"{loc}.source")
         title = variable_label_for_display(da)
+    lat, lon, z = cf_dim(da, "latitude"), cf_dim(da, "longitude"), cf_dim(da, "vertical")
+    if z in da.dims and not (lat in da.dims and lon in da.dims):
+        return _section(trace, da, title, loc)
     da, lat, lon, fdim = _map_field(ctx, da, meta, loc, "a map")
     x, y = da[lon].values, da[lat].values
     if len(x) == 1 or len(y) == 1:
@@ -898,6 +901,60 @@ def bind_series(trace, meta, ctx, loc, *, color=None):
     )
 
 
+def _section(trace, da, title, loc):
+    """Vertical cross section: the vertical dim up the y-axis against latitude or longitude."""
+    z = cf_dim(da, "vertical")
+    along = next(
+        (d for d in (cf_dim(da, "longitude"), cf_dim(da, "latitude")) if d in da.dims), None
+    )
+    if along is None:
+        raise UsageError(
+            f"a cross section draws {z!r} against latitude or longitude; got {list(da.dims)}. "
+            f"Pick one latitude (or longitude) with {loc}.source.sel and keep the other"
+        )
+    extra = [d for d in da.dims if d not in (z, along)]
+    if extra:
+        raise UsageError(
+            f"a cross section of {z!r} against {along!r} has {extra} left over; pick one value "
+            f"of each with {loc}.source.isel / sel (e.g. {{{extra[0]!r}: 0}}), or average it "
+            "first with summarize-dim"
+        )
+    da = da.transpose(z, along)
+    x, y = da[along].values, da[z].values
+    units = format_units_for_display(variable_units(da))
+    z_units = format_units_for_display(variable_units(da[z])) or ""
+    pressure = da[z].attrs.get("positive") == "down" or z_units in ("hPa", "Pa", "mbar")
+    xname = "Longitude" if along == cf_dim(da, "longitude") else "Latitude"
+    yname = "Pressure" if pressure else da[z].attrs.get("long_name") or "Height"
+    hover = (
+        f"{xname.lower()} %{{x:.2f}}, %{{y:.4g}} {z_units}: %{{z:.4g}}"
+        f"{' ' + units if units else ''}<extra></extra>"
+    )
+    values = np.asarray(da.values, dtype=float)
+    # The scalar coord left by picking one latitude (or longitude) names the section.
+    other = cf_dim(da, "latitude") if xname == "Longitude" else cf_dim(da, "longitude")
+    where = None
+    if other in da.coords and da[other].ndim == 0:
+        v = float(da[other].values)
+        hemi = ("N", "S") if xname == "Longitude" else ("E", "W")
+        where = f"{abs(v):g}°{hemi[0] if v >= 0 else hemi[1]}"
+    date = _slices(da, None)[0][1]
+    yaxis = "yaxis" + (trace.get("yaxis") or "y")[1:]
+    return Bound(
+        [Panel([{"x": x, "y": y, "z": values, "hovertemplate": hover}])],
+        color_values=[values],
+        color_key="z",
+        color_da=da,
+        color_title=title,
+        axis_titles={"x": f"{xname} [°]", "y": f"{yname} [{z_units}]" if z_units else yname},
+        title=" · ".join(
+            t for t in (variable_label_for_display(da, include_units=False), where, date) if t
+        ),
+        # Pressure falls with height: the surface sits at the bottom.
+        layout={yaxis: {"autorange": "reversed"}} if pressure else {},
+    )
+
+
 # align "dayofyear" puts every year on this non-leap year, so 1 Oct lines up
 # whether or not the data year was a leap year.
 SEASONAL_YEAR = 2001
@@ -1200,6 +1257,9 @@ def bind_trace(trace: dict, ctx: Context, loc: str, *, color=None) -> Bound:
                 "; for a 1-D series of a gridded field, average lat/lon first with "
                 'summarize-dim --lat-weighted and set meta.bind "series"'
                 if bind == "field"
+                else "; a heatmap or contour draws a lat/lon map, or a cross section of a "
+                "vertical dim against latitude or longitude: drop meta.x / meta.y"
+                if bind == "xy" and ttype in ("heatmap", "contour")
                 else ""
             )
         )

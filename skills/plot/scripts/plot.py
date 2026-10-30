@@ -78,7 +78,7 @@ def parse_layer(value):
 
 
 def _default_trace(uid: str, ds, user=None, *, xaxis=None) -> dict:
-    """Heatmap for a lat/lon grid, station markers for points, else a line. A ``user`` trace
+    """Heatmap for a lat/lon grid or a cross section, station markers for points, else a line. A ``user`` trace
     naming ``meta.x`` / ``meta.y`` is an xy plot, so its stations are not a map."""
     source = {"input": uid}
     xy = bool({"x", "y"} & set((user or {}).get("meta") or {}))
@@ -91,6 +91,9 @@ def _default_trace(uid: str, ds, user=None, *, xaxis=None) -> dict:
     elif pdim is not None and not xy:
         trace = {"type": "scatter", "meta": {"bind": "points", "source": source}}
     elif lat in ds.dims and lon in ds.dims:
+        trace = {"type": "heatmap", "meta": {"source": source}}
+    elif cf_dim(ds, "vertical") in ds.dims and {lat, lon} & set(ds.dims) and not xy:
+        # A vertical cross section: pressure or height against latitude or longitude.
         trace = {"type": "heatmap", "meta": {"source": source}}
     else:
         trace = {"type": "scatter", "meta": {"source": source}}
