@@ -519,6 +519,15 @@ def plotly_error(exc: Exception, loc: str = "") -> UsageError:
             "area-average it first (summarize-dim --dim latitude --dim longitude) or pick a "
             "point (point-value)"
         )
+    # Plotly reads animation_group / animation_frame as a nested 'animation' key.
+    if "'animation'" in head and "Layout" not in head:
+        msg += (
+            "\nanimation_group / animation_frame are plotly.express arguments, not trace keys. "
+            "--animate already makes one frame per time or step; set the speed with "
+            '{"layout": {"meta": {"animation": {"duration": 300}}}}. Frames swap whole '
+            "(maps don't tween), so for smoother motion use more, closer times and a shorter "
+            "duration"
+        )
     prefix = f"plot spec {loc}: " if loc else "plot spec: "
     return UsageError(
         prefix + msg + "\nKeys are standard Plotly: https://plotly.com/python/reference/"

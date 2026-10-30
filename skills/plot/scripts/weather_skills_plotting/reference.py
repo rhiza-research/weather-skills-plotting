@@ -72,7 +72,8 @@ _LAYOUT_META = {
     "export.scale": 'PNG/JPG/GIF pixel multiplier (default 1), e.g. {"export": {"scale": 2}}',
     "(dotted names)": 'are nested keys: geo.bbox is {"geo": {"bbox": […]}}',
     "animation": "--animate only: {duration: ms per frame (500), transition: ms between "
-    "frames (0)}",
+    "frames (0)}. Frames swap whole (maps don't tween); for smoother motion use more, closer "
+    "times and a shorter duration",
     "version / skill": "leave as dumped",
 }
 

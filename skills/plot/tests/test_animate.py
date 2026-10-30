@@ -317,3 +317,13 @@ def test_moving_highs_animate_without_the_svg_text_halo(grid, tmp_path, animatio
     data, _ = base_of(figure_of(out)[0])
     gl = [t for t in data if t["type"] == "scattergl"]
     assert gl and all("shadow" not in t["textfont"] for t in gl)
+
+
+@pytest.mark.parametrize("key", ["animation_group", "animation_frame"])
+def test_plotly_express_animation_keys_explained(grid, animation_fn, key, capsys):
+    spec = {"data": [{"uid": "0", key: "precip"}]}
+    with pytest.raises(SystemExit):
+        run_skill(animation_fn, "--animate", "-i", grid, "--spec", json.dumps(spec), "-o", "x.html")
+    err = capsys.readouterr().err
+    assert "plotly.express" in err
+    assert '"animation": {"duration"' in err
