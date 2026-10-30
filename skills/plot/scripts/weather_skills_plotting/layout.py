@@ -192,6 +192,7 @@ def map_layout(
     right=False,
     below=False,
     below_lines=0,
+    legend=False,
     outer_ticks=False,
     user=None,
 ) -> tuple[dict, list[tuple[float, float, float, float]]]:
@@ -203,7 +204,7 @@ def map_layout(
     between panels need no room for them.
 
     ``right`` / ``below`` say a colorbar stands there; ``below_lines`` is more
-    room under the maps, in lines of text. ``user`` is the spec layout: its
+    room under the maps, in lines of text; ``legend`` is a legend row under the title. ``user`` is the spec layout: its
     ``width`` / ``height`` fix the canvas (maps shrink to fit), and
     ``grid.xgap`` / ``grid.ygap`` are gaps as a fraction of a panel.
     """
@@ -225,7 +226,7 @@ def map_layout(
     ml = TICK_ROOM * em
     mr = (COLORBAR_ROOM if right else 1) * em
     # A subtitle takes a line plus a little air above the panel titles.
-    mt = (LINE * int(titled) + (1 if titled > 1 else 0) + title_lines + 1) * em
+    mt = (LINE * int(titled) + (1 if titled > 1 else 0) + LINE * legend + title_lines + 1) * em
     mb = (LINE + (COLORBAR_ROOM if below else 0) + below_lines) * em
 
     def gaps(w, h):

@@ -108,6 +108,8 @@ class Bound:
     title: str | None = None
     layout: dict = field(default_factory=dict)
     x_tickformat: str | None = None
+    # A line along calendar dates (aligned to one year, or on its own dates).
+    x_dates: bool = False
 
 
 @dataclass
@@ -941,6 +943,7 @@ def bind_series(trace, meta, ctx, loc, *, variable, sdim, color=None):
         [Panel(traces)],
         axis_titles=titles,
         x_tickformat=SEASONAL_TICKFORMAT if aligned else None,
+        x_dates=is_date,
     )
 
 
@@ -955,7 +958,10 @@ def seasonal_dates(coord, loc):
     try:
         month, day = coord.dt.month.values, coord.dt.day.values
     except (TypeError, AttributeError):
-        raise UsageError(f"{loc}.align dayofyear needs a calendar-date time axis") from None
+        raise UsageError(
+            f"{loc}.align dayofyear needs a calendar-date time axis; for a forecast, run "
+            'step-to-time first and draw it with x "time"'
+        ) from None
     day = np.where((month == 2) & (day == 29), 28, day)
     text = [f"{SEASONAL_YEAR}-{m:02d}-{d:02d}" for m, d in zip(month, day, strict=True)]
     return np.array(text, dtype="datetime64[D]").astype("datetime64[ns]")

@@ -1606,3 +1606,63 @@ def test_narrow_panels_put_name_and_dates_on_two_lines():
     assert " · " in title(wide)
     assert title(narrow).startswith("KMSA downscaled<br>")
     assert narrow["margin"]["t"] > wide["margin"]["t"]
+
+
+def _maps_with_stations(**station):
+    """Two side-by-side maps with a station layer (no axes of its own) drawn on both."""
+    grid = make_gridded(n_time=1)
+    stations = make_station(n_time=1).isel(time=0)
+    stations["precip"].attrs = dict(grid["precip"].attrs)
+    stations["precip"].values[:] = [1.0, 2.0, 3.0]
+    spec = {
+        "data": [
+            _trace("a", xaxis="x", yaxis="y"),
+            _trace("b", xaxis="x2", yaxis="y2"),
+            _trace(
+                "s",
+                type="scatter",
+                meta={"x": "longitude", "y": "latitude", "marker": {"color": "precip"}},
+                **station,
+            ),
+        ]
+    }
+    return compile(spec, {"a": grid, "b": grid, "s": stations})
+
+
+def test_stations_on_side_by_side_maps_share_the_maps_colorbar():
+    fig = _maps_with_stations()
+    maps = {t["coloraxis"] for t in _data(fig, "heatmap")}
+    dots = {t["marker"]["coloraxis"] for t in _data(fig, "scatter") if t["uid"].startswith("s")}
+    assert maps == dots == {"coloraxis"}
+    assert "coloraxis2" not in _layout(fig)
+
+
+def test_stations_on_every_map_are_one_legend_entry():
+    fig = _maps_with_stations(name="TAHMO stations", showlegend=True)
+    dots = [t for t in _data(fig, "scatter") if t["uid"].startswith("s")]
+    assert len(dots) == 2 and {t["legendgroup"] for t in dots} == {"s"}
+    assert [t["showlegend"] for t in dots] == [True, False]
+
+
+def test_a_map_legend_is_a_row_under_the_title_not_beside_the_maps():
+    legend = _layout(_maps_with_stations(name="TAHMO stations", showlegend=True))["legend"]
+    assert legend["orientation"] == "h" and legend["yref"] == "container"
+    assert _layout(_maps_with_stations()).get("legend", {}).get("orientation") != "h"
+
+
+def test_aligned_and_unaligned_lines_on_one_axis_are_an_error():
+    def year(y):
+        t = np.arange(f"{y}-10-01", f"{y}-10-11", dtype="datetime64[D]").astype("datetime64[ns]")
+        return xr.Dataset({"precip": ("time", np.ones(10))}, coords={"time": t})
+
+    line = {"x": "time", "y": "precip"}
+    spec = {
+        "data": [
+            _trace("a", type="scatter", meta={**line, "align": "dayofyear"}),
+            _trace("b", type="scatter", meta=line),
+        ]
+    }
+    with pytest.raises(UsageError, match=r"align dayofyear: a\) and on their own dates \(b\)"):
+        compile(spec, {"a": year(2024), "b": year(2025)})
+    spec["data"][1]["meta"]["align"] = "dayofyear"
+    assert len(_data(compile(spec, {"a": year(2024), "b": year(2025)}), "scatter")) == 2

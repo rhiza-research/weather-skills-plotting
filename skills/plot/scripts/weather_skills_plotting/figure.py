@@ -40,6 +40,7 @@ from weather_skills_plotting.kinds import (
 )
 from weather_skills_plotting.layout import (
     DEFAULT_TEMPLATE,
+    LINE,
     WIDE_MAP,
     axis_suffix,
     choose_grid,
@@ -600,6 +601,19 @@ def _assemble_map(items, user_layout, lmeta, ctx):
             )
         if extents[p] is None:
             raise UsageError("a map panel has no data extent; set layout.meta.geo.bbox")
+    # A trace drawn on every map (stations, city markers) is one legend entry, which
+    # shows and hides all its copies.
+    shown = set()
+    for p in range(n):
+        count = {}
+        for _, tr, spec_trace, _ in panel_traces[p]:
+            if not any(spec_trace is f[1] for f in floating):
+                continue
+            k = count[id(spec_trace)] = count.get(id(spec_trace), -1) + 1
+            tr.setdefault("legendgroup", tr["uid"].removesuffix(f"-p{p + 1}"))
+            if (id(spec_trace), k) in shown:
+                tr["showlegend"] = False
+            shown.add((id(spec_trace), k))
     if len(order) > 1:
         # Side by side, a panel is named for its input (-i UID, else file name),
         # and keeps its date too when the panels show different dates.
@@ -622,60 +636,55 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     axis_members: dict[str, list] = {}
     next_axis = 1
     auto = {}
-    for g in order:
-        for _, spec_trace, bound in groups[g]:
-            if bound is None or not bound.color_values or _uncolored(spec_trace):
-                continue
-            name = (
-                spec_trace.get("coloraxis")
-                if bound.color_key == "z"
-                else (spec_trace.get("marker") or {}).get("coloraxis")
+    for _, spec_trace, bound in [*(item for g in order for item in groups[g]), *floating]:
+        if bound is None or not bound.color_values or _uncolored(spec_trace):
+            continue
+        name = (
+            spec_trace.get("coloraxis")
+            if bound.color_key == "z"
+            else (spec_trace.get("marker") or {}).get("coloraxis")
+        )
+        if not name:
+            # One quantity is one CF standard_name in one unit: station "Surface air
+            # temperature" and a forecast's "2 m temperature" share a bar. Anomalies
+            # and spreads of it do not.
+            title = bound.color_title or ""
+            sn = bound.color_da.attrs.get("standard_name") if bound.color_da is not None else None
+            difference = bound.color_da is not None and "delta_" in str(
+                variable_units(bound.color_da) or ""
             )
-            if not name:
-                # One quantity is one CF standard_name in one unit: station "Surface air
-                # temperature" and a forecast's "2 m temperature" share a bar. Anomalies
-                # and spreads of it do not.
-                title = bound.color_title or ""
-                sn = (
-                    bound.color_da.attrs.get("standard_name")
-                    if bound.color_da is not None
-                    else None
+            quantity = (
+                (
+                    sn,
+                    title.rpartition("[")[2],
+                    "anomaly" in title,
+                    "std. dev." in title,
+                    difference,
                 )
-                difference = bound.color_da is not None and "delta_" in str(
-                    variable_units(bound.color_da) or ""
-                )
-                quantity = (
-                    (
-                        sn,
-                        title.rpartition("[")[2],
-                        "anomaly" in title,
-                        "std. dev." in title,
-                        difference,
-                    )
-                    if sn
-                    else title
-                )
-                key = (
-                    json.dumps(quantity),
-                    json.dumps((spec_trace.get("meta") or {}).get("palette"), sort_keys=True),
-                    # The trace's own scale and limits apply to that trace, not to every
-                    # map of the same quantity (colorbar / showscale still style the shared bar).
-                    json.dumps(
-                        {
-                            k: v
-                            for k, v in _lift_color(spec_trace, bound.color_key).items()
-                            if k not in ("colorbar", "showscale")
-                        },
-                        sort_keys=True,
-                    ),
-                    bound.color_da is not None and is_precip_anomaly(bound.color_da),
-                )
-                name = auto.get(key)
-                if name is None:
-                    name = "coloraxis" if next_axis == 1 else f"coloraxis{next_axis}"
-                    next_axis += 1
-                    auto[key] = name
-            axis_of[id(spec_trace)] = name
+                if sn
+                else title
+            )
+            key = (
+                json.dumps(quantity),
+                json.dumps((spec_trace.get("meta") or {}).get("palette"), sort_keys=True),
+                # The trace's own scale and limits apply to that trace, not to every
+                # map of the same quantity (colorbar / showscale still style the shared bar).
+                json.dumps(
+                    {
+                        k: v
+                        for k, v in _lift_color(spec_trace, bound.color_key).items()
+                        if k not in ("colorbar", "showscale")
+                    },
+                    sort_keys=True,
+                ),
+                bound.color_da is not None and is_precip_anomaly(bound.color_da),
+            )
+            name = auto.get(key)
+            if name is None:
+                name = "coloraxis" if next_axis == 1 else f"coloraxis{next_axis}"
+                next_axis += 1
+                auto[key] = name
+        axis_of[id(spec_trace)] = name
     for p in range(n):
         for _, tr, spec_trace, bound in panel_traces[p]:
             if _uncolored(spec_trace):
@@ -798,8 +807,15 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     # Maps of one window share their lon/lat: only the outer ones need tick labels.
     drawn = {c for c, e in zip(cells, extents, strict=True) if c is not None and e is not None}
     outer_ticks = len(drawn) > 1 and len({tuple(e) for e in extents if e}) == 1
+    # A legend on a map goes in a row under the title: on the right (Plotly's place) it
+    # narrows the plot, and maps of fixed aspect shrink and leave gaps.
+    legend = user_layout.get("showlegend") is True or (
+        user_layout.get("showlegend") is not False
+        and any(tr.get("showlegend") is True for pt in panel_traces for _, tr, _, _ in pt)
+    )
     sizing = {
         "titled": title_lines(user_layout.get("title")),
+        "legend": legend,
         "right": (bool(auto_of) and mode in ("right", "rows")) or bool(placed - placed_h),
         "below": (bool(auto_of) and mode in ("columns", "below")) or bool(placed_h),
         "outer_ticks": outer_ticks,
@@ -826,6 +842,16 @@ def _assemble_map(items, user_layout, lmeta, ctx):
     if any(t and " · " in t and len(t) * 0.5 * em > column_w for t in panel_titles):
         panel_titles = [t.replace(" · ", "<br>", 1) if t else t for t in panel_titles]
         layout, cell_domains = map_layout(rows, cols, aspect, panel_titles=2, **sizing)
+    if legend:
+        top = (LINE * sizing["titled"] + (1 if sizing["titled"] > 1 else 0) + 0.5) * em
+        layout["legend"] = {
+            "orientation": "h",
+            "x": 0,
+            "xanchor": "left",
+            "yref": "container",
+            "y": 1 - top / layout["height"],
+            "yanchor": "top",
+        }
     slots = place_colorbars(mode, auto_cells, cell_domains)
     domains = [cell_domains[c] if c is not None else None for c in cells]
     # No-data cells show the plot background (the theme's maps style): a neutral grey,
@@ -979,6 +1005,20 @@ def _two_lines(text: str) -> str:
 
 
 def _assemble_chart(items, user_layout, ctx):
+    # Lines put on one calendar by align and lines on their own dates share no dates:
+    # on one axis they would sit years apart.
+    dated: dict[str, dict] = {}  # x axis -> aligned or not -> uids
+    for _, spec_trace, bound in items:
+        if bound is not None and bound.x_dates:
+            sides = dated.setdefault(spec_trace.get("xaxis") or "x", {})
+            sides.setdefault(bool(bound.x_tickformat), []).append(str(spec_trace.get("uid")))
+    for sides in dated.values():
+        if len(sides) == 2:
+            raise UsageError(
+                f"lines on one calendar (align dayofyear: {', '.join(sides[True])}) and on "
+                f"their own dates ({', '.join(sides[False])}) share no dates; set meta.align "
+                '"dayofyear" on every line (step-to-time a forecast first), or on none'
+            )
     data = []
     layout = {}
     axis_titles: dict[str, dict] = {}
