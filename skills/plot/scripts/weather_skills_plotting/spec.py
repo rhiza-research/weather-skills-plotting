@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
+import re
 from pathlib import Path
 
 import numpy as np
@@ -12,6 +14,8 @@ from weather_skills_core.cf import cf_dim
 from weather_skills_core.errors import UsageError
 
 LIB_DIR = Path(__file__).parent / "lib"
+# skills/plot/recipes, beside the skill's scripts/ folder.
+RECIPES_DIR = Path(__file__).parents[2] / "recipes"
 
 # 1-D coordinates up to this long are listed in std.extVar('inputs') with their values.
 MAX_LISTED_COORD = 400
@@ -21,21 +25,57 @@ MARKER_KEYS = frozenset({"showscale", "colorscale", "colorbar", "cmin", "cmax", 
 
 
 class SpecArg:
-    """A ``--spec`` value: a Jsonnet file path, or Jsonnet / JSON text."""
+    """A ``--spec`` value: a Jsonnet file path, a recipe name, or Jsonnet / JSON text."""
 
     def __init__(self, value: str):
         self.value = value
         self.path = None
-        # A file name ends in .jsonnet / .json; anything else is Jsonnet text.
-        if "\n" not in value and value.strip().endswith((".jsonnet", ".json")):
-            self.path = Path(value.strip())
+        text = value.strip()
+        # One line ending in .jsonnet / .json, or a bare name, is a file; anything else is text.
+        looks_like_name = "\n" not in text and (
+            text.endswith((".jsonnet", ".json")) or text.isidentifier()
+        )
+        if looks_like_name:
+            text = os.path.expandvars(text)
+        name = Path(text).name if looks_like_name else ""
+        own = RECIPES_DIR / (name if name.endswith(".jsonnet") else f"{name}.jsonnet")
+        # A recipe by name (map, map.jsonnet), or a path to one that does not exist here
+        # (an unexpanded ${CLAUDE_SKILL_DIR}/recipes/map.jsonnet), is the skill's own.
+        if name and not Path(text).is_file() and own.is_file():
+            self.path = own
+        # Any other file name ends in .jsonnet / .json; anything else is Jsonnet text.
+        elif looks_like_name and text.endswith((".jsonnet", ".json")):
+            self.path = Path(text)
             if not self.path.is_file():
-                raise argparse.ArgumentTypeError(f"--spec {value}: no such file")
+                raise argparse.ArgumentTypeError(
+                    f"--spec {value}: no such file; recipes are {', '.join(recipe_names())} "
+                    "(pass one by name, e.g. --spec map)"
+                )
         self.evaluated = None
 
     def to_dict(self) -> dict:
         """What provenance records: the evaluated figure, which replays as --spec on its own."""
         return self.evaluated if self.evaluated is not None else {"jsonnet": self.value}
+
+
+def recipe_names() -> list[str]:
+    return sorted(p.stem for p in RECIPES_DIR.glob("*.jsonnet"))
+
+
+def recipe_text(name: str | None) -> str:
+    """``--recipe``: every recipe with its first line, or one recipe's Jsonnet."""
+    if not name:
+        lines = []
+        for stem in recipe_names():
+            first = (RECIPES_DIR / f"{stem}.jsonnet").read_text().splitlines()[0]
+            lines.append(f"{stem:15} {first.lstrip('/ ')}")
+        return "\n".join(lines)
+    path = RECIPES_DIR / f"{Path(name).stem}.jsonnet"
+    if not path.is_file():
+        raise UsageError(
+            f"--recipe {name}: no such recipe; recipes are {', '.join(recipe_names())}"
+        )
+    return path.read_text()
 
 
 def _plain(value):
@@ -116,7 +156,14 @@ def evaluate(spec: SpecArg, inputs_meta: dict, *, jpath=(), ext_strs=()) -> dict
                 "--spec", spec.value, jpathdir=jpathdir, ext_vars=ext_vars, ext_codes=ext_codes
             )
     except RuntimeError as exc:
-        raise UsageError(f"--spec: {str(exc).strip()}") from None
+        message = str(exc).strip()
+        missing = re.search(r"Field does not exist: (\w+)", message)
+        if missing and missing.group(1) not in inputs_meta and "extVar" not in missing.group(1):
+            message += (
+                f"\nIf {missing.group(1)} is an input, pass it with -i FILE={missing.group(1)}; "
+                f"inputs given: {', '.join(inputs_meta) or 'none'}"
+            )
+        raise UsageError(f"--spec: {message}") from None
     fig = json.loads(text)
     if not isinstance(fig, dict):
         raise UsageError("--spec must evaluate to an object: {data: [...], layout: {...}}")

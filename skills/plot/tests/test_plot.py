@@ -324,3 +324,18 @@ def test_still_image_refuses_more_than_100_panels(tmp_path, plot_fn, capsys):
     with pytest.raises(SystemExit):
         run_skill(plot_fn, "--spec", spec, "-o", str(tmp_path / "x.png"))
     assert "too many for one image" in capsys.readouterr().err
+
+
+def test_recipes_by_name_and_listing(tmp_path, plot_fn, capsys):
+    run_skill(plot_fn, "--recipe")
+    listing = capsys.readouterr().out
+    assert listing.startswith("animation") and "map " in listing
+    run_skill(plot_fn, "--recipe", "map")
+    assert "ws.basemap(bbox)" in capsys.readouterr().out
+    grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
+    # A bare name, and a path whose ${CLAUDE_SKILL_DIR} was never expanded, both find the recipe.
+    for spec in ("map", "${CLAUDE_SKILL_DIR}/recipes/map.jsonnet"):
+        with pytest.raises(SystemExit):
+            run_skill(plot_fn, "-i", f"{grid}=OBS", "--spec", spec, "--dump-spec", "-")
+        err = capsys.readouterr().err
+        assert "Field does not exist: KENYA" in err and "pass it with -i FILE=KENYA" in err

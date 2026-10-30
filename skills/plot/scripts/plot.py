@@ -31,7 +31,7 @@ from weather_skills_core import UsageError, weather_skill
 from weather_skills_plotting import export
 from weather_skills_plotting.geodata import load_geojson
 from weather_skills_plotting.refs import GeoLines, resolve
-from weather_skills_plotting.spec import SpecArg, evaluate, input_metadata, validate
+from weather_skills_plotting.spec import SpecArg, evaluate, input_metadata, recipe_text, validate
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
 _SKILL_VERSION = "1.0.10"
@@ -94,7 +94,8 @@ def parse_ext(value):
     "--spec",
     type=SpecArg,
     required=True,
-    help="Jsonnet (a .jsonnet / .json file, or the text itself) that evaluates to a Plotly "
+    help="Jsonnet (a .jsonnet / .json file, a recipe name such as map, or the text itself) that "
+    "evaluates to a Plotly "
     "figure {data, layout, frames}. A string starting with @ names data: '@OBS.precip', "
     "'@OBS.precip.isel(time=0)', '@OBS.precip.max()' (scales only). import 'ws.libsonnet' "
     "for map axes, grids, base maps, palettes and an animation player.",
@@ -112,14 +113,28 @@ def parse_ext(value):
     help="KEY=VALUE, read in the spec as std.extVar('KEY'). Repeat.",
 )
 @weather_skill.argument(
+    "--recipe",
+    nargs="?",
+    const="",
+    probe=True,
+    help="List the recipes (no NAME), or print recipe NAME's Jsonnet to copy and edit; draws nothing.",
+)
+@weather_skill.argument(
     "--dump-spec",
     nargs="?",
     const="-",
     probe=True,
     help="Print (-) or save (a path) the evaluated spec, @ references unresolved, and draw nothing.",
 )
-def plot(inputs, output, spec, jpath, ext_str, dump_spec, **kwargs):
+def plot(inputs, output, spec, jpath, ext_str, recipe, dump_spec, **kwargs):
     """Draw weather-skills Zarrs with a Jsonnet spec that evaluates to a Plotly figure."""
+    if recipe is not None:
+        print(recipe_text(recipe))
+        return None
+    if spec is None:
+        raise UsageError(
+            "--spec is required: a .jsonnet file, a recipe name (--recipe lists them) or Jsonnet text"
+        )
     datasets = {}
     for x in inputs or []:
         if x.name in datasets:

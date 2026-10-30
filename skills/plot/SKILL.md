@@ -20,7 +20,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py -i rain_week.zarr=OBS -i kenya.geojso
   --spec map.jsonnet -o map.png
 ```
 
-Start from a recipe in `${CLAUDE_SKILL_DIR}/recipes/`. Each one runs as is: its second line is the command.
+Start from a recipe. `--recipe` lists them, `--recipe NAME` prints one to copy and edit, and `--spec NAME` runs one as is (its second line is the command; the files are in `${CLAUDE_SKILL_DIR}/recipes/`).
 
 | Recipe | Draws |
 | --- | --- |
@@ -42,7 +42,8 @@ Start from a recipe in `${CLAUDE_SKILL_DIR}/recipes/`. Each one runs as is: its 
 
 ### Arguments
 - `-i`, `--input` — `PATH=NAME`, repeat. A Zarr, or a GeoJSON (`.geojson` / `.json`) of outlines. `NAME` is a letter or `_`, then letters, digits and `_` (`OBS`, `fc_week1`); it is how the spec refers to the file. Readable legend text goes in a trace's `"name"`, not here.
-- `--spec` — a `.jsonnet` / `.json` file, or the Jsonnet text itself.
+- `--spec` — a `.jsonnet` / `.json` file, a recipe name (`map`), or the Jsonnet text itself.
+- `--recipe [NAME]` — list the recipes, or print one's Jsonnet; draws nothing.
 - `-o`, `--output` — `.png`, `.jpg`, `.pdf`, `.svg`, `.html`, or `.gif` (plays the spec's `frames`). Repeat to write several.
 - `--dump-spec` — print (`-`) or save (a path) the evaluated spec, `@` strings unresolved, and draw nothing.
 - `--ext-str KEY=VALUE` — read in the spec as `std.extVar('KEY')`; repeat.
