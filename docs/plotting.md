@@ -50,6 +50,7 @@ against a fixed table; nothing is `eval`'d. Each method has one job:
 | Reshape | `squeeze`, `transpose`, `flat` (a grid as one value per cell) |
 | Label | `.dt.<part>`, `.dt.strftime`, `.attrs.<name>` |
 | Display limit | `min`, `max`, `quantile`: whole array only, and only in `zmin`, `zmax`, `zmid`, `cmin`, `cmax`, `cmid`, an axis `range` or `tickvals` |
+| Pixel scale | `* number`, only in `marker.size` and `marker.standoff`: arrow lengths and marker sizes in px, like Plotly's `sizeref` |
 
 So every value drawn is a value stored in an input. Arithmetic, averages,
 smoothing, regridding and masking are refused with the data skill that does

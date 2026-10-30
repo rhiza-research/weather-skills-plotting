@@ -160,3 +160,15 @@ def test_dropna_and_the_coords_of_what_is_left(inputs):
     row = "@OBS.precip.isel(time=0, lat=0).dropna('lon')"
     assert one(row, {"OBS": obs}).tolist() == [0]
     assert one(row + ".lon", {"OBS": obs}).tolist() == [10]
+
+
+def test_pixel_scale_only_on_marker_sizes(inputs):
+    resolved, _ = resolve(
+        {"data": [{"marker": {"size": "@OBS.lat * 3", "standoff": "@OBS.lat * 0.5"}}]}, inputs
+    )
+    assert resolved["data"][0]["marker"]["size"].tolist() == [3, 6, 9]
+    assert resolved["data"][0]["marker"]["standoff"].tolist() == [0.5, 1, 1.5]
+    with pytest.raises(UsageError, match="only marker sizes and offsets"):
+        one("@OBS.lat * 3", inputs)
+    with pytest.raises(UsageError, match="arithmetic"):
+        resolve({"data": [{"marker": {"size": "@OBS.lat + 3"}}]}, inputs)

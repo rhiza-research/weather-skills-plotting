@@ -40,6 +40,10 @@ DT_FIELDS = ("year", "month", "day", "hour", "dayofyear", "days")
 # accepted only when its JSON path ends in one of these keys (or sits in a range).
 LIMIT_KEYS = frozenset({"zmin", "zmax", "zmid", "cmin", "cmax", "cmid", "range", "tickvals"})
 
+# Marker sizes and offsets in pixels: the only keys a reference may scale by a number
+# ('@W.wind_speed.flat() * 3'), the way Plotly's own sizeref scales marker.size.
+PIXEL_KEYS = ("marker.size", "marker.standoff")
+
 # A trace key holding a literal numeric list longer than this must be an input instead.
 MAX_LITERAL_VALUES = 10
 LITERAL_EXEMPT_KEYS = frozenset({"colorscale", "tickvals", "ticktext", "range", "domain"})
@@ -261,9 +265,19 @@ def evaluate(text: str, inputs: dict):
                     _refuse(kw.value, ref)
                 kwargs[kw.arg] = _literal(kw.value, ref)
             return _method(base, node.func.attr, args, kwargs, ref)
+        # A pixel scale: a reference times a number (checked against PIXEL_KEYS by resolve).
+        if (
+            isinstance(node, ast.BinOp)
+            and isinstance(node.op, ast.Mult)
+            and isinstance(node.right, ast.Constant)
+            and isinstance(node.right.value, (int, float))
+            and not isinstance(node.right.value, bool)
+        ):
+            return walk(node.left) * float(node.right.value)
         _refuse(node, ref)
 
-    return walk(tree.body), _last_method(tree.body)
+    tree_last = "*" if isinstance(tree.body, ast.BinOp) else _last_method(tree.body)
+    return walk(tree.body), tree_last
 
 
 def _last_method(node):
@@ -435,6 +449,12 @@ def resolve(spec, inputs: dict):
             raise UsageError(
                 f"{path} = {node}: .{last}() gives one number, for a scale only "
                 f"({', '.join(sorted(LIMIT_KEYS))}); data to draw is stored values"
+            )
+        if last == "*" and not path.endswith(PIXEL_KEYS):
+            raise UsageError(
+                f"{path} = {node}: arithmetic is not plotted; only marker sizes and offsets in "
+                "pixels (marker.size, marker.standoff) take a scale such as '* 3'. Convert units "
+                "with unit-convert, subtract with difference, then plot the result"
             )
         found[path] = node
         # A frame's trace may set only z; it takes x / y from the trace it updates.

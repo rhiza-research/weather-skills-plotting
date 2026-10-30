@@ -184,9 +184,11 @@ def test_every_recipe_draws_only_stored_values(tmp_path, plot_fn, capsys, recipe
     resolved, found = resolve(evaluate(SpecArg(str(recipe)), meta), sources)
     for path, ref in found.items():
         name = ref[1:].split(".")[0]
-        # Labels (.dt / .attrs), display limits and base-map lines are not stored data.
+        # Labels (.dt / .attrs), display limits, pixel scales (marker sizes) and base-map
+        # lines are not stored data.
         if (
             name not in files
+            or " * " in ref
             or ".dt." in ref
             or ref.endswith(("min()", "max()"))
             or "quantile(" in ref.split(".")[-1]

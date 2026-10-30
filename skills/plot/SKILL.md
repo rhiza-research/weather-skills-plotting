@@ -30,7 +30,7 @@ Start from a recipe. `--recipe` lists them, `--recipe NAME` prints one to copy a
 | `members.jsonnet` | Ensemble members in grey and the mean in bold, at the cell nearest a point |
 | `band.jsonnet` | A shaded 10–90% band between two quantile lines, with observations |
 | `seasons.jsonnet` | Past years and a forecast plume on one day-of-year axis |
-| `wind.jsonnet` | Wind speed shading with arrows on every 2nd cell, 2 px long per unit of speed |
+| `wind.jsonnet` | Wind speed shading with arrows on every 3rd cell, as long as the wind is strong (`scale` px per unit each side) |
 | `animation.jsonnet` | A map played through time: HTML with play / slider, or a looping GIF |
 | `cross_section.jsonnet` | A field over longitude and pressure, 1000 hPa at the bottom |
 | `bars.jsonnet` | Horizontal bars per county from a name coordinate |
@@ -87,6 +87,7 @@ A string that starts with `@` is replaced by the data it names; the whole string
 | `.dt.dayofyear`, `.dt.year`, `.dt.month`, `.dt.day`, `.dt.hour`, `.dt.days`, `.dt.strftime('%d %b')` | Time labels (`.dt.days` of a lead time) |
 | `.attrs.units` | A text attribute |
 | `.min()`, `.max()`, `.quantile(0.98)` | One number for a scale only: `zmin`, `zmax`, `zmid`, `cmin`, `cmax`, `cmid`, an axis `range`, `tickvals` |
+| `… * 3` | A pixel scale, only in `marker.size` and `marker.standoff` (arrow lengths, marker sizes); any other arithmetic comes from a data skill |
 | `@KENYA.x`, `@KENYA.y` (or `.lon`, `.lat`) | A GeoJSON input's lines and rings, gaps between parts |
 | `@NE.coastline_50m.clip(n, w, s, e).x` | Built-in Natural Earth lines: `coastline`, `borders`, `disputed`, `lakes`, `rivers` at `10m` / `50m` / `110m`, `admin1` at `10m` |
 
