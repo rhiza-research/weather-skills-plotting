@@ -137,7 +137,7 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
     else:
         data, layout = _assemble_chart(items, user_layout)
     layout.setdefault("template", DEFAULT_TEMPLATE)
-    built = {a.get("name") for a in layout.get("annotations") or []}
+    built = {a.get("name"): a for a in layout.get("annotations") or []}
     for ann in user_layout.get("annotations") or []:
         name = str(ann.get("name") or "")
         if name.startswith("panel-title-") and name not in built:
@@ -145,9 +145,21 @@ def compile_figure(spec: dict, datasets: dict, *, theme: dict | None = None):
                 (n for n in built if n and n.startswith("panel-title-")),
                 key=lambda n: int(n.rsplit("-", 1)[1]),
             )
+            # Say where each panel is and what it shows now, so a spec that
+            # numbered titles in trace order can see which panel is which.
+            cols = ((spec.get("layout") or {}).get("grid") or {}).get("columns")
+            panels = []
+            for n in have:
+                where = ""
+                if cols:
+                    r, c = divmod(int(n.rsplit("-", 1)[1]) - 1, cols)
+                    where = f"row {r + 1}, column {c + 1}: "
+                text = str(built[n].get("text", "")).replace("<br>", " ")
+                panels.append(f"{n} ({where}{text})")
             raise UsageError(
-                f"layout.annotations name {name!r} matches no panel; this figure's panel titles "
-                f"are {', '.join(have) or 'none'} (numbered from 1)"
+                f"layout.annotations name {name!r} matches no panel. Panels are numbered left "
+                f"to right, then row by row down, and panel-title-N titles panel N, the panel "
+                f"of traces on xN / yN; this figure has {', '.join(panels) or 'no panels'}"
             )
     out_layout = merge_spec({"layout": layout}, {"layout": user_layout})["layout"]
     try:

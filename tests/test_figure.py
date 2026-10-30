@@ -808,7 +808,9 @@ def test_member_panels_titled_and_bad_panel_title_named():
     ]
     assert titles == ["Member 0", "Member 1", "Member 2"]
     with pytest.raises(
-        UsageError, match="panel-title-0.*panel-title-1, panel-title-2, panel-title-3"
+        UsageError,
+        match=r"panel-title-0.*row by row.*panel-title-1 \(Member 0\), "
+        r"panel-title-2 \(Member 1\), panel-title-3 \(Member 2\)",
     ):
         compile(
             {
@@ -816,6 +818,32 @@ def test_member_panels_titled_and_bad_panel_title_named():
                 "layout": {"annotations": [{"name": "panel-title-0", "text": "x"}]},
             },
             {"a": ds},
+        )
+
+
+def test_panel_titles_follow_axis_number_not_trace_order():
+    # Two columns, traces placed down the first column: the second trace is on
+    # xaxis3, so its title is panel-title-3 and panel-title-2 is no panel.
+    ds = make_gridded(n_time=1).isel(time=0)
+    data = [_trace("a"), _trace("b", xaxis="x3", yaxis="y3")]
+    layout = {"grid": {"rows": 2, "columns": 2, "pattern": "independent"}}
+    fig = compile(
+        {
+            "data": data,
+            "layout": {**layout, "annotations": [{"name": "panel-title-3", "text": "B"}]},
+        },
+        {"a": ds, "b": ds},
+    )
+    by_name = {a.get("name"): a for a in _layout(fig)["annotations"]}
+    assert by_name["panel-title-3"]["text"] == "B"
+    assert by_name["panel-title-3"]["xref"] == "x3 domain"
+    with pytest.raises(
+        UsageError,
+        match=r"panel-title-1 \(row 1, column 1: a\), panel-title-3 \(row 2, column 1: b\)",
+    ):
+        compile(
+            {"data": data, "layout": {**layout, "annotations": [{"name": "panel-title-2"}]}},
+            {"a": ds, "b": ds},
         )
 
 
