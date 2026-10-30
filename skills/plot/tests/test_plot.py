@@ -66,7 +66,7 @@ def _inputs(tmp_path):
         n_time=1, lats=(1.0, 2.0, 3.0, 4.0), lons=(10.0, 11.0, 12.0, 13.0), name="wind_speed"
     )
     wind["wind_speed"].values = rng.uniform(0, 12, wind["wind_speed"].shape)
-    wind["wind_to_direction"] = wind["wind_speed"] * 0 + 90.0
+    wind["wind_from_direction"] = wind["wind_speed"] * 0 + 270.0
     rh = xr.Dataset(
         {"r": (("vertical", "latitude", "longitude"), rng.uniform(20, 90, (3, 2, 4)))},
         coords={
