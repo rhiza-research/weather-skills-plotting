@@ -128,6 +128,8 @@ def _inputs(tmp_path):
         "Q": quant,
         "AREA": _series("precip", [2.0, 4.0, 1.0]),
         "FCA": ens.isel(latitude=0, longitude=0, drop=True),
+        "C": _series("precip_avg", [4.0, 6.0, 5.0]).assign(precip_std=("time", [1.0, 2.0, 1.5])),
+        "LOW": _series("precip_avg", [3.0, 4.0, 3.5]),
         "Y2024": _series("precip", [1, 5, 2, 8], start="2024-03-01"),
         "Y2025": _series("precip", [3, 0, 4, 6], start="2025-03-01"),
         "WD": wind,
@@ -147,6 +149,7 @@ def _inputs(tmp_path):
         "HI": centre(1020.0, 5.0, 40.0),
         "LO": centre(1004.0, 0.0, 30.0),
     }
+    files["C"]["precip_std"].attrs["units"] = "mm day-1"
     paths = {name: write_zarr(ds, tmp_path / f"{name}.zarr") for name, ds in files.items()}
     paths["KENYA"] = _geojson(tmp_path / "kenya.geojson")
     return paths, files

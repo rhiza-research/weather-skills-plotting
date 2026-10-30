@@ -29,6 +29,7 @@ Start from a recipe. `--recipe` lists them, `--recipe NAME` prints one to copy a
 | `panels.jsonnet` | One map per forecast step in a grid, one colorbar, panel titles |
 | `members.jsonnet` | Ensemble members in grey and the mean in bold, at the cell nearest a point |
 | `band.jsonnet` | A shaded 10–90% band between two quantile lines, with observations |
+| `sd_band.jsonnet` | Mean ± 1 SD as a shaded band (stacked fills), with the mean as a line |
 | `seasons.jsonnet` | Past years and a forecast plume on one day-of-year axis |
 | `wind.jsonnet` | Wind speed shading with arrows on every 2nd cell, 2 px long per unit of speed |
 | `animation.jsonnet` | A map played through time: HTML with play / slider, or a looping GIF |
@@ -97,7 +98,7 @@ Shapes: `z` is 2-D (a lat/lon grid is drawn with rows as latitudes, and needs `x
 
 There are no `meta` keys: palettes are `ws.classBar`, outlines are scatters of `@NAME.x` / `@NAME.y`, data is an `@` reference in the Plotly attribute itself.
 
-References select and label stored values; they never compute. Arithmetic, averages and smoothing come from data skills first, and the error says which: `summarize-dim` (mean, quantiles over members), `aggregate-temporal` (rolling, resampling), `unit-convert`, `difference`, `coarsen` / `downscale`, `clip-region` (masks), `step-to-time` (valid dates), `wind-speed-direction` (speed and direction from u / v). A trace may hold up to 10 typed-in numbers (a marker, a threshold line); more must come from an input. A ± band around a mean (mean ± SD) can be Plotly's `error_y: {array: '@X.precip_std'}`.
+References select and label stored values; they never compute. Arithmetic, averages and smoothing come from data skills first, and the error says which: `summarize-dim` (mean, quantiles over members), `aggregate-temporal` (rolling, resampling), `unit-convert`, `difference`, `coarsen` / `downscale`, `clip-region` (masks), `step-to-time` (valid dates), `wind-speed-direction` (speed and direction from u / v). A trace may hold up to 10 typed-in numbers (a marker, a threshold line); more must come from an input. A mean ± SD band is Plotly stacking: mean − SD from `difference`, then the SD stacked on it twice (`--recipe sd_band`).
 
 ### `ws.libsonnet`
 `local ws = import 'ws.libsonnet';` gives plain Plotly JSON; change any part with `+`.
