@@ -160,3 +160,24 @@ def test_dropna_and_the_coords_of_what_is_left(inputs):
     row = "@OBS.precip.isel(time=0, lat=0).dropna('lon')"
     assert one(row, {"OBS": obs}).tolist() == [0]
     assert one(row + ".lon", {"OBS": obs}).tolist() == [10]
+
+
+def test_x_and_y_must_pair_up(inputs):
+    fc = inputs["FC"]
+    with pytest.raises(UsageError, match="x has 3 values and y has 2"):
+        resolve({"data": [{"x": "@OBS.time", "y": "@FC.tp.isel(step=0, lat=0, lon=0)"}]}, inputs)
+    shifted = {
+        "A": inputs["OBS"],
+        "B": inputs["OBS"].assign_coords(time=inputs["OBS"].time + np.timedelta64(1, "D")),
+    }
+    with pytest.raises(UsageError, match="run along different time values"):
+        resolve(
+            {"data": [{"x": "@A.precip.isel(lat=0, lon=0)", "y": "@B.precip.isel(lat=0, lon=0)"}]},
+            shifted,
+        )
+    del fc
+
+
+def test_the_innermost_refused_method_is_named(inputs):
+    with pytest.raises(UsageError, match="rolling.*aggregate-temporal"):
+        one("@OBS.precip.rolling(time=7).mean()", inputs)

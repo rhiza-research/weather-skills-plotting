@@ -159,10 +159,19 @@ def evaluate(spec: SpecArg, inputs_meta: dict, *, jpath=(), ext_strs=()) -> dict
     except RuntimeError as exc:
         message = str(exc).strip()
         missing = re.search(r"Field does not exist: (\w+)", message)
-        if missing and missing.group(1) not in inputs_meta and "extVar" not in missing.group(1):
+        if missing:
+            name = missing.group(1)
             message += (
-                f"\nIf {missing.group(1)} is an input, pass it with -i FILE={missing.group(1)}; "
-                f"inputs given: {', '.join(inputs_meta) or 'none'}"
+                f"\nIf {name} is an input, pass it with -i FILE={name} (inputs given: "
+                f"{', '.join(inputs_meta) or 'none'}). If it is a palette, ws.palettes has "
+                f"{', '.join(palette_names())}."
+            )
+        if "couldn't open import" in message:
+            message += (
+                "\nImports found by name: ws.libsonnet, palettes.libsonnet, "
+                "themes/tropical_tidbits.libsonnet, and the recipes "
+                f"({', '.join(n + '.jsonnet' for n in recipe_names())}); "
+                "-J DIR adds a folder of your own"
             )
         raise UsageError(f"--spec: {message}") from None
     fig = json.loads(text)
@@ -171,8 +180,17 @@ def evaluate(spec: SpecArg, inputs_meta: dict, *, jpath=(), ext_strs=()) -> dict
     return fig
 
 
+def palette_names() -> list[str]:
+    import _gojsonnet
+
+    text = _gojsonnet.evaluate_snippet(
+        "palettes", "std.objectFields(import 'palettes.libsonnet')", jpathdir=[str(LIB_DIR)]
+    )
+    return json.loads(text)
+
+
 def validate(fig: dict):
-    """A ``go.Figure`` from the resolved spec; Plotly's own errors, naming the trace."""
+    """A ``go.Figure`` from the resolved spec; Plotly's own checks, naming the trace."""
     import plotly.graph_objects as go
 
     for i, trace in enumerate(fig.get("data") or []):
@@ -181,21 +199,57 @@ def validate(fig: dict):
         try:
             go.Figure(data=[trace])
         except ValueError as exc:
-            kind = trace.get("type", "scatter")
-            hint = ""
-            bad = [k for k in trace if k in MARKER_KEYS]
-            if kind in ("scatter", "scattergl") and bad:
-                hint = f'\nOn a {kind}, {", ".join(bad)} goes under marker: {{"marker": {{...}}}}'
-            raise UsageError(f"data[{i}] ({kind}): {_short(exc)}{hint}") from None
+            raise UsageError(f"data[{i}]: {_explain(exc)}") from None
     try:
         return go.Figure(fig)
     except ValueError as exc:
-        raise UsageError(f"--spec: {_short(exc)}") from None
+        raise UsageError(f"--spec: {_explain(exc)}") from None
 
 
-def _short(exc) -> str:
-    """Plotly's message without its long list of valid properties."""
-    lines = [line for line in str(exc).strip().splitlines() if line.strip()]
-    keep = [line for line in lines[:3]]
-    keep += [line for line in lines[3:] if line.startswith("Did you mean")]
-    return "\n".join(keep) + "\nKeys are standard Plotly: https://plotly.com/python/reference/"
+def _explain(exc) -> str:
+    """Plotly's error in one or two lines, with what to do for the usual mix-ups.
+
+    Plotly's own "Did you mean" guesses are dropped: they are often wrong
+    (zmin → line, mode → base).
+    """
+    import plotly.graph_objects as go
+
+    text = str(exc).strip()
+    reference = "\nKeys are standard Plotly: https://plotly.com/python/reference/"
+    bad_key = re.search(r"object of type plotly\.graph_objs\.([\w.]+): '(\w+)'", text)
+    if bad_key:
+        kind, key = bad_key.group(1).split(".")[-1].lower(), bad_key.group(2)
+        message = f"a {kind} has no property {key!r}."
+        if key == "animation":
+            message += (
+                " animation_frame / animation_group are Plotly Express arguments, not figure "
+                "keys; animate with frames (--recipe animation)."
+            )
+        elif kind in ("scatter", "scattergl") and key in MARKER_KEYS | {"zmin", "zmax", "zmid"}:
+            under = {"zmin": "cmin", "zmax": "cmax", "zmid": "cmid"}.get(key, key)
+            message += f' On a {kind} it goes under marker: {{"marker": {{"{under}": …}}}}.'
+        elif kind == "heatmap" and key in ("line", "marker", "mode", "text"):
+            message += " Outlines, markers and labels are scatter traces of their own."
+        elif kind == "bar" and key == "mode":
+            message += " Remove it: bars have no mode."
+        else:
+            trace_class = getattr(go, bad_key.group(1).split(".")[-1], None)
+            names = sorted(getattr(trace_class(), "_valid_props", [])) if trace_class else []
+            if names:
+                message += f" Its properties: {', '.join(names)}."
+        return message + reference
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    message = " ".join(lines[:2])
+    if re.search(r"for the '[xy]' property", text) and "Received value: '" in text:
+        message += (
+            " x and y take arrays; one value (a scalar coordinate such as a forecast's init "
+            "time, or a single picked position) is not an axis. For a forecast, run "
+            "step-to-time and use the valid times."
+        )
+    if "'colorscale' property" in text:
+        message += (
+            f" A colorscale is a Plotly name (Viridis, RdBu, YlGnBu, …) or a list of "
+            f"[position, color]; a class palette goes through ws.classBar / ws.stepped "
+            f"(ws.palettes has {', '.join(palette_names())})."
+        )
+    return message + reference

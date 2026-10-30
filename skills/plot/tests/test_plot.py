@@ -299,9 +299,9 @@ def test_bad_input_name(plot_fn, capsys, argv, match):
         # Jsonnet syntax errors come back from the evaluator.
         ("{data: [", "--spec:"),
         # Plotly keys are checked by Plotly, naming the trace.
-        ("{data: [{type: 'scatter', align: 'x'}]}", "data[0] (scatter)"),
+        ("{data: [{type: 'scatter', align: 'x'}]}", "a scatter has no property 'align'"),
         # A scatter's colour-scale keys go under marker.
-        ("{data: [{type: 'scatter', showscale: false}]}", "showscale goes under marker"),
+        ("{data: [{type: 'scatter', showscale: false}]}", "On a scatter it goes under marker"),
         ("{data: [{type: 'heatmap', z: '@G.precip'}]}", "needs 2-D"),
         ("{data: [{type: 'heatmap', z: '@G.prcp.isel(time=0)'}]}", "data variables: precip"),
         ("{data: [{type: 'heatmap', z: '@X.precip'}]}", "'X' is not an input; inputs are G"),

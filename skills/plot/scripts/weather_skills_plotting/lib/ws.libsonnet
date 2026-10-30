@@ -32,10 +32,10 @@ local basemapStyles = {
 {
   palettes: palettes,
 
-  // The house Plotly template: colorway and box outlines.
+  // The house Plotly template: colorway (no grey, kept for ensemble members) and box outlines.
   template: {
     layout: {
-      colorway: ['#4c72b0', '#dd8452', '#55a868', '#c44e52', '#8172b3', '#937860', '#da8bc3', '#8c8c8c', '#ccb974', '#64b5cd'],
+      colorway: ['#4c72b0', '#dd8452', '#55a868', '#c44e52', '#8172b3', '#937860', '#da8bc3', '#17becf', '#ccb974', '#64b5cd'],
       shapedefaults: { fillcolor: 'rgba(0,0,0,0)', opacity: 1, line: { width: 2, color: '#333333' } },
     },
   },

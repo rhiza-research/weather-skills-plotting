@@ -184,7 +184,20 @@ def _method(base, name, args, kwargs, ref):
         try:
             return getattr(da, name)(picks, method=method) if method else getattr(da, name)(picks)
         except (KeyError, IndexError, ValueError, TypeError) as exc:
-            raise UsageError(f"{ref}: {exc}") from None
+            # Say what each picked dim holds, so the right value or position is plain.
+            held = []
+            for dim in picks:
+                values = da[dim].values
+                first, last = (
+                    _iso(values[0].item() if hasattr(values[0], "item") else values[0]),
+                    None,
+                )
+                last = _iso(values[-1].item() if hasattr(values[-1], "item") else values[-1])
+                held.append(f"{dim} has {values.size} values, {first} to {last}")
+            raise UsageError(
+                f"{ref}: nothing at that {'position' if name == 'isel' else 'value'} "
+                f"({exc}); {'; '.join(held)}"
+            ) from None
     if name == "dropna":
         if len(args) != 1 or kwargs:
             raise UsageError(f"{ref}: .dropna(dim) takes one dim, e.g. .dropna('station_id')")
@@ -233,7 +246,10 @@ def evaluate(text: str, inputs: dict):
     try:
         tree = ast.parse(text[1:], mode="eval")
     except SyntaxError as exc:
-        raise UsageError(f"{ref}: not a valid reference ({exc.msg})") from None
+        raise UsageError(
+            f"{ref}: not a valid reference ({exc.msg}). A string that starts with @ is a "
+            'reference; start literal text with @@ ("@@home" draws @home)'
+        ) from None
 
     def walk(node):
         if isinstance(node, ast.Name):
@@ -251,8 +267,16 @@ def evaluate(text: str, inputs: dict):
         if isinstance(node, ast.Call):
             if not isinstance(node.func, ast.Attribute):
                 _refuse(node, ref)
-            if node.func.attr not in METHODS:
-                _method(None, node.func.attr, [], {}, ref)
+            refused = [
+                n.func.attr
+                for n in ast.walk(node)
+                if isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Attribute)
+                and n.func.attr not in METHODS
+            ]
+            if refused:
+                # The innermost one is the step to do upstream (.rolling(...) in .rolling().mean()).
+                _method(None, refused[-1], [], {}, ref)
             base = walk(node.func.value)
             args = [_literal(a, ref) for a in node.args]
             kwargs = {}
@@ -355,6 +379,11 @@ def to_json_value(value, path: str, ref: str):
             lat, lon = cf_dim(da, "latitude"), cf_dim(da, "longitude")
             if da.ndim == 2 and set(da.dims) == {lat, lon}:
                 da = da.transpose(lat, lon)
+        if key == "z" and da.ndim < 2:
+            raise UsageError(
+                f"{path} = {ref} has dims {list(da.dims)}; z needs a 2-D grid, so keep two dims "
+                "(lat and lon, or e.g. vertical and lon) and pick only the others"
+            )
         if key == "z" and da.ndim != 2:
             raise UsageError(_shape_error(path, ref, da, 2))
         if da.ndim > allowed:
@@ -420,6 +449,8 @@ def resolve(spec, inputs: dict):
             )
     found = {}
     grids = []
+    # The dim and coordinate values each 1-D reference runs along, to check x / y pair up.
+    along = {}
 
     def walk(node, path):
         if isinstance(node, dict):
@@ -437,6 +468,10 @@ def resolve(spec, inputs: dict):
                 f"({', '.join(sorted(LIMIT_KEYS))}); data to draw is stored values"
             )
         found[path] = node
+        if hasattr(value, "dims") and value.squeeze().ndim == 1:
+            dim = value.squeeze().dims[0]
+            if dim in value.coords:
+                along[path] = (dim, np.asarray(value.squeeze()[dim].values))
         # A frame's trace may set only z; it takes x / y from the trace it updates.
         if path.startswith("data[") and path.endswith(".z") and hasattr(value, "dims"):
             if {cf_dim(value, "latitude"), cf_dim(value, "longitude")} <= set(value.dims):
@@ -444,6 +479,33 @@ def resolve(spec, inputs: dict):
         return to_json_value(value, path, node)
 
     resolved = walk(spec, "")
+    # x and y pair up point by point; different lengths mean a dim was left in one of them.
+    for path, trace in _traces_and_layout(resolved):
+        # Gridded traces (z) take x and y as the grid's two axes, of their own lengths.
+        if path == "layout" or "z" in trace:
+            continue
+        x, y = trace.get("x"), trace.get("y")
+        if (
+            hasattr(x, "__len__")
+            and hasattr(y, "__len__")
+            and not isinstance(x, str)
+            and not isinstance(y, str)
+        ):
+            if np.ndim(x) == 1 and np.ndim(y) == 1 and len(x) != len(y):
+                raise UsageError(
+                    f"{path}: x has {len(x)} values and y has {len(y)}, so they don't pair up; "
+                    f"pick the same positions for both (x = {found.get(path + '.x', 'literal')}, "
+                    f"y = {found.get(path + '.y', 'literal')}). A dim left in one of them, such as "
+                    "number, needs .isel(...) or one trace per value"
+                )
+            ax, ay = along.get(path + ".x"), along.get(path + ".y")
+            if ax and ay and ax[0] == ay[0] and not np.array_equal(ax[1], ay[1]):
+                raise UsageError(
+                    f"{path}: x and y run along different {ax[0]} values "
+                    f"({found[path + '.x']} vs {found[path + '.y']}), so their points would pair "
+                    f"up wrongly; put both variables in one file first (merge), or pick the same "
+                    f"{ax[0]} values for both"
+                )
     for trace_path, ref in grids:
         trace = resolved
         for part in trace_path.replace("[", ".[").split("."):
