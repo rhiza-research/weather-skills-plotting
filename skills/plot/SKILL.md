@@ -131,6 +131,7 @@ CHIRPS and ECMWF week-1 rainfall side by side over Kenya, each on its own grid, 
 ### Colors
 - Precip totals use the mm class palette `default_precip`; anomalies use `default_precip_anom`. The range follows `aggregation_period`: under 2 days 0–50 mm, up to 10 days (a dekad) 0–200, under 40 days 0–400, longer 0–1000 (anomalies ±50 / ±200 / ±300 / ±500).
 - Set a palette with `"meta": {"palette": NAME}`: `default_precip`, `default_precip_anom`, `ppt_daily` … `ppt_season`, `ppt_anom_*`, `spi`, a shipped theme's palette (below), or your own `{colors, bounds}`.
+- A palette on many maps: put it in a theme file's `defaults` and pass `--theme-file` rather than repeating `meta.palette` on each trace; every map of that kind then takes it.
 - Shipped themes add palettes, loaded by name with `--theme-file NAME` (`--help` THEMES lists each one's palettes):
   - `tropical_tidbits`: Tropical Tidbits model-chart colors. `tt_wind` (wind speed, m/s), `tt_precip_total` (mm), `tt_precip_rate` (mm/h), `tt_pwat` (mm), `tt_z500` (dam). With this theme, wind speed gets `tt_wind` and precip gets `tt_precip_total` without naming a palette.
 - Temperatures use `RdYlBu_r`; fields spanning zero use `RdBu_r`; flag fields (verify hits) get one color per flag.
