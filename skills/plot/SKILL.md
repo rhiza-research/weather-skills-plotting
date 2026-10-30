@@ -31,7 +31,7 @@ Start from a recipe. `--recipe` lists them, `--recipe NAME` prints one to copy a
 | `band.jsonnet` | A shaded 10–90% band between two quantile lines, with observations |
 | `sd_band.jsonnet` | Mean ± 1 SD as a shaded band (stacked fills), with the mean as a line |
 | `seasons.jsonnet` | Past years and a forecast plume on one day-of-year axis |
-| `wind.jsonnet` | Wind speed shading with quiver arrows as long as the wind is strong (wind-speed-direction `--arrows`) |
+| `wind.jsonnet` | Wind speed shading with quiver arrows as long as the wind is strong (wind-speed-direction `--arrow-scale`) |
 | `animation.jsonnet` | A map played through time: HTML with play / slider, or a looping GIF |
 | `cross_section.jsonnet` | A field over longitude and pressure, 1000 hPa at the bottom |
 | `bars.jsonnet` | Horizontal bars per county from a name coordinate |
@@ -98,7 +98,7 @@ Shapes: `z` is 2-D (a lat/lon grid is drawn with rows as latitudes, and needs `x
 
 There are no `meta` keys: palettes are `ws.classBar`, outlines are scatters of `@NAME.x` / `@NAME.y`, data is an `@` reference in the Plotly attribute itself.
 
-References select and label stored values; they never compute. Arithmetic, averages and smoothing come from data skills first, and the error says which: `summarize-dim` (mean, quantiles over members), `aggregate-temporal` (rolling, resampling), `unit-convert`, `difference`, `coarsen` / `downscale`, `clip-region` (masks), `step-to-time` (valid dates), `wind-speed-direction` (speed and direction from u / v, and with `--arrows` quiver arrows as line segments). A trace may hold up to 10 typed-in numbers (a marker, a threshold line); more must come from an input. A mean ± SD band is Plotly stacking: mean − SD from `difference`, then the SD stacked on it twice (`--recipe sd_band`).
+References select and label stored values; they never compute. Arithmetic, averages and smoothing come from data skills first, and the error says which: `summarize-dim` (mean, quantiles over members), `aggregate-temporal` (rolling, resampling), `unit-convert`, `difference`, `coarsen` / `downscale`, `clip-region` (masks), `step-to-time` (valid dates), `wind-speed-direction` (speed and direction from u / v, and with `--arrow-scale` quiver arrows as line segments). A trace may hold up to 10 typed-in numbers (a marker, a threshold line); more must come from an input. A mean ± SD band is Plotly stacking: mean − SD from `difference`, then the SD stacked on it twice (`--recipe sd_band`).
 
 ### `ws.libsonnet`
 `local ws = import 'ws.libsonnet';` gives plain Plotly JSON; change any part with `+`.

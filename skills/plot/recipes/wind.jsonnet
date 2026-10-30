@@ -1,7 +1,8 @@
 // Wind speed shading with quiver arrows, each as long as its wind is strong.
-// WD comes from wind-speed-direction with --arrows SCALE --every N: wind_speed, plus
-// arrow_x / arrow_y, every arrow's shaft and head as line segments in map degrees
-// (SCALE degrees per unit of speed), drawn here as one lines trace.
+// WD comes from wind-speed-direction --arrow-scale DEG_PER_UNIT --arrow-step CELLS:
+// wind_speed, plus arrow_x / arrow_y, every arrow's shaft and head as line segments in
+// map degrees (DEG_PER_UNIT long per unit of speed, one arrow every CELLS grid cells),
+// drawn here as one lines trace.
 // plot.py -i wind_sd.zarr=WD --spec wind.jsonnet -o wind.png
 local ws = import 'ws.libsonnet';
 local inputs = std.extVar('inputs');

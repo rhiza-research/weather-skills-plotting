@@ -67,7 +67,7 @@ def _inputs(tmp_path):
     )
     wind["wind_speed"].values = rng.uniform(0, 12, wind["wind_speed"].shape)
     wind["wind_from_direction"] = wind["wind_speed"] * 0 + 270.0
-    # Two quiver arrows as wind-speed-direction --arrows writes them: tail, tip, gap,
+    # Two quiver arrows as wind-speed-direction --arrow-scale writes them: tail, tip, gap,
     # barb, tip, barb, gap.
     arrow = [10.0, 10.5, np.nan, 10.4, 10.5, 10.4, np.nan]
     wind["arrow_x"] = (("time", "arrow_vertex"), [arrow + [a + 1 for a in arrow]])
