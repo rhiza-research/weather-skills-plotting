@@ -68,7 +68,7 @@ local day = '.isel(time=0)';
 }
 ```
 
-**`std.extVar('inputs')`** describes each input, read from its metadata without loading data: `dims` (sizes), `vars` (each one's `dims`, `units`, `long_name`), `coords` (values of 1-D coordinates up to 400 long: dates as `2026-10-01`, leads in days, members, station ids), `attrs`, and `bbox` (`{n, w, s, e}`). Use it for loop bounds, titles and map windows. A GeoJSON input has `bbox`.
+**`std.extVar('inputs')`** describes each input, read from its metadata without loading data: `dims` (sizes), `vars` (each one's `dims`, `units`, `long_name`), `coords` (values of 1-D coordinates up to 400 long, and scalar ones: dates as `2026-10-01`, or `2026-10-30T12:00:00` when not midnight; leads as days, `0.125` for 3 h; members, station ids; `valid_time` when the file has it), `attrs`, and `bbox` (`{n, w, s, e}`). Use it for loop bounds, titles and map windows; `ws.date(t)` turns a date into `26 Oct 2026`. A GeoJSON input has `bbox`. To see it all: `--spec "std.extVar('inputs')" --dump-spec -` with your `-i` inputs.
 
 ### `@` references
 A string that starts with `@` is replaced by the data it names; the whole string is the reference. `@@` writes a literal `@`.
@@ -79,7 +79,9 @@ A string that starts with `@` is replaced by the data it names; the whole string
 | `@OBS.lat`, `@OBS.lon` | The latitude / longitude coordinate, whatever the file calls it |
 | `.isel(time=0)`, `.isel(time=-1)`, `.isel(time=slice(0, 7))` | Pick by position (`slice(None, None, 3)`: every 3rd) |
 | `.sel(time='2026-10-01')`, `.sel(lat=-1.3, lon=36.8, method='nearest')`, `.sel(station_id=['A', 'B'])` | Pick by value |
-| `.squeeze()`, `.transpose('vertical', 'lon')` | Drop size-1 dims, set dim order |
+| `.dropna('station_id')` | Keep the positions along a dim that have a value (this map's local-extrema centres) |
+| `.lon`, `.lat`, `.time`, any coordinate, after a selection | That coordinate of what is left: `@HI.msl.isel(time=0).dropna('station_id').lon` |
+| `.squeeze()`, `.transpose('vertical', 'lon')` | Drop size-1 dims, set dim order (pick every other dim first) |
 | `.flat()`, `.flat('lon')`, `.flat('lat')` | A lat/lon grid as one value per cell, and each cell's lon / lat: grid cells as scatter points |
 | `.dt.dayofyear`, `.dt.year`, `.dt.month`, `.dt.day`, `.dt.hour`, `.dt.days`, `.dt.strftime('%d %b')` | Time labels (`.dt.days` of a lead time) |
 | `.attrs.units` | A text attribute |
@@ -96,17 +98,22 @@ References select and label stored values; they never compute. Arithmetic, avera
 ### `ws.libsonnet`
 `local ws = import 'ws.libsonnet';` gives plain Plotly JSON; change any part with `+`.
 
-- `ws.map(bbox, width=760)` — one map's axes (equal degrees, range from `bbox`) and a canvas sized to it.
-- `ws.grid(bbox, rows, cols, panel=340)` — axes for maps in a grid, filled row by row; tick labels on the outer edge only. `ws.axes(i)` gives panel `i`'s `xaxis` / `yaxis` (`x`, `x2`, …) to add to a trace; `ws.panelTitle(i, text)` an annotation above it (add titles with `annotations+:` after `ws.classBar`).
-- `ws.basemap(bbox, i=0, layers=null, style={})` — coastline, borders (disputed dashed), lakes, rivers and, on maps up to 20° across, admin-1 lines, on panel `i`. `layers: ['borders', 'coastline']` picks some; `style: {borders: {line: {color: 'red'}}}` restyles. A GeoJSON input draws boundaries of your own.
-- `ws.classBar(palette, title='', axis='coloraxis')` — for a class palette: the `coloraxis` with color steps at the class bounds, and a colorbar with one equal-height band per class, labelled at the bounds (or by the palette's `labels`), under / over as triangles. It is drawn as layout shapes and annotations, so write your own as `annotations+: [...]` after it. `y` / `len` place it (paper fractions) when a figure has two.
+- `ws.map(bbox, width=760)` — one map's axes (equal degrees, range from `bbox`), a canvas sized to it, and the legend in a row under the map.
+- `ws.grid(bbox, rows, cols, panel=340)` — axes for maps in a grid, filled row by row; tick labels on the outer edge only. `ws.axes(i)` gives panel `i`'s `xaxis` / `yaxis` (`x`, `x2`, …) to add to a trace; `ws.panelTitle(i, text)` an annotation above it (add titles with `annotations+:` after `ws.classBar`). `ws.axes` and `ws.panelTitle` work for chart panels too; lay those out with Plotly's own `layout.grid: {rows, columns, pattern: 'independent'}`.
+- `ws.basemap(bbox, i=0, layers=null, style={})` — base-map lines on panel `i`. The layers are `admin1` (on maps up to 20° across), `rivers`, `lakes` (filled), `borders` (agreed international boundaries), `disputed` (every other land line, dashed) and `coastline`. `layers=['borders', 'coastline']` draws only those, so no disputed lines; `style={admin1: {line: {color: 'white'}}}` restyles a layer by the same names. Land and sea are not filled. A GeoJSON input draws boundaries of your own.
+- `ws.classBar(palette, title='', axis='coloraxis')` — for a class palette: the `coloraxis` with color steps at the class bounds, and a colorbar with one equal-height band per class, labelled at the bounds (or by the palette's `labels`), under / over as triangles. It is drawn as layout shapes and annotations, so write your own as `annotations+: [...]` after it. `y` / `len` place it (paper fractions) when a figure has two. Keep `title` short (`mm`, `m/s`): it sits above the bar.
 - `ws.stepped(palette)` — the coloraxis alone, with Plotly's own colorbar (a continuous palette, or class bands sized by their value range).
 - `ws.palettes.NAME` — `{colors, bounds}`: rainfall totals `ppt_daily` (0–50 mm), `ppt_week` (0–200, also a dekad), `ppt_month` (0–400), `ppt_season` (0–1000), `ppt_total` (0–2500); anomalies `ppt_anom_daily` … `ppt_anom_season` (±50 / ±200 / ±300 / ±500); `ppt_poa` (% of normal), `spi`, verify maps `hits`, `bias`, `precip_bias`, `mae`; `colorblind`, `rocket`. Your own: `{colors: [...], bounds: [...]}`, one color per class, or under + classes + over; `labels: [...]` names the classes.
+- `ws.date(t, year=true)` — `'2026-10-26'` → `26 Oct 2026`; a time not at midnight adds `12 UTC`.
+- `ws.dayOfYearTicks` — `xaxis` ticks at the 1st of each month for a `.dt.dayofyear` axis (counted in a non-leap year; after 28 Feb a leap year sits a day later).
 - `ws.player(names, duration=500)` — play / pause buttons and a slider for frames named `names`; a `.gif` plays at the same `duration` (ms).
 - `ws.template` — the house colorway, as `layout.template`.
 - `import 'themes/tropical_tidbits.libsonnet'` — Tropical Tidbits palettes: `tt_precip_rate` (mm/h), `tt_precip_total`, `tt_pwat` (mm), `tt_wind` (m/s), `tt_z500` (dam).
 
 ## Notes
+- Titles don't wrap: break a long one with `<br>`, or put the detail in `title.subtitle`.
+- A log axis (pressure) labels Plotly's minor ticks too; set `tickvals` to the levels (`tickvals: '@RH.vertical'`).
+- `--scale 2` doubles the pixels of PNG, JPG and GIF output at the same layout; `layout.width` / `height` set the layout.
 - Values are drawn in the file's own units (K stays K, Pa stays Pa): run unit-convert for °C or hPa, and set palette bounds and contour levels in those units.
 - A forecast's `step` is a lead time. Run step-to-time to draw it by valid date beside observations, or use `.dt.days` for lead days.
 - Animations: `frames[k].data` replaces the traces listed in `frames[k].traces` (by position in `data`). Keep the base map out of the frames: it stays on every frame.
@@ -114,4 +121,4 @@ References select and label stored values; they never compute. Arithmetic, avera
 - Errors come from Jsonnet (syntax, unknown field), from the reference checks (which data, which dim, which skill), or from Plotly itself, naming the trace (`data[3] (scatter)`).
 
 ## Output
-The figure at each `-o`. PNG, JPG, PDF, SVG and GIF print `plot hash:` and `data: not null | NULL` for the plotted traces. The provenance (`weather_skills_history`, with the evaluated spec) is embedded in the file; read it with the provenance skill.
+The figure at each `-o`. PNG, JPG, PDF, SVG and GIF print `plot hash:` and `data: not null | NULL` for the plotted traces. The provenance (`weather_skills_history`, with the evaluated spec) is embedded in the file; read it with the provenance skill. A PNG, JPG or GIF whose history is complete carries a small red seal in its bottom-right corner.

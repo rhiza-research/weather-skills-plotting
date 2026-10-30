@@ -172,7 +172,7 @@ def test_every_recipe_draws_only_stored_values(tmp_path, plot_fn, capsys, recipe
 
     paths, files = _inputs(tmp_path)
     argv = _recipe_inputs(recipe, paths)
-    suffix = ".gif" if "frames" in recipe.read_text() else ".png"
+    suffix = ".gif" if "frames:" in recipe.read_text() else ".png"
     out = tmp_path / f"{recipe.stem}{suffix}"
     run_skill(plot_fn, *argv, "--spec", str(recipe), "-o", str(out))
     assert out.exists() and "data: not null" in capsys.readouterr().out
