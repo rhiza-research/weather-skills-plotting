@@ -110,7 +110,9 @@ agent can read them and override any part with `+`.
   triangles.
 - **Animation.** Standard Plotly `frames`; `ws.player` adds play / pause and a
   slider. A `.gif` output draws each frame with kaleido and joins them on one
-  shared palette, at the play button's frame duration.
+  shared palette, at the play button's frame duration. Scatter traces that the
+  frames replace are `scattergl`: Plotly redraws an SVG `scatter` in a frame in a
+  way that drops the heatmap from every other paint, and the map flashes.
 
 ## Output
 
