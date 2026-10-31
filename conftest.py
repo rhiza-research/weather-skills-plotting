@@ -10,12 +10,12 @@ def no_natural_earth(monkeypatch, request):
         return
     from shapely.geometry import LineString
 
-    from weather_skills_plotting import geodata
+    from weather_skills_plotting import bind
 
     def fake(layer, scale, n, w, s, e):
         return [LineString([(w, s), (e, n)])]
 
-    monkeypatch.setattr(geodata, "load_ne_layer", fake)
+    monkeypatch.setattr(bind, "load_ne_layer", fake)
 
 
 @pytest.fixture(scope="session", autouse=True)

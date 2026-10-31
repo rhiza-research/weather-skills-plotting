@@ -13,12 +13,13 @@ metadata:
 
 Draws a figure from a Jsonnet spec. The spec evaluates to a standard [Plotly figure](https://plotly.com/python/reference/) (`data`, `layout`, `frames`). Wherever Plotly expects data, write a string that starts with `@` and names it: `'@OBS.precip.isel(time=0)'`. Name every input on the command line.
 
-## How a figure is made: spec → render → lint → bind
+## How a figure is made: spec → render → lint → bind → export
 
 1. **Spec.** You write Jsonnet: Plotly keys for everything drawn, and an `@` reference wherever data goes (`x: '@OBS.lon'`, `z: '@OBS.precip.isel(time=0)'`). Each input is named with `-i FILE=NAME`; `std.extVar('inputs')` describes them (dims, variables, dates, bbox) for loops and titles.
 2. **Render.** plot evaluates the Jsonnet into plain Plotly JSON, references still unbound. `--dump-spec -` prints this.
 3. **Lint.** Before any data is read, the JSON is checked against Plotly's schema: every key that can put data on the chart must hold an `@` reference, never typed-in values. That covers data keys (`x`, `y`, `z`, `lat`, `customdata`, `values`, …), per-point lists in keys like `marker.color`, `marker.size` and `text` (one value there is styling), keys that generate a value for every point (`x0` / `dx`, `base`, error-bar `value`), the coordinates of shapes, annotations and images on a data axis (`xref: 'x'`), menu and slider `args`, frames and templates. Keys Plotly doesn't define are refused, since they can't be checked. Every problem is listed at once. A constant on a data axis (a threshold line, a date) is `--const NAME=VALUE`, written `'@const.NAME'`. Positions in `paper` or `x domain` units (titles, colorbars, panel labels) are layout, not data, and stay literal.
-4. **Bind.** Each reference is resolved from its input: it selects, reshapes or labels stored values, or scales a marker's size in pixels (see `@` references below), and its shape is checked against the key. Then Plotly validates the figure and it is written to each `-o`.
+4. **Bind.** Each reference is resolved from its input: it selects, reshapes or labels stored values, or scales a marker's size in pixels (see `@` references below), and its shape is checked against the key.
+5. **Export.** Plotly validates the figure, and it is written to each `-o` with its QA lines (see Output).
 
 ## Usage
 

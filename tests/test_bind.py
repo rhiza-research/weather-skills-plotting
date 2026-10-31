@@ -1,11 +1,14 @@
-"""@ references: what they select, and the guardrails that stop them computing."""
+"""Bind: what @ references select, the guardrails that stop them computing, and map lines."""
+
+import json
 
 import numpy as np
 import pytest
 from weather_skills_core.errors import UsageError
 
 from conftest import make_forecast, make_gridded
-from weather_skills_plotting.refs import JOBS, METHODS, UPSTREAM, resolve
+from weather_skills_plotting import bind
+from weather_skills_plotting.bind import JOBS, METHODS, UPSTREAM, resolve
 
 
 @pytest.fixture
@@ -133,7 +136,7 @@ def test_a_grid_needs_its_lon_lat_axes(inputs):
 def test_geojson_lon_lat_name_its_x_y():
     from shapely.geometry import LineString
 
-    from weather_skills_plotting.refs import GeoLines
+    from weather_skills_plotting.bind import GeoLines
 
     lines = {"K": GeoLines([LineString([(30, 1), (31, 2)])], "K")}
     assert one("@K.lon", lines).tolist()[:2] == [30, 31]
@@ -189,8 +192,8 @@ def test_one_colorbar_in_two_units_warns(inputs, capsys):
 def test_a_grid_across_the_dateline_draws_in_one_piece():
     import xarray as xr
 
-    from weather_skills_plotting.geodata import window_parts
-    from weather_skills_plotting.spec import input_metadata
+    from weather_skills_plotting.bind import window_parts
+    from weather_skills_plotting.render import input_metadata
 
     lons = [170.0, 175.0, -180.0, -175.0]
     ds = xr.Dataset(
@@ -316,3 +319,55 @@ def test_mixed_units_warn_for_marker_colors_too(inputs, capsys):
     assert "colors traces in different units" in capsys.readouterr().err
     resolve(spec, {"R": inputs["OBS"], "T": inputs["OBS"]})
     assert "different units" not in capsys.readouterr().err
+
+
+# ---- GeoJSON inputs and Natural Earth layers (with the download stubbed offline)
+
+RING = [[10, 1], [13, 1], [13, 3], [10, 3], [10, 1]]
+
+
+@pytest.mark.parametrize(
+    "doc",
+    [
+        {"type": "Polygon", "coordinates": [RING]},
+        {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [RING]}},
+        {
+            "type": "FeatureCollection",
+            "features": [
+                {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [RING]}},
+                {"type": "Feature", "geometry": None},
+            ],
+        },
+    ],
+)
+def test_geojson_wrappers_give_the_same_lines(tmp_path, doc):
+    path = tmp_path / "a.geojson"
+    path.write_text(json.dumps(doc))
+    x, y = bind.geoms_to_xy(bind.load_geojson(path))
+    assert x[:5].tolist() == [10, 13, 13, 10, 10] and np.isnan(x[5])
+
+
+def test_unreadable_geojson_is_a_usage_error(tmp_path):
+    path = tmp_path / "bad.geojson"
+    path.write_text("{not json")
+    with pytest.raises(UsageError, match="GeoJSON input"):
+        bind.load_geojson(path)
+
+
+def test_window_parts_split_at_the_dateline():
+    assert bind.window_parts(170, -175) == [(170, 180, 0.0), (-180, -175, 360.0)]
+    assert bind.window_parts(170, 195) == [(170, 180, 0.0), (-180, -165, 360.0)]
+
+
+@pytest.mark.overlays
+def test_offline_natural_earth_falls_back_to_bundled_outlines(monkeypatch, capsys):
+    import cartopy.io.shapereader as shpreader
+
+    def offline(**kwargs):
+        raise OSError("no network")
+
+    monkeypatch.setattr(shpreader, "natural_earth", offline)
+    lines = bind.load_ne_layer("coastline", "50m", 5, 30, -5, 45)
+    assert lines and "drawing the bundled country outlines" in capsys.readouterr().err
+    assert bind.load_ne_layer("rivers", "50m", 5, 30, -5, 45) == []
+    assert "NE.rivers unavailable" in capsys.readouterr().err

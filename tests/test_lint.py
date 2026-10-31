@@ -7,7 +7,7 @@ import _gojsonnet
 import pytest
 
 from weather_skills_plotting.lint import UnboundDataError, check_bindings
-from weather_skills_plotting.spec import LIB_DIR
+from weather_skills_plotting.render import LIB_DIR
 
 HERE = Path(__file__).parent / "data"
 

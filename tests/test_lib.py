@@ -6,7 +6,7 @@ import _gojsonnet
 import plotly.graph_objects as go
 import pytest
 
-from weather_skills_plotting.spec import LIB_DIR
+from weather_skills_plotting.render import LIB_DIR
 
 BBOX = "{n: 5, w: 33, s: -5, e: 42}"
 
@@ -148,7 +148,7 @@ def test_a_ragged_grid_labels_its_filled_edges():
 
 
 @pytest.mark.parametrize(
-    "name", __import__("weather_skills_plotting.spec", fromlist=["x"]).palette_names()
+    "name", __import__("weather_skills_plotting.render", fromlist=["x"]).palette_names()
 )
 def test_every_named_palette_is_a_valid_coloraxis(name):
     go.Figure(layout={"coloraxis": ev(f"ws.stepped(ws.palettes.{name})")})

@@ -17,7 +17,7 @@ from skill_conftest import (
 )
 from weather_skills_core.provenance import load_figure_history
 
-from weather_skills_plotting.refs import SCALED_KEYS
+from weather_skills_plotting.bind import SCALED_KEYS
 
 plot_mod = load_skill("plot", "plot")
 RECIPES = Path(__file__).resolve().parents[1] / "recipes"
@@ -182,9 +182,8 @@ def _recipe_inputs(recipe: Path, paths: dict) -> list[str]:
 @pytest.mark.parametrize("recipe", sorted(RECIPES.glob("*.jsonnet")), ids=lambda p: p.stem)
 def test_every_recipe_draws_only_stored_values(tmp_path, plot_fn, capsys, recipe):
     """Each recipe renders, and every data value it draws is a value stored in its input."""
-    from weather_skills_plotting.geodata import load_geojson
-    from weather_skills_plotting.refs import GeoLines, resolve
-    from weather_skills_plotting.spec import SpecArg, evaluate, input_metadata
+    from weather_skills_plotting.bind import GeoLines, load_geojson, resolve
+    from weather_skills_plotting.render import SpecArg, evaluate, input_metadata
 
     paths, files = _inputs(tmp_path)
     argv = _recipe_inputs(recipe, paths)
@@ -409,14 +408,14 @@ def test_importstr_reads_a_recipe(plot_fn, capsys):
 
 
 def test_gif_size_is_reported_and_large_ones_warn(tmp_path, plot_fn, capsys, monkeypatch):
-    import weather_skills_plotting
+    from weather_skills_plotting import export
 
     grid = write_zarr(make_gridded(n_time=2), tmp_path / "grid.zarr")
     spec = (
         "local f(k) = {type: 'heatmap', x: '@G.lon', y: '@G.lat', z: '@G.precip.isel(time=%d)' % k};"
         "{data: [f(0)], frames: [{name: 'a', data: [f(0)]}, {name: 'b', data: [f(1)]}]}"
     )
-    monkeypatch.setattr(weather_skills_plotting, "LARGE_GIF_BYTES", 10)
+    monkeypatch.setattr(export, "LARGE_GIF_BYTES", 10)
     run_skill(plot_fn, "-i", f"{grid}=G", "--spec", spec, "-o", str(tmp_path / "a.gif"))
     err = capsys.readouterr().err
     assert "gif: 2 frames" in err and "show images only up to" in err

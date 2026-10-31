@@ -29,18 +29,10 @@ from pathlib import Path
 from weather_skills_core import UsageError, weather_skill
 from weather_skills_core.units import dequantify_dataset
 
-from weather_skills_plotting import export
-from weather_skills_plotting.geodata import load_geojson
+from weather_skills_plotting.bind import GeoLines, load_geojson, resolve
+from weather_skills_plotting.export import export, key_hint, validate
 from weather_skills_plotting.lint import UnboundDataError, check_bindings
-from weather_skills_plotting.refs import GeoLines, resolve
-from weather_skills_plotting.spec import (
-    SpecArg,
-    evaluate,
-    input_metadata,
-    key_hint,
-    recipe_text,
-    validate,
-)
+from weather_skills_plotting.render import SpecArg, evaluate, input_metadata, recipe_text
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
 _SKILL_VERSION = "1.0.10"

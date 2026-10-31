@@ -1,4 +1,4 @@
-"""The ``--spec``: Jsonnet that evaluates to a Plotly figure, checked by Plotly itself."""
+"""Render: evaluate the ``--spec`` Jsonnet, with the inputs' metadata, to a Plotly figure."""
 
 from __future__ import annotations
 
@@ -19,9 +19,6 @@ RECIPES_DIR = Path(__file__).parents[2] / "recipes"
 
 # 1-D coordinates up to this long are listed in std.extVar('inputs') with their values.
 MAX_LISTED_COORD = 400
-
-# Plotly keys a scatter takes under ``marker``, not at the top of the trace.
-MARKER_KEYS = frozenset({"showscale", "colorscale", "colorbar", "cmin", "cmax", "reversescale"})
 
 
 class SpecArg:
@@ -214,73 +211,3 @@ def palette_names() -> list[str]:
         "palettes", "std.objectFields(import 'palettes.libsonnet')", jpathdir=[str(LIB_DIR)]
     )
     return json.loads(text)
-
-
-def validate(fig: dict):
-    """A ``go.Figure`` from the resolved spec; Plotly's own checks, naming the trace."""
-    import plotly.graph_objects as go
-
-    for i, trace in enumerate(fig.get("data") or []):
-        if not isinstance(trace, dict):
-            raise UsageError(f"data[{i}] must be an object (a Plotly trace)")
-        try:
-            go.Figure(data=[trace])
-        except ValueError as exc:
-            raise UsageError(f"data[{i}]: {_explain(exc)}") from None
-    try:
-        return go.Figure(fig)
-    except ValueError as exc:
-        raise UsageError(f"--spec: {_explain(exc)}") from None
-
-
-def key_hint(kind: str, key: str) -> str:
-    """What to do about ``key``, which a ``kind`` trace (or layout object) doesn't have."""
-    import plotly.graph_objects as go
-
-    if key in ("animation", "animation_frame", "animation_group"):
-        return (
-            " animation_frame / animation_group are Plotly Express arguments, not figure "
-            "keys; animate with frames (--recipe animation)."
-        )
-    if kind in ("scatter", "scattergl") and key in MARKER_KEYS | {"zmin", "zmax", "zmid"}:
-        under = {"zmin": "cmin", "zmax": "cmax", "zmid": "cmid"}.get(key, key)
-        return f' On a {kind} it goes under marker: {{"marker": {{"{under}": …}}}}.'
-    if kind == "heatmap" and key in ("line", "marker", "mode", "text"):
-        return " Outlines, markers and labels are scatter traces of their own."
-    if kind == "bar" and key == "mode":
-        return " Remove it: bars have no mode."
-    trace_class = getattr(go, kind.capitalize(), None) or next(
-        (getattr(go, n) for n in dir(go) if n.lower() == kind), None
-    )
-    names = sorted(getattr(trace_class(), "_valid_props", [])) if trace_class else []
-    return f" Its properties: {', '.join(names)}." if names else ""
-
-
-def _explain(exc) -> str:
-    """Plotly's error in one or two lines, with what to do for the usual mix-ups.
-
-    Plotly's own "Did you mean" guesses are dropped: they are often wrong
-    (zmin → line, mode → base).
-    """
-
-    text = str(exc).strip()
-    reference = "\nKeys are standard Plotly: https://plotly.com/python/reference/"
-    bad_key = re.search(r"object of type plotly\.graph_objs\.([\w.]+): '(\w+)'", text)
-    if bad_key:
-        kind, key = bad_key.group(1).split(".")[-1].lower(), bad_key.group(2)
-        return f"a {kind} has no property {key!r}.{key_hint(kind, key)}" + reference
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    message = " ".join(lines[:2])
-    if re.search(r"for the '[xy]' property", text) and "Received value: '" in text:
-        message += (
-            " x and y take arrays; one value (a scalar coordinate such as a forecast's init "
-            "time, or a single picked position) is not an axis. For a forecast, run "
-            "step-to-time and use the valid times."
-        )
-    if "'colorscale' property" in text:
-        message += (
-            f" A colorscale is a Plotly name (Viridis, RdBu, YlGnBu, …) or a list of "
-            f"[position, color]; a class palette goes through ws.classBar / ws.stepped "
-            f"(ws.palettes has {', '.join(palette_names())})."
-        )
-    return message + reference

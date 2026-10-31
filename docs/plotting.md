@@ -4,19 +4,23 @@ How the figure stack works. The agent how-to is the skill's
 [`SKILL.md`](../skills/plot/SKILL.md); runnable examples are in
 [`skills/plot/recipes/`](../skills/plot/recipes/). This page is the design.
 
-## How a figure is made: spec → render → lint → bind
+## How a figure is made: spec → render → lint → bind → export
 
 1. **Spec.** Jsonnet that evaluates to a Plotly figure, with an `@` reference
    wherever data goes. Inputs are named on the command line.
-2. **Render.** `spec.py` evaluates the Jsonnet (gojsonnet) with
+2. **Render.** `render.py` evaluates the Jsonnet (gojsonnet) with
    `std.extVar('inputs')`, giving plain Plotly JSON with the references still
    unbound (what `--dump-spec` prints).
 3. **Lint.** `lint.py` checks that JSON against Plotly's attribute schema
    before any data is read: every key that can put data on the chart holds an
    `@` binding (details below).
-4. **Bind.** `refs.py` resolves each reference from its input, checking the
-   operations and shapes; then `go.Figure` validates the result and it is
-   exported.
+4. **Bind.** `bind.py` resolves each reference from its input, checking the
+   operations and shapes, and draws Natural Earth and GeoJSON lines.
+5. **Export.** `export.py` has `go.Figure` validate the result, writes each
+   `-o` file and prints its QA lines.
+
+One Python module per step, in `skills/plot/scripts/weather_skills_plotting/`,
+with the Jsonnet library in its `lib/`.
 
 ## The spec is Jsonnet that evaluates to a Plotly figure
 
@@ -55,7 +59,7 @@ is a reference, resolved after evaluation. Jsonnet never sees values.
 
 ## References select, they don't compute
 
-`refs.py` parses each reference with `ast.parse(mode="eval")` and walks it
+`bind.py` parses each reference with `ast.parse(mode="eval")` and walks it
 against a fixed table; nothing is `eval`'d. Each method has one job:
 
 | Job | Methods |
@@ -75,8 +79,8 @@ inputs.
 
 ## Lint before binding: data only through references
 
-The flow is spec → render → lint → bind. `lint.py` walks the rendered figure
-against Plotly's own attribute schema (`data_keys.py` reads
+The flow is spec → render → lint → bind → export. `lint.py` walks the rendered
+figure against Plotly's own attribute schema (it reads
 `plotly/validators/_validators.json` and sorts every leaf key) and raises,
 listing every problem, unless each key that can put data on the chart holds
 an `@` binding:
@@ -93,7 +97,7 @@ an `@` binding:
 
 Constants on a data axis come in through `--const NAME=VALUE` as
 `@const.NAME`, so even a threshold line is a recorded input rather than a
-number in the spec. `python -m weather_skills_plotting.data_keys` writes the
+number in the spec. `python -m weather_skills_plotting.lint` writes the
 key listing as JSON for a Plotly upgrade to be reviewed.
 
 Shape rules are the only other logic: `z` must be 2-D (a lat/lon grid is
