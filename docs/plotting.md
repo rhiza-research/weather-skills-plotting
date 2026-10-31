@@ -25,8 +25,8 @@ flowchart LR
   Meta --> Eval
   Lib["lib/ws.libsonnet"] --> Eval
   Eval --> Dump["--dump-spec"]
-  Eval --> Check["check references and literal arrays"]
-  Check --> Resolve["resolve @ strings from the Zarrs"]
+  Eval --> Lint["lint: every data key holds an @ binding"]
+  Lint --> Resolve["bind: resolve @ strings from the Zarrs"]
   Resolve --> Validate["go.Figure: Plotly's own validation"]
   Validate --> Out["PNG / JPG / PDF / SVG / GIF (kaleido) or HTML"]
 ```
@@ -54,10 +54,32 @@ against a fixed table; nothing is `eval`'d. Each method has one job:
 So every value drawn is a value stored in an input. Arithmetic, averages,
 smoothing, regridding and masking are refused with the data skill that does
 the job (`summarize-dim`, `aggregate-temporal`, `unit-convert`, `difference`,
-`coarsen` / `downscale`, `clip-region`). A trace may hold up to 10 typed-in
-numbers; longer literal arrays must come from an input. The recipe tests
-check the invariant: each recipe's resolved arrays hold only values stored in
-its inputs.
+`coarsen` / `downscale`, `clip-region`). The recipe tests check the
+invariant: each recipe's resolved arrays hold only values stored in its
+inputs.
+
+## Lint before binding: data only through references
+
+The flow is spec → render → lint → bind. `lint.py` walks the rendered figure
+against Plotly's own attribute schema (`data_keys.py` reads
+`plotly/validators/_validators.json` and sorts every leaf key) and raises,
+listing every problem, unless each key that can put data on the chart holds
+an `@` binding:
+
+- data keys (`data_array` in the schema: `x`, `z`, `dimensions[].values`, …);
+- per-point keys (`arrayOk`: `marker.color`, `text`, …) when given a list;
+- generator keys (`x0` / `dx`, `base`, error-bar `value`) and error bars that
+  would fall back to Plotly's default ±10;
+- keys the schema types loosely but that carry data (`geojson`, an image
+  `source`, `selectedpoints`);
+- shapes, annotations, images and selections on a data axis, menu and slider
+  `args`, frames and templates;
+- keys Plotly doesn't define, which can't be checked.
+
+Constants on a data axis come in through `--const NAME=VALUE` as
+`@const.NAME`, so even a threshold line is a recorded input rather than a
+number in the spec. `python -m weather_skills_plotting.data_keys` writes the
+key listing as JSON for a Plotly upgrade to be reviewed.
 
 Shape rules are the only other logic: `z` must be 2-D (a lat/lon grid is
 written with rows as latitudes), `customdata` 1-D or 2-D, everything else one

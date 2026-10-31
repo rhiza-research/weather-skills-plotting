@@ -36,7 +36,7 @@ Design rule: [references select, they don't compute](docs/plotting.md#references
 
 ## Skill correctness tests
 
-Per-skill tests live in `skills/<name>/tests/`. Library-level tests (references
+Per-skill tests live in `skills/<name>/tests/`. Library-level tests (the binding lint, references
 and their guardrails, the Jsonnet library) live in the top-level
 `tests/`. Run everything with `uv sync --group dev && uv run pytest`. Tests
 that write PNGs need Chrome for kaleido (`uv run plotly_get_chrome -y`).

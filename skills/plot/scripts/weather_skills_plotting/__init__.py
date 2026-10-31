@@ -7,6 +7,8 @@ expects data, a string starting with ``@`` names it: ``"@OBS.precip.isel(time=0)
 Module                 Role
 =====================  ========================================================
 :mod:`.spec`           Evaluate the Jsonnet, input metadata, Plotly validation
+:mod:`.lint`           Every data key holds an ``@`` binding (checked before binding)
+:mod:`.data_keys`      Plotly's data-carrying keys, read from its attribute schema
 :mod:`.refs`           Parse, check and resolve ``@`` references
 :mod:`.geodata`        Natural Earth (``NE``) and GeoJSON lines
 :mod:`.qa`             Pixel hash + finite-data report printed after export

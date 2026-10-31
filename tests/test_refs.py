@@ -5,7 +5,7 @@ import pytest
 from weather_skills_core.errors import UsageError
 
 from conftest import make_forecast, make_gridded
-from weather_skills_plotting.refs import JOBS, METHODS, UPSTREAM, check_literals, resolve
+from weather_skills_plotting.refs import JOBS, METHODS, UPSTREAM, resolve
 
 
 @pytest.fixture
@@ -111,15 +111,6 @@ def test_errors_name_the_fix(inputs, ref, match):
 
 def test_lead_days(inputs):
     assert one("@FC.step.dt.days", inputs).tolist() == [0, 1, 2]
-
-
-def test_literal_values_are_capped():
-    check_literals(
-        {"data": [{"y": list(range(10))}], "layout": {"xaxis": {"tickvals": list(range(50))}}}
-    )
-    check_literals({"data": [{"colorscale": [[i / 20, "#000"] for i in range(21)]}]})
-    with pytest.raises(UsageError, match=r"frames\[0\].data\[0\].z holds 12"):
-        check_literals({"frames": [{"data": [{"z": [[1] * 6, [2] * 6]}]}]})
 
 
 def test_at_at_is_a_literal_at(inputs):

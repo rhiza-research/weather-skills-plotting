@@ -31,8 +31,16 @@ from weather_skills_core.units import dequantify_dataset
 
 from weather_skills_plotting import export
 from weather_skills_plotting.geodata import load_geojson
+from weather_skills_plotting.lint import UnboundDataError, check_bindings
 from weather_skills_plotting.refs import GeoLines, resolve
-from weather_skills_plotting.spec import SpecArg, evaluate, input_metadata, recipe_text, validate
+from weather_skills_plotting.spec import (
+    SpecArg,
+    evaluate,
+    input_metadata,
+    key_hint,
+    recipe_text,
+    validate,
+)
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
 _SKILL_VERSION = "1.0.10"
@@ -69,9 +77,21 @@ def parse_input(value):
             f"fc_week1); got {value!r}. NAME is how the spec refers to the file ('@NAME.var'); "
             'readable legend text goes in the trace\'s "name"'
         )
-    if name == "NE":
-        raise argparse.ArgumentTypeError("-i NAME 'NE' is the built-in Natural Earth input")
+    if name in ("NE", "const"):
+        raise argparse.ArgumentTypeError(
+            f"-i NAME {name!r} is built in ('NE' is Natural Earth, 'const' the --const values)"
+        )
     return InputArg(path, name)
+
+
+def parse_const(value):
+    key, sep, text = str(value).partition("=")
+    if not sep or not _NAME.fullmatch(key):
+        raise argparse.ArgumentTypeError(f"--const expects NAME=VALUE; got {value!r}")
+    try:
+        return key, float(text)
+    except ValueError:
+        return key, text
 
 
 def parse_ext(value):
@@ -113,6 +133,14 @@ def parse_ext(value):
     help="KEY=VALUE, read in the spec as std.extVar('KEY'). Repeat.",
 )
 @weather_skill.argument(
+    "--const",
+    type=parse_const,
+    action="append",
+    help="NAME=VALUE, a constant to place on a data axis: '@const.NAME' (a threshold line at "
+    "--const nino=0.5, a date). Numbers and text; repeat. Every value drawn is an input or one "
+    "of these, never typed into the spec.",
+)
+@weather_skill.argument(
     "--scale",
     type=float,
     default=1,
@@ -132,7 +160,7 @@ def parse_ext(value):
     probe=True,
     help="Print (-) or save (a path) the evaluated spec, @ references unresolved, and draw nothing.",
 )
-def plot(inputs, output, spec, jpath, ext_str, scale, recipe, dump_spec, **kwargs):
+def plot(inputs, output, spec, jpath, ext_str, const, scale, recipe, dump_spec, **kwargs):
     """Draw weather-skills Zarrs with a Jsonnet spec that evaluates to a Plotly figure."""
     if recipe is not None:
         print(recipe_text(recipe))
@@ -165,11 +193,29 @@ def plot(inputs, output, spec, jpath, ext_str, scale, recipe, dump_spec, **kwarg
     if output is None:
         raise UsageError("--output is required unless --dump-spec is set")
     outputs = output if isinstance(output, list) else [output]
-    # GeoJSON inputs resolve as lines: '@KENYA.x' / '@KENYA.y'.
+    # Lint: every key that can put data on the chart holds an @ reference, not typed-in values.
+    try:
+        check_bindings(figure)
+    except UnboundDataError as exc:
+        lines = []
+        for path, message in exc.problems:
+            unknown = re.match(r"unknown key for ([\w.]+)", message)
+            if unknown:
+                # A key Plotly doesn't have: say what to do instead.
+                kind, key = unknown.group(1).split(".")[-1], path.rsplit(".", 1)[-1]
+                message = f"a {kind} has no property {key!r}.{key_hint(kind, key)}"
+            lines.append(f"  {path}: {message}")
+        raise UsageError(
+            f"the spec has {len(lines)} problem(s) before binding:\n" + "\n".join(lines) + "\n"
+            "Data comes from the inputs: -i FILE=NAME, then '@NAME.var' in the key. A constant "
+            "on a data axis (a threshold line) is --const NAME=VALUE, then '@const.NAME'"
+        ) from None
+    # Bind: GeoJSON inputs resolve as lines ('@KENYA.x' / '@KENYA.y'), constants as '@const.NAME'.
     sources = {
         name: GeoLines(value, name) if isinstance(value, list) else value
         for name, value in datasets.items()
     }
+    sources["const"] = dict(const or ())
     resolved, _ = resolve(figure, sources)
     fig = validate(resolved)
     n_panels = len(list(fig.select_xaxes()))

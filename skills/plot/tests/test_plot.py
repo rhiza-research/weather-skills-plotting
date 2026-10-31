@@ -170,6 +170,8 @@ def _recipe_inputs(recipe: Path, paths: dict) -> list[str]:
     argv = []
     for name in names:
         argv += ["-i", f"{paths[name]}={name}"]
+    for const in re.findall(r"--const (\S+)", usage):
+        argv += ["--const", const]
     return argv
 
 
@@ -187,10 +189,15 @@ def test_every_recipe_draws_only_stored_values(tmp_path, plot_fn, capsys, recipe
     run_skill(plot_fn, *argv, "--spec", str(recipe), "-o", str(out))
     assert out.exists() and "data: not null" in capsys.readouterr().out
 
-    names = [a.split("=")[-1] for a in argv[1::2]]
+    names = [
+        a.split("=")[-1] for flag, a in zip(argv[::2], argv[1::2], strict=True) if flag == "-i"
+    ]
     values = {n: load_geojson(paths[n]) if n == "KENYA" else files[n] for n in names}
     meta = {n: input_metadata(v) for n, v in values.items()}
     sources = {n: GeoLines(v, n) if isinstance(v, list) else v for n, v in values.items()}
+    sources["const"] = dict(
+        plot_mod.parse_const(c) for c in argv[1::2] if c.count("=") == 1 and "/" not in c
+    )
     resolved, found = resolve(evaluate(SpecArg(str(recipe)), meta), sources)
     for path, ref in found.items():
         name = ref[1:].split(".")[0]
@@ -295,7 +302,7 @@ def test_gif_needs_frames(tmp_path, plot_fn, capsys):
     [
         (["-i", "x.zarr"], "-i expects PATH=NAME"),
         (["-i", "x.zarr=IMERG Final"], "-i expects PATH=NAME"),
-        (["-i", "x.zarr=NE"], "built-in Natural Earth"),
+        (["-i", "x.zarr=NE"], "is built in"),
     ],
 )
 def test_bad_input_name(plot_fn, capsys, argv, match):
@@ -316,7 +323,13 @@ def test_bad_input_name(plot_fn, capsys, argv, match):
         ("{data: [{type: 'heatmap', z: '@G.precip'}]}", "needs 2-D"),
         ("{data: [{type: 'heatmap', z: '@G.prcp.isel(time=0)'}]}", "data variables: precip"),
         ("{data: [{type: 'heatmap', z: '@X.precip'}]}", "'X' is not an input; inputs are G"),
-        ("{data: [{type: 'scatter', y: [1,2,3,4,5,6,7,8,9,10,11]}]}", "11 typed-in numbers"),
+        ("{data: [{type: 'scatter', y: [1, 2, 3]}]}", "data[0].y: data key needs an @binding"),
+        (
+            "{data: [{type: 'scatter', x: '@G.time', y: '@G.precip.isel(lat=0, lon=0)'}],"
+            " layout: {shapes: [{type: 'line', x0: 0.5, x1: 0.5, yref: 'paper', y0: 0, y1: 1}]}}",
+            "'x0' is on a data axis",
+        ),
+        ("{data: [{type: 'box', y: '@G.precip', x0: 'Day 1'}]}", "generates a value"),
     ],
 )
 def test_spec_errors(tmp_path, plot_fn, capsys, spec, match):
@@ -327,12 +340,39 @@ def test_spec_errors(tmp_path, plot_fn, capsys, spec, match):
 
 
 def test_literal_at_sign(tmp_path, plot_fn, capsys):
-    spec = "{data: [{type: 'scatter', x: [1], y: [1], text: ['@@rhiza'], mode: 'text'}]}"
+    spec = "{layout: {annotations: [{text: '@@rhiza', xref: 'paper', yref: 'paper', x: 0, y: 1}]}}"
     run_skill(plot_fn, "--spec", spec, "--dump-spec", "-")
-    assert json.loads(capsys.readouterr().out)["data"][0]["text"] == ["@@rhiza"]
+    assert json.loads(capsys.readouterr().out)["layout"]["annotations"][0]["text"] == "@@rhiza"
     out = tmp_path / "t.html"
     run_skill(plot_fn, "--spec", spec, "-o", str(out))
     assert '"@rhiza"' in out.read_text()
+
+
+def test_constants_bind_on_a_data_axis(tmp_path, plot_fn, capsys):
+    grid = write_zarr(make_gridded(n_time=2), tmp_path / "grid.zarr")
+    spec = (
+        "{data: [{type: 'scatter', x: '@G.time', y: '@G.precip.isel(lat=0, lon=0)'}],"
+        " layout: {shapes: [{type: 'line', x0: '@const.day', x1: '@const.day', yref: 'paper',"
+        " y0: 0, y1: 1}], yaxis: {range: [0, '@const.top']}}}"
+    )
+    out = tmp_path / "c.html"
+    run_skill(
+        plot_fn,
+        "-i",
+        f"{grid}=G",
+        "--const",
+        "day=2026-01-02",
+        "--const",
+        "top=5",
+        "--spec",
+        spec,
+        "-o",
+        str(out),
+    )
+    assert '"x0":"2026-01-02"' in out.read_text().replace(" ", "")
+    with pytest.raises(SystemExit):
+        run_skill(plot_fn, "-i", f"{grid}=G", "--spec", spec, "-o", str(tmp_path / "d.html"))
+    assert "no constant 'day'; pass it with --const day=VALUE" in capsys.readouterr().err
 
 
 def test_still_image_refuses_more_than_100_panels(tmp_path, plot_fn, capsys):

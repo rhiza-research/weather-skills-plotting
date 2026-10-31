@@ -231,38 +231,42 @@ def validate(fig: dict):
         raise UsageError(f"--spec: {_explain(exc)}") from None
 
 
+def key_hint(kind: str, key: str) -> str:
+    """What to do about ``key``, which a ``kind`` trace (or layout object) doesn't have."""
+    import plotly.graph_objects as go
+
+    if key in ("animation", "animation_frame", "animation_group"):
+        return (
+            " animation_frame / animation_group are Plotly Express arguments, not figure "
+            "keys; animate with frames (--recipe animation)."
+        )
+    if kind in ("scatter", "scattergl") and key in MARKER_KEYS | {"zmin", "zmax", "zmid"}:
+        under = {"zmin": "cmin", "zmax": "cmax", "zmid": "cmid"}.get(key, key)
+        return f' On a {kind} it goes under marker: {{"marker": {{"{under}": …}}}}.'
+    if kind == "heatmap" and key in ("line", "marker", "mode", "text"):
+        return " Outlines, markers and labels are scatter traces of their own."
+    if kind == "bar" and key == "mode":
+        return " Remove it: bars have no mode."
+    trace_class = getattr(go, kind.capitalize(), None) or next(
+        (getattr(go, n) for n in dir(go) if n.lower() == kind), None
+    )
+    names = sorted(getattr(trace_class(), "_valid_props", [])) if trace_class else []
+    return f" Its properties: {', '.join(names)}." if names else ""
+
+
 def _explain(exc) -> str:
     """Plotly's error in one or two lines, with what to do for the usual mix-ups.
 
     Plotly's own "Did you mean" guesses are dropped: they are often wrong
     (zmin → line, mode → base).
     """
-    import plotly.graph_objects as go
 
     text = str(exc).strip()
     reference = "\nKeys are standard Plotly: https://plotly.com/python/reference/"
     bad_key = re.search(r"object of type plotly\.graph_objs\.([\w.]+): '(\w+)'", text)
     if bad_key:
         kind, key = bad_key.group(1).split(".")[-1].lower(), bad_key.group(2)
-        message = f"a {kind} has no property {key!r}."
-        if key == "animation":
-            message += (
-                " animation_frame / animation_group are Plotly Express arguments, not figure "
-                "keys; animate with frames (--recipe animation)."
-            )
-        elif kind in ("scatter", "scattergl") and key in MARKER_KEYS | {"zmin", "zmax", "zmid"}:
-            under = {"zmin": "cmin", "zmax": "cmax", "zmid": "cmid"}.get(key, key)
-            message += f' On a {kind} it goes under marker: {{"marker": {{"{under}": …}}}}.'
-        elif kind == "heatmap" and key in ("line", "marker", "mode", "text"):
-            message += " Outlines, markers and labels are scatter traces of their own."
-        elif kind == "bar" and key == "mode":
-            message += " Remove it: bars have no mode."
-        else:
-            trace_class = getattr(go, bad_key.group(1).split(".")[-1], None)
-            names = sorted(getattr(trace_class(), "_valid_props", [])) if trace_class else []
-            if names:
-                message += f" Its properties: {', '.join(names)}."
-        return message + reference
+        return f"a {kind} has no property {key!r}.{key_hint(kind, key)}" + reference
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     message = " ".join(lines[:2])
     if re.search(r"for the '[xy]' property", text) and "Received value: '" in text:

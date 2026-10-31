@@ -42,9 +42,6 @@ DT_FIELDS = ("year", "month", "day", "hour", "dayofyear", "days")
 # accepted only when its JSON path ends in one of these keys (or sits in a range).
 LIMIT_KEYS = frozenset({"zmin", "zmax", "zmid", "cmin", "cmax", "cmid", "range", "tickvals"})
 
-# A trace key holding a literal numeric list longer than this must be an input instead.
-MAX_LITERAL_VALUES = 10
-LITERAL_EXEMPT_KEYS = frozenset({"colorscale", "tickvals", "ticktext", "range", "domain"})
 
 # Calculations the plotter refuses, and the data skill that does each.
 UPSTREAM = {
@@ -94,6 +91,13 @@ class NaturalEarth:
 class NELayer:
     def __init__(self, layer, scale):
         self.layer, self.scale = layer, scale
+
+
+class _Constants:
+    """``@const.NAME``: a number or text passed with --const NAME=VALUE."""
+
+    def __init__(self, values):
+        self.values = values
 
 
 class _Accessor:
@@ -223,17 +227,21 @@ def _method(base, name, args, kwargs, ref):
             )
         return da.transpose(*order)
     if name == "flat":
+        # A 2-D selection as one value per cell (a lat/lon grid row by row), and with a dim
+        # named, that dim's coordinate for each value: grid cells as points, or members
+        # with their lead for one box per lead.
+        if da.ndim != 2:
+            raise UsageError(f"{ref}: .flat() needs two dims; dims are {list(da.dims)}")
         lat, lon = cf_dim(da, "latitude"), cf_dim(da, "longitude")
-        if set(da.dims) != {lat, lon}:
-            raise UsageError(
-                f"{ref}: .flat() needs a lat/lon grid and nothing else; dims are {list(da.dims)}"
-            )
-        grid = da.transpose(lat, lon)
+        grid = da.transpose(lat, lon) if set(da.dims) == {lat, lon} else da
         if not args:
             return np.asarray(grid.values).ravel()
         which = _dim(da, args[0], ref)
-        lats, lons = np.asarray(da[lat].values), np.asarray(da[lon].values)
-        return np.repeat(lats, lons.size) if which == lat else np.tile(lons, lats.size)
+        values = np.asarray(grid[which].broadcast_like(grid).transpose(*grid.dims).values).ravel()
+        if values.dtype.kind == "m":
+            # A lead time, in days.
+            values = values / np.timedelta64(1, "D")
+        return values
     if name in ("min", "max", "quantile"):
         if kwargs or (name != "quantile" and args) or (name == "quantile" and len(args) != 1):
             raise UsageError(
@@ -264,6 +272,8 @@ def evaluate(text: str, inputs: dict):
         if isinstance(node, ast.Name):
             if node.id == "NE":
                 return NaturalEarth()
+            if node.id == "const":
+                return _Constants(inputs.get("const", {}))
             if node.id not in inputs:
                 raise UsageError(
                     f"{ref}: {node.id!r} is not an input; inputs are "
@@ -309,6 +319,13 @@ def _last_method(node):
 def _attribute(base, attr, ref):
     if attr.startswith("_"):
         raise UsageError(f"{ref}: {attr!r} is not allowed")
+    if isinstance(base, _Constants):
+        if attr not in base.values:
+            raise UsageError(
+                f"{ref}: no constant {attr!r}; pass it with --const {attr}=VALUE "
+                f"(given: {', '.join(base.values) or 'none'})"
+            )
+        return base.values[attr]
     if isinstance(base, NaturalEarth):
         from weather_skills_plotting.geodata import NE_LAYERS
 
@@ -447,7 +464,6 @@ def resolve(spec, inputs: dict):
 
     Returns a new spec and ``{path: reference}`` for every reference resolved.
     """
-    check_literals(spec)
     for path, node in _traces_and_layout(spec):
         if "meta" in node:
             raise UsageError(
@@ -571,36 +587,3 @@ def _limit_path(path: str) -> bool:
     return bool(keys) and (
         keys[-1] in LIMIT_KEYS or "range" in keys[-2:] or "tickvals" in keys[-2:]
     )
-
-
-def check_literals(spec):
-    """Refuse literal numeric arrays longer than MAX_LITERAL_VALUES in traces."""
-    traces = [(path, node) for path, node in _traces_and_layout(spec) if path != "layout"]
-
-    def count(value):
-        if isinstance(value, bool):
-            return 0
-        if isinstance(value, (int, float)):
-            return 1
-        if isinstance(value, list):
-            return sum(count(v) for v in value)
-        return 0
-
-    def walk(node, path):
-        if isinstance(node, dict):
-            for k, v in node.items():
-                if k in LITERAL_EXEMPT_KEYS:
-                    continue
-                if isinstance(v, list) and count(v) > MAX_LITERAL_VALUES:
-                    raise UsageError(
-                        f"{path}.{k} holds {count(v)} typed-in numbers; data to draw comes from "
-                        f"an input (-i FILE=NAME, then '@NAME.var'). Up to "
-                        f"{MAX_LITERAL_VALUES} literal values are fine (markers, lines)"
-                    )
-                walk(v, f"{path}.{k}")
-        elif isinstance(node, list):
-            for i, v in enumerate(node):
-                walk(v, f"{path}[{i}]")
-
-    for path, trace in traces:
-        walk(trace, path)
