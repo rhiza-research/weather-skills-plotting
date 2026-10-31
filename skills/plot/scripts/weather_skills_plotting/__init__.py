@@ -10,6 +10,6 @@ Module                 Step
 :mod:`.lint`           Every data key holds an ``@`` binding (Plotly's schema)
 :mod:`.bind`           Resolve ``@`` references, Natural Earth and GeoJSON lines
 :mod:`.export`         Plotly's checks, the file, and the QA lines
-``lib/``               ``ws.libsonnet`` helpers, palettes and themes
+``lib/``               ``ws.libsonnet`` helpers and palettes
 =====================  ========================================================
 """

@@ -41,11 +41,6 @@ def test_every_palette_makes_a_valid_coloraxis(name):
     go.Figure(layout={"coloraxis": ev(f"ws.stepped(ws.palettes.{name})")})
 
 
-def test_tropical_tidbits_palettes():
-    axis = ev("local tt = import 'themes/tropical_tidbits.libsonnet'; ws.stepped(tt.tt_wind)")
-    go.Figure(layout={"coloraxis": axis})
-
-
 def test_map_grid_and_titles_are_valid_plotly():
     layout = ev(
         f"ws.grid({BBOX}, 2, 3) + {{annotations: [ws.panelTitle(i, 'p') for i in std.range(0, 5)]}}"

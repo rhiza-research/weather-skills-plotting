@@ -192,8 +192,7 @@ def evaluate(spec: SpecArg, inputs_meta: dict, *, ext_strs=()) -> dict:
             message += "\nSKILL.md lists each ws.libsonnet function's parameters"
         if "couldn't open import" in message:
             message += (
-                "\nImports found by name: ws.libsonnet, palettes.libsonnet, "
-                "themes/tropical_tidbits.libsonnet, and the recipes "
+                "\nImports found by name: ws.libsonnet, palettes.libsonnet, and the recipes "
                 f"({', '.join(n + '.jsonnet' for n in recipe_names())}); "
                 "and any .libsonnet beside the spec or in the working folder"
             )
