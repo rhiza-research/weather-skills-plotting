@@ -1,6 +1,7 @@
-// Ensemble members as thin grey lines with the ensemble mean in bold, at the grid
-// cell nearest a point. The mean comes from summarize-dim --dim number --method mean.
-// plot.py -i forecast.zarr=ENS -i forecast_mean.zarr=MEAN --spec members.jsonnet -o members.png
+// Ensemble members as thin grey lines with the ensemble mean in bold, at one point.
+// The point is the grid cell nearest a lat / lon. Both inputs are on valid dates
+// (step-to-time); the mean comes from summarize-dim --dim number --method mean.
+// plot.py -i forecast_valid.zarr=ENS -i forecast_valid_mean.zarr=MEAN --spec members.jsonnet -o members.png
 local inputs = std.extVar('inputs');
 local pt = '.sel(lat=1.2, lon=10.8, method="nearest")';
 {

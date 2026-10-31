@@ -1,5 +1,7 @@
 // One map per forecast step in a grid, sharing one colorbar, with panel titles.
-// plot.py -i forecast.zarr=FC --spec panels.jsonnet -o panels.png
+// FC has no member dim: an ensemble mean (summarize-dim --dim number) or one member
+// (select).
+// plot.py -i forecast_mean.zarr=FC --spec panels.jsonnet -o panels.png
 local ws = import 'ws.libsonnet';
 local inputs = std.extVar('inputs');
 local bbox = inputs.FC.bbox;

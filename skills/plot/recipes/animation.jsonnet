@@ -1,7 +1,7 @@
-// A map played through time: one frame per time, play / pause and a slider in HTML,
-// the same frames as a looping .gif. Frame k replaces trace 0 (the field). A scatter
-// trace that changes in the frames (wind arrows, storm tracks) must be scattergl: an
-// SVG scatter in a frame blanks the heatmap on every other paint.
+// A map played through time, with play / pause and a slider in HTML or as a looping .gif.
+// One frame per time, the same frames in both. Frame k replaces trace 0 (the field). A
+// scatter trace that changes in the frames (wind arrows, storm tracks) must be
+// scattergl: an SVG scatter in a frame blanks the heatmap on every other paint.
 // plot.py -i rain_daily.zarr=OBS --spec animation.jsonnet -o rain.html -o rain.gif
 local ws = import 'ws.libsonnet';
 local inputs = std.extVar('inputs');

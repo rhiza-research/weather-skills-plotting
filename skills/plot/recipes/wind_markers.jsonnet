@@ -1,12 +1,13 @@
-// Wind speed shading with arrows drawn as Plotly markers, each as long as its wind is
-// strong, in pixels: no extra data step (wind-speed-direction alone gives wind_speed and
-// wind_from_direction). Each arrow is a line-ns shaft and an arrow-down head, both centred
-// on the cell and turned to the from-direction. Plotly draws line-ns 1.4 times its size
-// long, so shaft size = speed * scale / 0.7 and head standoff = speed * scale put the head
-// tip on the shaft end: the arrow is 2 * scale px long per unit of speed, and every head
-// is the same size. Arithmetic like
-// this is allowed only on marker sizes; the data drawn is unchanged. For arrows that keep
-// their length relative to the map (a true quiver), use the wind recipe.
+// Wind speed shading with arrows drawn as Plotly markers, sized in pixels by speed.
+// Each arrow is as long as its wind is strong, in pixels: no extra data step
+// (wind-speed-direction alone gives wind_speed and wind_from_direction). Each arrow is a
+// line-ns shaft and an arrow-down head, both centred on the cell and turned to the
+// from-direction. Plotly draws line-ns 1.4 times its size long, so shaft size = speed *
+// scale / 0.7 and head standoff = speed * scale put the head tip on the shaft end: the
+// arrow is 2 * scale px long per unit of speed, and every head is the same size.
+// Arithmetic like this is allowed only on marker sizes; the data drawn is unchanged. For
+// arrows that keep their length relative to the map (a true quiver), use the wind
+// recipe.
 // plot.py -i wind_sd.zarr=WD --spec wind_markers.jsonnet -o wind.png
 local ws = import 'ws.libsonnet';
 local inputs = std.extVar('inputs');

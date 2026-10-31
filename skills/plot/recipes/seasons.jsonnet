@@ -1,5 +1,6 @@
-// Past seasons and this year's forecast plume on one day-of-year axis. Each year is
-// its own input; the forecast is on valid dates (step-to-time) with a number dim.
+// Past seasons and this year's forecast plume on one day-of-year axis.
+// Each year is its own input; the forecast is on valid dates (step-to-time) with a
+// number dim.
 // plot.py -i y2024.zarr=Y2024 -i y2025.zarr=Y2025 -i fc_valid.zarr=FCA --spec seasons.jsonnet -o seasons.png
 local ws = import 'ws.libsonnet';
 local inputs = std.extVar('inputs');

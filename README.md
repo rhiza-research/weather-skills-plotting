@@ -52,8 +52,7 @@ claude plugin install rhiza-plotting@weather-skills-plotting
 
 ## Layout
 
-Same packaging model as [`chc-skills`](https://github.com/rhiza-research/chc-skills):
-canonical skills under `skills/<name>/`, Claude plugin via `.claude-plugin/` +
+Canonical skills under `skills/<name>/`, Claude plugin via `.claude-plugin/` +
 `agents/`. The one skill carries its own rendering engine,
 `skills/plot/scripts/weather_skills_plotting/`, next to its script: the skill
 folder is self-contained (Python finds the package on the script's own path),

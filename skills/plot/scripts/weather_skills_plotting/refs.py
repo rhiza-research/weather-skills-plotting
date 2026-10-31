@@ -6,7 +6,9 @@ against a fixed table. Nothing is ``eval``'d.
 
 Every operation in the table has one job: select values, reshape them, label
 them, or give a display limit. Nothing computes new values, so every value
-drawn is a value stored in an input; calculations belong in data skills.
+drawn is a value stored in an input; calculations belong in data skills. The one
+exception is a size in pixels: ``+ - * /`` by a number or constant, only on
+``SCALED_KEYS`` (marker.size, marker.standoff, marker.line.width, textfont.size).
 """
 
 from __future__ import annotations
@@ -513,14 +515,6 @@ def resolve(spec, inputs: dict):
 
     Returns a new spec and ``{path: reference}`` for every reference resolved.
     """
-    for path, node in _traces_and_layout(spec):
-        if "meta" in node:
-            raise UsageError(
-                f"{path}.meta: plot has no meta keys. A palette is "
-                "layout: ws.classBar(palette, title) (or a Plotly colorscale); an outline is a "
-                "scatter with x: '@NAME.x', y: '@NAME.y'; data is an @ reference in the "
-                "Plotly attribute itself (see --recipe)"
-            )
     found = {}
     grids = []
     # The dim and coordinate values each 1-D reference runs along, to check x / y pair up.

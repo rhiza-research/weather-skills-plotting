@@ -123,11 +123,6 @@ def test_size_one_dims_are_dropped(inputs):
     assert z.shape == (3, 4)
 
 
-def test_meta_is_refused(inputs):
-    with pytest.raises(UsageError, match="plot has no meta keys"):
-        resolve({"data": [{"type": "heatmap", "meta": {"palette": "kmsa"}}]}, inputs)
-
-
 def test_a_grid_needs_its_lon_lat_axes(inputs):
     with pytest.raises(UsageError, match="set x: '@OBS.lon' and y: '@OBS.lat'"):
         resolve({"data": [{"type": "heatmap", "z": "@OBS.precip.isel(time=0)"}]}, inputs)

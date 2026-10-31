@@ -103,7 +103,7 @@ def _inputs(tmp_path):
     ef = make_forecast(n_step=3, members=5)
     ef["tp"].values = rng.uniform(0, 30, ef["tp"].shape)
     mc = ef.copy(data={"tp": rng.uniform(0, 20, ef["tp"].shape)})
-    stn_wind = make_point_obs(n_time=6, n_points=1, name="wind_speed")
+    stn_wind = make_point_obs(n_time=6, n_points=1, name="wind_speed").rename(point_id="station_id")
     stn_wind["wind_speed"].values = rng.uniform(0, 10, stn_wind["wind_speed"].shape)
     stn_wind["wind_from_direction"] = stn_wind["wind_speed"] * 0 + 45.0
     stn_wind["wind_from_direction"].attrs["units"] = "degree"

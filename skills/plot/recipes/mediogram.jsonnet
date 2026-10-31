@@ -1,8 +1,9 @@
-// A mediogram: at the grid cell nearest a point, a box of the forecast members
-// (blue) beside a box of the model climate (red) for each lead, and the forecast
-// mean as a line. Each box trace holds every member at every lead (.flat()), with the
-// lead in days of each value (.flat('step')) as x, so Plotly draws one box per lead.
-// EFM is the forecast's ensemble mean (summarize-dim --dim number).
+// A mediogram: forecast members against the model climate, by lead, at one point.
+// At the grid cell nearest the point, a box of the forecast members (blue) beside a box
+// of the model climate (red) for each lead, and the forecast mean as a line. Each box
+// trace holds every member at every lead (.flat()), with the lead in days of each value
+// (.flat('step')) as x, so Plotly draws one box per lead. EFM is the forecast's ensemble
+// mean (summarize-dim --dim number).
 // plot.py -i forecast.zarr=EF -i mclimate.zarr=MC -i forecast_mean.zarr=EFM --spec mediogram.jsonnet -o mediogram.png
 local ws = import 'ws.libsonnet';
 local inputs = std.extVar('inputs');

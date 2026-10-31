@@ -16,16 +16,16 @@ fetchers and transforms when those are available (for example a fetch skill,
 
 1. Understand what the user wants to see: a map, a time series, a
    verification grid, an ensemble spread comparison, or an animation.
-2. Get the input Zarr(s) into shape first — precipitation needs
-   `aggregate-temporal` then `convert-to-totals` before plotting; a forecast
+2. Get the input Zarr(s) into shape first — period rainfall totals need
+   `aggregate-temporal` then `convert-to-totals`; a forecast
    `step` axis needs `step-to-time` before comparing against calendar-time
    observations.
 3. Start from the closest recipe in the skill's `recipes/` folder and edit
    it: standard Plotly keys for everything drawn, `@NAME…` strings for the
    data, Jsonnet `local`s for anything repeated. Name every input
    `-i PATH=NAME`.
-4. Run the script and report the output path (`.png`, `.jpg`, an
-   interactive `.html`, or an animated `.gif`).
+4. Run the script and report the output path (`.png`, `.jpg`, `.pdf`,
+   `.svg`, an interactive `.html`, or an animated `.gif`).
 5. On failure, report the actual error — do not paper over it.
 
 ## Plotting-specific notes

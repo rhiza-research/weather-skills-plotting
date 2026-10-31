@@ -191,7 +191,6 @@ def test_bound_figures_pass(fig):
             "layout.images[0].source",
             "data key",
         ),
-        ({"layout": {"meta": [1, 2, 3]}}, "layout.meta", "per point"),
         (
             {
                 "layout": {
@@ -288,3 +287,9 @@ def test_template_defaults_are_checked():
     assert any(p.endswith("shapedefaults.y0") and "data axis" in m for p, m in found), found
     found = problems({"layout": {"shapedefaults": {"colour": "red"}}})
     assert any("colour" in p and "unknown key" in m for p, m in found), found
+
+
+@pytest.mark.parametrize("meta", [{"palette": "kmsa"}, "kmsa", [1, 2, 3]])
+def test_meta_is_refused(meta):
+    with pytest.raises(UnboundDataError, match="plot has no meta keys"):
+        check_bindings({"data": [{"type": "heatmap", "meta": meta}], "layout": {"meta": meta}})

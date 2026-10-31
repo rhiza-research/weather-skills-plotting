@@ -1,8 +1,9 @@
-// Wind at a station on polar axes: each observation at the direction it blows from
-// (north up, clockwise) and its speed from the centre, colored by speed. wind_speed
-// and wind_from_direction come from the wind-speed-direction skill.
+// Wind at a station on polar axes, colored by speed.
+// Each observation sits at the direction it blows from (north up, clockwise) and its
+// speed from the centre. wind_speed and wind_from_direction come from the
+// wind-speed-direction skill.
 // plot.py -i station_wind_sd.zarr=WS --spec windrose.jsonnet -o windrose.png
-local station = '.isel(point_id=0)';
+local station = '.isel(station_id=0)';
 {
   data: [
     { type: 'scatterpolar', mode: 'markers', r: '@WS.wind_speed' + station, theta: '@WS.wind_from_direction' + station,

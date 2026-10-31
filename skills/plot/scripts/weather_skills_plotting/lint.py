@@ -275,11 +275,18 @@ class _Checker:
 
     def check_leaf(self, value, spec, rel, path, context):
         category = keys.leaf_category(rel, spec)
-        if context == "trace" and rel in GENERATORS:
+        if rel == "meta":
+            self.problem(
+                path,
+                "plot has no meta keys. A palette is layout: ws.classBar(palette, title) "
+                "(or a Plotly colorscale); an outline is a scatter with x: '@NAME.x', "
+                "y: '@NAME.y'; data is an @ reference in the Plotly attribute itself (see --recipe)",
+            )
+        elif context == "trace" and rel in GENERATORS:
             self.require(value, path, f"'{rel}' generates a value for every point and")
         elif category in ("always", "schema_silent"):
             self.require(value, path, "data key")
-        elif category == "may" and (context == "trace" or rel == "meta"):
+        elif category == "may" and context == "trace":
             self.require_if_list(value, path, f"'{rel}'")
         elif rel in MENU_ARGS:
             self.check_menu_args(value, path)

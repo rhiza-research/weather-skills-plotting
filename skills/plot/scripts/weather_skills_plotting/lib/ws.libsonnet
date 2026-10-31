@@ -89,7 +89,6 @@ local basemapStyles = {
   },
 
   // Maps in a grid, filled row by row from the top left: panel i is ws.axes(i).
-  // Tick labels show on the bottom row (longitude) and left column (latitude).
   grid(box, rows, cols, panel=340, gap=0.04, pad=0.03, empty=[])::
     local bbox = $.pad(box, pad);
     local filled(i) = !std.member(empty, i);

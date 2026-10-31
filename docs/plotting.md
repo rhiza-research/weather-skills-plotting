@@ -60,7 +60,7 @@ against a fixed table; nothing is `eval`'d. Each method has one job:
 
 | Job | Methods |
 | --- | --- |
-| Select | `isel`, `sel` (with `method="nearest"`), `slice()`, `NE…clip(n, w, s, e)` |
+| Select | `isel`, `sel` (with `method="nearest"`), `slice()`, `dropna` (drop all-NaN entries along a dim), `NE…clip(n, w, s, e)` |
 | Reshape | `squeeze`, `transpose`, `flat` (a 2-D selection as one value per cell), `lon360` / `lon180` (a field across the dateline or prime meridian in one piece) |
 | Label | `.dt.<part>`, `.dt.strftime`, `.attrs.<name>` |
 | Display limit | `min`, `max`, `quantile`: whole array only, and only in `zmin`, `zmax`, `zmid`, `cmin`, `cmax`, `cmid`, an axis `range` or `tickvals` |
@@ -102,7 +102,7 @@ value or 1-D. A leftover dim is an error naming it.
 
 ## `ws.libsonnet`: conveniences in Jsonnet, not Python
 
-Defaults that used to be Python (map axes, panel grids, base map, palettes,
+Defaults (map axes, panel grids, base map, palettes,
 animation controls) are Jsonnet functions that return plain Plotly JSON. The
 agent can read them and override any part with `+`.
 
@@ -131,7 +131,7 @@ agent can read them and override any part with `+`.
 ## Output
 
 The `-o` suffix picks the format. Images print a `plot hash` and a
-`data: not null | NULL` line over the plotted traces (base-map lines and other
-`hoverinfo: "skip"` traces are left out). Provenance is embedded in the file,
+`data: not null | NULL` line over the plotted traces (base-map lines from
+`ws.basemap` are left out). Provenance is embedded in the file,
 with the evaluated spec as the `spec` argument: it replays with `--spec` and
 the same `-i` inputs.

@@ -1,6 +1,6 @@
-// One variable against another, from one file (merge two files first), with year labels
-// and dashed lines at the El Niño / La Niña thresholds. The thresholds sit on the x axis,
-// so they are constants passed with --const, not numbers typed into the spec.
+// One variable against another, with year labels and El Niño / La Niña threshold lines.
+// Both come from one file (merge two files first). The thresholds sit on the x axis, so
+// they are constants passed with --const, not numbers typed into the spec.
 // plot.py -i index_vs_rain.zarr=IDX --const el_nino=0.5 --const la_nina=-0.5 --spec scatter_xy.jsonnet -o scatter.png
 local threshold(name) = {
   type: 'line', xref: 'x', x0: '@const.' + name, x1: '@const.' + name, yref: 'paper', y0: 0, y1: 1,

@@ -1,5 +1,5 @@
-// A sea-level pressure chart: isobars every 4 hPa with labels, and H / L at the
-// centres with their central pressure. HI and LO come from local-extrema --kind high
+// A sea-level pressure chart: labelled isobars every 4 hPa, and H / L at the centres.
+// Each centre shows its central pressure. HI and LO come from local-extrema --kind high
 // and --kind low run on the whole MSL file; a point is NaN in maps where it is not a
 // centre, so .dropna('station_id') keeps this map's centres, and .lon / .lat after it
 // are their positions. MSL is in hPa (unit-convert first if it is in Pa).

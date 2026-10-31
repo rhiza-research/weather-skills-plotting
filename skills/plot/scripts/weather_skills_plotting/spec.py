@@ -156,7 +156,7 @@ def evaluate(spec: SpecArg, inputs_meta: dict, *, ext_strs=()) -> dict:
 
     # Recipes import by name too: importstr 'map.jsonnet' reads one.
     # Imports are found beside the spec file, in the working folder (a palettes file
-    # written there, such as chc_palettes.libsonnet), in the library and in the recipes.
+    # written there, such as my_palettes.libsonnet), in the library and in the recipes.
     jpathdir = [str(Path.cwd()), str(LIB_DIR), str(RECIPES_DIR)]
     ext_vars = dict(ext_strs)
     ext_codes = {"inputs": json.dumps(inputs_meta)}

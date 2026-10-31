@@ -12,6 +12,6 @@ local t = inputs.OBS.coords.time;
   ] + ws.basemap(bbox),
   layout: ws.map(bbox) + ws.classBar(ws.palettes.ppt_week, 'mm') + {
     template: ws.template,
-    title: { text: 'Rainfall, week of %s' % t[0] },
+    title: { text: 'Rainfall, week of %s' % ws.date(t[0]) },
   },
 }
