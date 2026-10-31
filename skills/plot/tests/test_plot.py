@@ -420,3 +420,29 @@ def test_gif_size_is_reported_and_large_ones_warn(tmp_path, plot_fn, capsys, mon
     err = capsys.readouterr().err
     assert "gif: 2 frames" in err and "show images only up to" in err
     assert "HTML will be large" not in err and "animation:" not in err
+
+
+def test_dpi_sets_pixel_density(tmp_path, plot_fn):
+    from PIL import Image
+
+    grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
+    spec = "{data: [{type: 'heatmap', x: '@G.lon', y: '@G.lat', z: '@G.precip.isel(time=0)'}], layout: {width: 300, height: 300}}"
+    run_skill(plot_fn, "-i", f"{grid}=G", "--spec", spec, "-o", str(tmp_path / "a.png"))
+    run_skill(
+        plot_fn, "-i", f"{grid}=G", "--spec", spec, "--dpi", "192", "-o", str(tmp_path / "b.png")
+    )
+    assert Image.open(tmp_path / "a.png").size == (300, 300)
+    assert Image.open(tmp_path / "b.png").size == (600, 600)
+
+
+def test_imports_from_the_working_folder(tmp_path, plot_fn, capsys, monkeypatch):
+    (tmp_path / "mine.libsonnet").write_text("{title: 'From my file'}")
+    monkeypatch.chdir(tmp_path)
+    run_skill(
+        plot_fn,
+        "--spec",
+        "{layout: {title: {text: (import 'mine.libsonnet').title}}}",
+        "--dump-spec",
+        "-",
+    )
+    assert json.loads(capsys.readouterr().out)["layout"]["title"]["text"] == "From my file"

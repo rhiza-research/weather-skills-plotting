@@ -121,12 +121,6 @@ def parse_ext(value):
     "for map axes, grids, base maps, palettes and an animation player.",
 )
 @weather_skill.argument(
-    "-J",
-    "--jpath",
-    action="append",
-    help="Another folder to find Jsonnet imports in (the skill's lib/ is always searched).",
-)
-@weather_skill.argument(
     "--ext-str",
     type=parse_ext,
     action="append",
@@ -141,10 +135,11 @@ def parse_ext(value):
     "of these, never typed into the spec.",
 )
 @weather_skill.argument(
-    "--scale",
+    "--dpi",
     type=float,
-    default=1,
-    help="Pixel density of PNG, JPG and GIF output: 2 doubles the pixels at the same layout.",
+    default=96,
+    help="Pixel density of PNG, JPG and GIF output, in dots per inch. The layout is in CSS "
+    "pixels at 96 dpi (the default); 192 doubles the pixels at the same layout, 300 is print.",
 )
 @weather_skill.argument(
     "--recipe",
@@ -160,7 +155,7 @@ def parse_ext(value):
     probe=True,
     help="Print (-) or save (a path) the evaluated spec, @ references unresolved, and draw nothing.",
 )
-def plot(inputs, output, spec, jpath, ext_str, const, scale, recipe, dump_spec, **kwargs):
+def plot(inputs, output, spec, ext_str, const, dpi, recipe, dump_spec, **kwargs):
     """Draw weather-skills Zarrs with a Jsonnet spec that evaluates to a Plotly figure."""
     if recipe is not None:
         print(recipe_text(recipe))
@@ -181,7 +176,7 @@ def plot(inputs, output, spec, jpath, ext_str, const, scale, recipe, dump_spec, 
             # Plain arrays, with units in CF form (g kg-1, mm day-1).
             datasets[x.name] = dequantify_dataset(x.ds)
     meta = {name: input_metadata(value) for name, value in datasets.items()}
-    figure = evaluate(spec, meta, jpath=jpath or (), ext_strs=ext_str or ())
+    figure = evaluate(spec, meta, ext_strs=ext_str or ())
     spec.evaluated = figure
     if dump_spec is not None:
         text = json.dumps(figure, indent=2, ensure_ascii=False)
@@ -234,7 +229,10 @@ def plot(inputs, output, spec, jpath, ext_str, const, scale, recipe, dump_spec, 
                 "smaller window",
                 file=sys.stderr,
             )
-    written = [export(fig, path, scale=scale) for path in outputs]
+    if not dpi > 0:
+        raise UsageError(f"--dpi must be above 0, got {dpi}")
+    # Plotly lays out in CSS pixels, 96 to the inch; kaleido's scale multiplies them.
+    written = [export(fig, path, scale=dpi / 96) for path in outputs]
     return written if isinstance(output, list) else written[0]
 
 

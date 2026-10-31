@@ -47,11 +47,10 @@ Start from a recipe. `--recipe` lists them, `--recipe NAME` prints one to copy a
 - `--spec` — a `.jsonnet` / `.json` file, a recipe name (`map`), or the Jsonnet text itself.
 - `--recipe [NAME]` — list the recipes, or print one's Jsonnet; draws nothing.
 - `--const NAME=VALUE` — a constant to place on a data axis as `'@const.NAME'`: a threshold line (`--const el_nino=0.5`), a date. Numbers or text; repeat.
-- `--scale N` — pixel density of PNG, JPG and GIF output: `2` doubles the pixels at the same layout (default 1). `layout.width` / `height` set the layout itself.
+- `--dpi N` — pixel density of PNG, JPG and GIF output. The layout is in CSS pixels at 96 dpi (the default); `192` doubles the pixels at the same layout, `300` is print quality. `layout.width` / `height` set the layout itself.
 - `-o`, `--output` — `.png`, `.jpg`, `.pdf`, `.svg`, `.html`, or `.gif` (plays the spec's `frames`). Repeat to write several.
 - `--dump-spec` — print (`-`) or save (a path) the evaluated spec, `@` strings unresolved, and draw nothing.
 - `--ext-str KEY=VALUE` — read in the spec as `std.extVar('KEY')`; repeat.
-- `-J DIR` — another folder for Jsonnet imports. `ws.libsonnet`, `palettes.libsonnet`, `themes/…` and the recipes are always found by name.
 
 ## The spec
 
@@ -72,7 +71,14 @@ local day = '.isel(time=0)';
 }
 ```
 
-`+` merges objects one level deep: `ws.map(b) + {margin: {l: 110}}` replaces the whole margin. Write `margin+: {l: 110}` (or `xaxis+:`, `annotations+:`) to change part of a nested field.
+**Changing part of a helper's output.** With `+`, a field you name replaces the helper's field entirely; with `+:` it is merged in. `ws.map(b)` sets `margin: {l: 50, r: 150, t: 70, b: 70}`:
+
+```jsonnet
+ws.map(b) + { margin: { l: 110 } }    // margin becomes {l: 110}: r, t, b are lost and the colorbar is cut off
+ws.map(b) + { margin+: { l: 110 } }   // margin becomes {l: 110, r: 150, t: 70, b: 70}: only l changes
+```
+
+Use `+:` the same way for `xaxis+:`, `coloraxis+:`, and `annotations+:` (which adds to the list instead of replacing it).
 
 **`std.extVar('inputs')`** describes each input, read from its metadata without loading data: `dims` (sizes), `vars` (each one's `dims`, `units`, `long_name`), `coords` (values of 1-D coordinates up to 400 long, and scalar ones: dates as `2026-10-01`, or `2026-10-30T12:00:00` when not midnight; leads as days, `0.125` for 3 h; members, station ids; `valid_time` when the file has it), `attrs`, and `bbox` (`{n, w, s, e}`, from lat / lon coordinates; a grid across the dateline gets `e` past 180, e.g. 150 to 210). Use it for loop bounds, titles and map windows; `ws.date(t)` turns a date into `26 Oct 2026`. A GeoJSON input has `bbox`. To see it all: `--spec "std.extVar('inputs')" --dump-spec -` with your `-i` inputs.
 
@@ -106,7 +112,7 @@ There are no `meta` keys: palettes are `ws.classBar`, outlines are scatters of `
 References select and label stored values; they never compute, except a size in pixels (the arithmetic row above), which changes how big a marker is on screen, never what is drawn. Arithmetic, averages and smoothing come from data skills first, and the error says which: `summarize-dim` (mean, quantiles over members), `aggregate-temporal` (rolling, resampling), `unit-convert`, `difference`, `coarsen` / `downscale`, `clip-region` (masks), `step-to-time` (valid dates), `wind-speed-direction` (speed and direction from u / v, and with `--arrow-length` quiver arrows as line segments). A mean ± SD band is Plotly stacking: mean − SD from `difference`, then the SD stacked on it twice (`--recipe sd_band`).
 
 ### `ws.libsonnet`
-`local ws = import 'ws.libsonnet';` gives plain Plotly JSON; change any part with `+`.
+`local ws = import 'ws.libsonnet';` gives plain Plotly JSON; change any part with `+`. Imports are found by name in the skill's library (`ws.libsonnet`, `palettes.libsonnet`, `themes/…`), its recipes, beside the spec file, and in the working folder, so a palettes file written there (`local chc = import 'chc_palettes.libsonnet';`) needs no flag.
 
 - `ws.map(bbox, width=760, pad=0.03)` — one map's axes (equal degrees, range from `bbox` widened by `pad`), a canvas sized to it, and the legend in a row under the map.
 - `ws.pad(bbox, frac=0.03)` — `bbox` widened on every side by `frac` of its larger span. `inputs.NAME.bbox` runs between the outermost cell centres, so `ws.map`, `ws.grid` and `ws.basemap` pad it by 3% so edge cells and outlines aren't cut; `pad=0` keeps the box exact.
@@ -129,7 +135,7 @@ References select and label stored values; they never compute, except a size in 
 - A log axis (pressure) labels Plotly's minor ticks too; set `tickvals` to the levels (`tickvals: '@RH.vertical'`).
 - Values are drawn in the file's own units (K stays K, Pa stays Pa): run unit-convert for °C or hPa, and set palette bounds and contour levels in those units.
 - A forecast's `step` is a lead time. Run step-to-time to draw it by valid date beside observations, or use `.dt.days` for lead days.
-- Animations: `frames[k].data` replaces the traces listed in `frames[k].traces` (by position in `data`). Keep the base map out of the frames: it stays on every frame.
+- Animations: `frames[k].data` replaces the traces listed in `frames[k].traces` (by position in `data`). Keep the base map out of the frames: it stays on every frame. A scatter trace in the frames must be `scattergl`: an SVG `scatter` there blanks the heatmap on every other paint, so the map flashes. For moving wind arrows use the `wind` recipe's lines quiver (already `scattergl`), not `wind_markers` (`scattergl` has no `marker.standoff`, so its heads would sit mid-shaft).
 - A still image takes at most 100 panels; play more as frames.
 - Errors come from Jsonnet (syntax, unknown field), from the reference checks (which data, which dim, which skill), or from Plotly itself, naming the trace and its type (`data[3]: a heatmap has no property 'line'`), with what to do for the usual mix-ups.
 

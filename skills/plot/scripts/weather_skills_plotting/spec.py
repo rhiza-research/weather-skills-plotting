@@ -150,12 +150,14 @@ def input_metadata(value) -> dict:
     return meta
 
 
-def evaluate(spec: SpecArg, inputs_meta: dict, *, jpath=(), ext_strs=()) -> dict:
+def evaluate(spec: SpecArg, inputs_meta: dict, *, ext_strs=()) -> dict:
     """Evaluate the Jsonnet to a figure dict, with std.extVar('inputs') and --ext-str set."""
     import _gojsonnet
 
     # Recipes import by name too: importstr 'map.jsonnet' reads one.
-    jpathdir = [str(LIB_DIR), str(RECIPES_DIR), *[str(p) for p in jpath]]
+    # Imports are found beside the spec file, in the working folder (a palettes file
+    # written there, such as chc_palettes.libsonnet), in the library and in the recipes.
+    jpathdir = [str(Path.cwd()), str(LIB_DIR), str(RECIPES_DIR)]
     ext_vars = dict(ext_strs)
     ext_codes = {"inputs": json.dumps(inputs_meta)}
     try:
@@ -196,7 +198,7 @@ def evaluate(spec: SpecArg, inputs_meta: dict, *, jpath=(), ext_strs=()) -> dict
                 "\nImports found by name: ws.libsonnet, palettes.libsonnet, "
                 "themes/tropical_tidbits.libsonnet, and the recipes "
                 f"({', '.join(n + '.jsonnet' for n in recipe_names())}); "
-                "-J DIR adds a folder of your own"
+                "and any .libsonnet beside the spec or in the working folder"
             )
         raise UsageError(f"--spec: {message}") from None
     fig = json.loads(text)
