@@ -17,6 +17,8 @@ from skill_conftest import (
 )
 from weather_skills_core.provenance import load_figure_history
 
+from weather_skills_plotting.refs import SCALED_KEYS
+
 plot_mod = load_skill("plot", "plot")
 RECIPES = Path(__file__).resolve().parents[1] / "recipes"
 
@@ -201,6 +203,9 @@ def test_every_recipe_draws_only_stored_values(tmp_path, plot_fn, capsys, recipe
     resolved, found = resolve(evaluate(SpecArg(str(recipe)), meta), sources)
     for path, ref in found.items():
         name = ref[1:].split(".")[0]
+        # Pixel sizes (marker.size, standoff) may scale stored values; they aren't data.
+        if path.endswith(SCALED_KEYS):
+            continue
         # Labels (.dt / .attrs), display limits and base-map lines are not stored data.
         if (
             name not in files

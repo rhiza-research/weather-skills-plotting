@@ -32,6 +32,7 @@ Start from a recipe. `--recipe` lists them, `--recipe NAME` prints one to copy a
 | `sd_band.jsonnet` | Mean ± 1 SD as a shaded band (stacked fills), with the mean as a line |
 | `seasons.jsonnet` | Past years and a forecast plume on one day-of-year axis |
 | `wind.jsonnet` | Wind speed shading with quiver arrows as long as the wind is strong (wind-speed-direction `--arrow-length`) |
+| `wind_markers.jsonnet` | Wind arrows as Plotly markers sized in pixels by speed (`@…speed * 2`), with no extra data step |
 | `animation.jsonnet` | A map played through time: HTML with play / slider, or a looping GIF |
 | `cross_section.jsonnet` | A field over longitude and pressure, 1000 hPa at the bottom |
 | `bars.jsonnet` | Horizontal bars per county from a name coordinate |
@@ -91,6 +92,7 @@ A string that starts with `@` is replaced by the data it names; the whole string
 | `.flat()`, `.flat('lon')`, `.flat('step')` | A 2-D selection as one value per cell, and a dim's coordinate for each value (leads in days): grid cells as scatter points, or every member with its lead for one box per lead |
 | `.dt.dayofyear`, `.dt.year`, `.dt.month`, `.dt.day`, `.dt.hour`, `.dt.days`, `.dt.strftime('%d %b')` | Time labels (`.dt.days` of a lead time) |
 | `.attrs.units` | A text attribute |
+| `… * 2`, `… / 3 + 4`, `… * const.k` | A size in pixels from the data: + − × ÷ by a number or `@const` value, with data on one side only. Only on `marker.size`, `marker.standoff`, `marker.line.width`, `textfont.size` (arrows sized by wind speed, dots by rainfall) |
 | `.min()`, `.max()`, `.quantile(0.98)` | One number for a scale only: `zmin`, `zmax`, `zmid`, `cmin`, `cmax`, `cmid`, an axis `range`, `tickvals` |
 | `@KENYA.x`, `@KENYA.y` (or `.lon`, `.lat`) | A GeoJSON input's lines and rings, gaps between parts |
 | `@NE.coastline_50m.clip(n, w, s, e).x` | Built-in Natural Earth lines: `coastline`, `borders`, `disputed`, `lakes`, `rivers` at `10m` / `50m` / `110m`, `admin1` at `10m` |
@@ -101,7 +103,7 @@ There are no `meta` keys: palettes are `ws.classBar`, outlines are scatters of `
 
 **Spec → render → lint → bind.** plot evaluates the Jsonnet (render), then lints the result against Plotly's schema before binding: every key that can put data on the chart must hold an `@` reference, never typed-in values. That covers data keys (`x`, `y`, `z`, `lat`, `customdata`, `values`, …), per-point lists in keys like `marker.color`, `marker.size` and `text` (one value there is styling), keys that generate a value for every point (`x0` / `dx`, `base`, error-bar `value`), the coordinates of shapes, annotations and images on a data axis (`xref: 'x'`), menu and slider `args`, and frames and templates. Keys Plotly doesn't define are refused too, since they can't be checked. Every problem is listed at once. A constant on a data axis, such as a threshold line or a date, is `--const NAME=VALUE` and `'@const.NAME'`. Positions in `paper` or `x domain` units (titles, colorbars, panel labels) are layout, not data, and stay literal.
 
-References select and label stored values; they never compute. Arithmetic, averages and smoothing come from data skills first, and the error says which: `summarize-dim` (mean, quantiles over members), `aggregate-temporal` (rolling, resampling), `unit-convert`, `difference`, `coarsen` / `downscale`, `clip-region` (masks), `step-to-time` (valid dates), `wind-speed-direction` (speed and direction from u / v, and with `--arrow-length` quiver arrows as line segments). A mean ± SD band is Plotly stacking: mean − SD from `difference`, then the SD stacked on it twice (`--recipe sd_band`).
+References select and label stored values; they never compute, except a size in pixels (the arithmetic row above), which changes how big a marker is on screen, never what is drawn. Arithmetic, averages and smoothing come from data skills first, and the error says which: `summarize-dim` (mean, quantiles over members), `aggregate-temporal` (rolling, resampling), `unit-convert`, `difference`, `coarsen` / `downscale`, `clip-region` (masks), `step-to-time` (valid dates), `wind-speed-direction` (speed and direction from u / v, and with `--arrow-length` quiver arrows as line segments). A mean ± SD band is Plotly stacking: mean − SD from `difference`, then the SD stacked on it twice (`--recipe sd_band`).
 
 ### `ws.libsonnet`
 `local ws = import 'ws.libsonnet';` gives plain Plotly JSON; change any part with `+`.

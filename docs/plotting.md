@@ -50,8 +50,9 @@ against a fixed table; nothing is `eval`'d. Each method has one job:
 | Reshape | `squeeze`, `transpose`, `flat` (a grid as one value per cell) |
 | Label | `.dt.<part>`, `.dt.strftime`, `.attrs.<name>` |
 | Display limit | `min`, `max`, `quantile`: whole array only, and only in `zmin`, `zmax`, `zmid`, `cmin`, `cmax`, `cmid`, an axis `range` or `tickvals` |
+| Pixel size | `+ − × ÷` by a number or `@const`, data on one side only, and only in `marker.size`, `marker.standoff`, `marker.line.width`, `textfont.size`: how big a marker is on screen (arrows by wind speed, dots by rainfall), the way Plotly's `sizeref` scales `marker.size` |
 
-So every value drawn is a value stored in an input. Arithmetic, averages,
+So every value drawn is a value stored in an input; only the on-screen size of a marker may be scaled. Arithmetic on data, averages,
 smoothing, regridding and masking are refused with the data skill that does
 the job (`summarize-dim`, `aggregate-temporal`, `unit-convert`, `difference`,
 `coarsen` / `downscale`, `clip-region`). The recipe tests check the

@@ -35,6 +35,12 @@ METHODS = {
 }
 JOBS = ("select", "reshape", "label", "limit")
 
+# Sizes in pixels, the only keys whose reference may take arithmetic by a number:
+# '@W.wind_speed.flat() * 3' draws a marker 3 px per unit, the way Plotly's own sizeref
+# scales marker.size. The data drawn is unchanged; only its size on screen is.
+SCALED_KEYS = ("marker.size", "marker.standoff", "marker.line.width", "textfont.size")
+ARITHMETIC = {ast.Add: np.add, ast.Sub: np.subtract, ast.Mult: np.multiply, ast.Div: np.divide}
+
 # Time parts readable with .dt.NAME.
 DT_FIELDS = ("year", "month", "day", "hour", "dayofyear", "days")
 
@@ -145,7 +151,8 @@ def _refuse(node, ref):
     """The error for syntax outside the table, naming the skill that does the job."""
     if isinstance(node, ast.BinOp):
         raise UsageError(
-            f"{ref}: arithmetic ({ast.unparse(node)!r}) is not plotted; convert units with "
+            f"{ref}: arithmetic ({ast.unparse(node)!r}) is only a size in pixels: + - * / by a "
+            f"number or @const, on {', '.join(SCALED_KEYS)}. For data, convert units with "
             "unit-convert, subtract with difference, then plot the result"
         )
     raise UsageError(
@@ -304,9 +311,46 @@ def evaluate(text: str, inputs: dict):
                     _refuse(kw.value, ref)
                 kwargs[kw.arg] = _literal(kw.value, ref)
             return _method(base, node.func.attr, args, kwargs, ref)
+        if isinstance(node, ast.BinOp) and type(node.op) in ARITHMETIC:
+            # A pixel size: data on exactly one side, a number (or a const) on the other, so
+            # a size never combines two fields.
+            if _has_data(node.left) == _has_data(node.right):
+                _refuse(node, ref)
+            sides = [
+                walk(n) if _has_data(n) else _number(n, inputs, ref)
+                for n in (node.left, node.right)
+            ]
+            data = [
+                np.asarray(side.values if hasattr(side, "dims") else side, float) for side in sides
+            ]
+            return ARITHMETIC[type(node.op)](*data)
         _refuse(node, ref)
 
-    return walk(tree.body), _last_method(tree.body)
+    last = "arithmetic" if isinstance(tree.body, ast.BinOp) else _last_method(tree.body)
+    if last != "arithmetic" and any(isinstance(n, ast.BinOp) for n in ast.walk(tree.body)):
+        _refuse(next(n for n in ast.walk(tree.body) if isinstance(n, ast.BinOp)), ref)
+    return walk(tree.body), last
+
+
+def _has_data(node):
+    """Whether an operand names an input (anything but a number or @const)."""
+    names = [n.id for n in ast.walk(node) if isinstance(n, ast.Name)]
+    return any(name != "const" for name in names)
+
+
+def _number(node, inputs, ref):
+    """A number operand: a literal, or @const.NAME."""
+    if (
+        isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "const"
+    ):
+        value = _attribute(_Constants(inputs.get("const", {})), node.attr, ref)
+    else:
+        value = _literal(node, ref)
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise UsageError(f"{ref}: {ast.unparse(node)!r} is not a number")
+    return float(value)
 
 
 def _last_method(node):
@@ -489,6 +533,11 @@ def resolve(spec, inputs: dict):
         if not is_ref(node):
             return node
         value, last = evaluate(node, inputs)
+        if last == "arithmetic" and not path.endswith(SCALED_KEYS):
+            raise UsageError(
+                f"{path} = {node}: arithmetic only sets a size in pixels ({', '.join(SCALED_KEYS)}); "
+                "data to draw is stored values (unit-convert, difference first)"
+            )
         if METHODS.get(last) == "limit" and not _limit_path(path):
             raise UsageError(
                 f"{path} = {node}: .{last}() gives one number, for a scale only "

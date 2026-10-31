@@ -209,3 +209,23 @@ def test_a_grid_across_the_dateline_draws_in_one_piece():
     assert one("@X.sst.lon360().lon", {"X": ds}).tolist() == [170, 175, 180, 185]
     assert window_parts(170, -175) == [(170, 180, 0.0), (-180, -175, 360.0)]
     assert window_parts(20, 120) == [(20, 120, 0.0)]
+
+
+def test_size_arithmetic_only_on_pixel_keys(inputs):
+    size = "@OBS.precip.isel(time=0, lat=0)"
+    trace = {
+        "x": "@OBS.lon",
+        "y": "@OBS.lon",
+        "marker": {"size": size + " * 2 + 4", "standoff": size + " / const.k"},
+    }
+    resolved, _ = resolve({"data": [trace]}, {**inputs, "const": {"k": 2.0}})
+    assert resolved["data"][0]["marker"]["size"].tolist() == [4, 6, 8, 10]
+    assert resolved["data"][0]["marker"]["standoff"].tolist() == [0, 0.5, 1, 1.5]
+    with pytest.raises(UsageError, match="only sets a size in pixels"):
+        one("@OBS.lon * 2", inputs)
+    for ref in (size + " - OBS.precip.isel(time=1, lat=0)", "@const.k + 2"):
+        with pytest.raises(UsageError, match="only a size in pixels"):
+            resolve(
+                {"data": [{"x": "@OBS.lon", "y": "@OBS.lon", "marker": {"size": ref}}]},
+                {**inputs, "const": {"k": 2.0}},
+            )
