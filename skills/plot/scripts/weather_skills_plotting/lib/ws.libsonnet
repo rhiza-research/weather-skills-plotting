@@ -12,6 +12,21 @@ local margin = { l: 50, r: 150, t: 70, b: 70 };
 // The legend sits in a row under the maps, clear of the colorbar on the right.
 local legend = { orientation: 'h', x: 0, y: -0.06, yanchor: 'top' };
 
+// Longitude ticks for a window that runs past 180° (a map across the dateline, with
+// longitudes as 0–360): 170°E, 180°, 170°W rather than 170°, 180°, 190°.
+local lonTicks(bbox) =
+  local span = bbox.e - bbox.w;
+  local step = if span > 90 then 30 else if span > 40 then 10 else if span > 15 then 5 else 2;
+  local vals = [step * k for k in std.range(std.ceil(bbox.w / step), std.floor(bbox.e / step))];
+  if bbox.e <= 180 then {} else {
+    ticksuffix: '',
+    tickvals: vals,
+    ticktext: [
+      if v == 180 then '180°' else if v > 180 then '%g°W' % (360 - v) else '%g°E' % v
+      for v in vals
+    ],
+  };
+
 local months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // Natural Earth scale for a map span, and whether provinces / counties are readable.
@@ -65,7 +80,8 @@ local basemapStyles = {
     height: round(plotw * (bbox.n - bbox.s) / (bbox.e - bbox.w)) + margin.t + margin.b,
     margin: margin,
     legend: legend,
-    xaxis: { range: [bbox.w, bbox.e], showgrid: false, zeroline: false, ticksuffix: '°', constrain: 'domain' },
+    xaxis: { range: [bbox.w, bbox.e], showgrid: false, zeroline: false, ticksuffix: '°', constrain: 'domain' }
+           + lonTicks(bbox),
     yaxis: {
       range: [bbox.s, bbox.n], showgrid: false, zeroline: false, ticksuffix: '°',
       scaleanchor: 'x', scaleratio: 1, constrain: 'domain',
@@ -95,7 +111,7 @@ local basemapStyles = {
       range: [bbox.w, bbox.e], showgrid: false, zeroline: false, ticksuffix: '°',
       constrain: 'domain', showticklabels: lowest(i), visible: filled(i),
       anchor: if i == 0 then 'y' else 'y%d' % (i + 1),
-    }
+    } + lonTicks(bbox)
     for i in std.range(0, rows * cols - 1)
   } + {
     [if i == 0 then 'yaxis' else 'yaxis%d' % (i + 1)]: {
@@ -149,10 +165,6 @@ local basemapStyles = {
       if on[name]
     ],
 
-  // A palette as a coloraxis: a stepped colorscale whose steps sit at the class
-  // bounds, cmin / cmax at the outer bounds, and colorbar ticks at the bounds.
-  // Under / over colors (when the palette packs them) get one extra class width
-  // beyond each end. A palette with no bounds is a continuous colorscale.
   // An ISO date or time from std.extVar('inputs') as text: '2026-10-26' → '26 Oct 2026',
   // '2026-10-30T12:00:00' → '30 Oct 2026 12 UTC'. year=false leaves the year out.
   date(t, year=true)::
@@ -169,6 +181,10 @@ local basemapStyles = {
     ticktext: ['1 ' + m for m in months],
   },
 
+  // A palette as a coloraxis: a stepped colorscale whose steps sit at the class
+  // bounds, cmin / cmax at the outer bounds, and colorbar ticks at the bounds.
+  // Under / over colors (when the palette packs them) get one extra class width
+  // beyond each end. A palette with no bounds is a continuous colorscale.
   stepped(p):: (
     if !std.objectHas(p, 'bounds') then {
       local n = std.length(p.colors),

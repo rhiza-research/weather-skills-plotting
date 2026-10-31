@@ -13,6 +13,13 @@ metadata:
 
 Draws a figure from a Jsonnet spec. The spec evaluates to a standard [Plotly figure](https://plotly.com/python/reference/) (`data`, `layout`, `frames`). Wherever Plotly expects data, write a string that starts with `@` and names it: `'@OBS.precip.isel(time=0)'`. Name every input on the command line.
 
+## How a figure is made: spec → render → lint → bind
+
+1. **Spec.** You write Jsonnet: Plotly keys for everything drawn, and an `@` reference wherever data goes (`x: '@OBS.lon'`, `z: '@OBS.precip.isel(time=0)'`). Each input is named with `-i FILE=NAME`; `std.extVar('inputs')` describes them (dims, variables, dates, bbox) for loops and titles.
+2. **Render.** plot evaluates the Jsonnet into plain Plotly JSON, references still unbound. `--dump-spec -` prints this.
+3. **Lint.** Before any data is read, the JSON is checked against Plotly's schema: every key that can put data on the chart must hold an `@` reference, never typed-in values. That covers data keys (`x`, `y`, `z`, `lat`, `customdata`, `values`, …), per-point lists in keys like `marker.color`, `marker.size` and `text` (one value there is styling), keys that generate a value for every point (`x0` / `dx`, `base`, error-bar `value`), the coordinates of shapes, annotations and images on a data axis (`xref: 'x'`), menu and slider `args`, frames and templates. Keys Plotly doesn't define are refused, since they can't be checked. Every problem is listed at once. A constant on a data axis (a threshold line, a date) is `--const NAME=VALUE`, written `'@const.NAME'`. Positions in `paper` or `x domain` units (titles, colorbars, panel labels) are layout, not data, and stay literal.
+4. **Bind.** Each reference is resolved from its input: it selects, reshapes or labels stored values, or scales a marker's size in pixels (see `@` references below), and its shape is checked against the key. Then Plotly validates the figure and it is written to each `-o`.
+
 ## Usage
 
 ```bash
@@ -94,7 +101,7 @@ A string that starts with `@` is replaced by the data it names; the whole string
 | `.dropna('station_id')` | Keep the positions along a dim that have a value (this map's local-extrema centres) |
 | `.lon`, `.lat`, `.time`, any coordinate, after a selection | That coordinate of what is left: `@HI.msl.isel(time=0).dropna('station_id').lon` |
 | `.squeeze()`, `.transpose('vertical', 'lon')` | Drop size-1 dims, set dim order (pick every other dim first) |
-| `.lon360()` | Longitudes as 0–360, in order: a field across the dateline in one piece (`z: '@X.sst.isel(time=0).lon360()'`, `x: '@X.sst.isel(time=0).lon360().lon'`). Ticks then read 190°, 200°, … |
+| `.lon360()`, `.lon180()` | A field whose window crosses the edge of its longitudes, drawn in one piece. A file stored as -180 to 180 jumps from 180 back to -180 at the dateline, so a Pacific map (170°E to 170°W) would split into two strips at the sides; `.lon360()` relabels the longitudes 0 to 360 and puts the columns in order. A file stored as 0 to 360 does the same at the prime meridian (Africa from 340 to 40); `.lon180()` relabels them -180 to 180. Use it on the field and on its longitudes: `z: '@X.sst.isel(time=0).lon360()'`, `x: '@X.sst.isel(time=0).lon360().lon'`. `inputs.X.bbox` already gives the unbroken window, and `ws.map` / `ws.grid` label a window past 180° as 170°E, 180°, 170°W |
 | `.flat()`, `.flat('lon')`, `.flat('step')` | A 2-D selection as one value per cell, and a dim's coordinate for each value (leads in days): grid cells as scatter points, or every member with its lead for one box per lead |
 | `.dt.dayofyear`, `.dt.year`, `.dt.month`, `.dt.day`, `.dt.hour`, `.dt.days`, `.dt.strftime('%d %b')` | Time labels (`.dt.days` of a lead time) |
 | `.attrs.units` | A text attribute |
@@ -106,8 +113,6 @@ A string that starts with `@` is replaced by the data it names; the whole string
 Shapes: `z` is 2-D (a lat/lon grid is drawn with rows as latitudes, and needs `x: '@NAME.lon', y: '@NAME.lat'` beside it); `customdata` 1-D or 2-D; everything else one value or 1-D. A trace's `x` and `y` (not a gridded one's) must pair up: the same length, and from two files the same time (or other) values; otherwise it's an error suggesting `merge`. Traces on one `coloraxis` holding different units print a warning. A dim of length 1 (the one time of a period total) is dropped when there are too many; any other leftover dim is an error naming it: pick a value with `isel` / `sel`, or draw one trace per value with a Jsonnet loop (`for m in std.range(0, inputs.ENS.dims.number - 1)`).
 
 There are no `meta` keys: palettes are `ws.classBar`, outlines are scatters of `@NAME.x` / `@NAME.y`, data is an `@` reference in the Plotly attribute itself.
-
-**Spec → render → lint → bind.** plot evaluates the Jsonnet (render), then lints the result against Plotly's schema before binding: every key that can put data on the chart must hold an `@` reference, never typed-in values. That covers data keys (`x`, `y`, `z`, `lat`, `customdata`, `values`, …), per-point lists in keys like `marker.color`, `marker.size` and `text` (one value there is styling), keys that generate a value for every point (`x0` / `dx`, `base`, error-bar `value`), the coordinates of shapes, annotations and images on a data axis (`xref: 'x'`), menu and slider `args`, and frames and templates. Keys Plotly doesn't define are refused too, since they can't be checked. Every problem is listed at once. A constant on a data axis, such as a threshold line or a date, is `--const NAME=VALUE` and `'@const.NAME'`. Positions in `paper` or `x domain` units (titles, colorbars, panel labels) are layout, not data, and stay literal.
 
 References select and label stored values; they never compute, except a size in pixels (the arithmetic row above), which changes how big a marker is on screen, never what is drawn. Arithmetic, averages and smoothing come from data skills first, and the error says which: `summarize-dim` (mean, quantiles over members), `aggregate-temporal` (rolling, resampling), `unit-convert`, `difference`, `coarsen` / `downscale`, `clip-region` (masks), `step-to-time` (valid dates), `wind-speed-direction` (speed and direction from u / v, and with `--arrow-length` quiver arrows as line segments). A mean ± SD band is Plotly stacking: mean − SD from `difference`, then the SD stacked on it twice (`--recipe sd_band`).
 

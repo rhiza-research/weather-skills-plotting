@@ -4,6 +4,20 @@ How the figure stack works. The agent how-to is the skill's
 [`SKILL.md`](../skills/plot/SKILL.md); runnable examples are in
 [`skills/plot/recipes/`](../skills/plot/recipes/). This page is the design.
 
+## How a figure is made: spec → render → lint → bind
+
+1. **Spec.** Jsonnet that evaluates to a Plotly figure, with an `@` reference
+   wherever data goes. Inputs are named on the command line.
+2. **Render.** `spec.py` evaluates the Jsonnet (gojsonnet) with
+   `std.extVar('inputs')`, giving plain Plotly JSON with the references still
+   unbound (what `--dump-spec` prints).
+3. **Lint.** `lint.py` checks that JSON against Plotly's attribute schema
+   before any data is read: every key that can put data on the chart holds an
+   `@` binding (details below).
+4. **Bind.** `refs.py` resolves each reference from its input, checking the
+   operations and shapes; then `go.Figure` validates the result and it is
+   exported.
+
 ## The spec is Jsonnet that evaluates to a Plotly figure
 
 The agent writes Jsonnet whose value is a standard Plotly figure,
@@ -47,7 +61,7 @@ against a fixed table; nothing is `eval`'d. Each method has one job:
 | Job | Methods |
 | --- | --- |
 | Select | `isel`, `sel` (with `method="nearest"`), `slice()`, `NE…clip(n, w, s, e)` |
-| Reshape | `squeeze`, `transpose`, `flat` (a grid as one value per cell) |
+| Reshape | `squeeze`, `transpose`, `flat` (a 2-D selection as one value per cell), `lon360` / `lon180` (a field across the dateline or prime meridian in one piece) |
 | Label | `.dt.<part>`, `.dt.strftime`, `.attrs.<name>` |
 | Display limit | `min`, `max`, `quantile`: whole array only, and only in `zmin`, `zmax`, `zmid`, `cmin`, `cmax`, `cmid`, an axis `range` or `tickvals` |
 | Pixel size | `+ − × ÷` by a number or `@const`, data on one side only, and only in `marker.size`, `marker.standoff`, `marker.line.width`, `textfont.size`: how big a marker is on screen (arrows by wind speed, dots by rainfall), the way Plotly's `sizeref` scales `marker.size` |

@@ -1,4 +1,4 @@
-"""Each test puts data into a figure one way and checks that check_bindings catches it."""
+"""check_bindings: figures that bind every data value pass; each other way of putting data in fails."""
 
 import re
 from pathlib import Path
@@ -7,7 +7,7 @@ import _gojsonnet
 import pytest
 
 from weather_skills_plotting.lint import UnboundDataError, check_bindings
-from weather_skills_plotting.spec import LIB_DIR, RECIPES_DIR
+from weather_skills_plotting.spec import LIB_DIR
 
 HERE = Path(__file__).parent / "data"
 
@@ -34,7 +34,6 @@ def test_house_template_and_helpers_pass():
         " + ws.player(['a']) + {template: ws.template, annotations+: [ws.panelTitle(0, 'A')]}}"
     )
     check_bindings(_gojsonnet.evaluate_snippet("t", src, jpathdir=[str(LIB_DIR)]))
-    assert RECIPES_DIR.is_dir()
 
 
 @pytest.mark.parametrize(
@@ -282,3 +281,10 @@ def test_custom_binding_pattern():
     fig = {"data": [{"type": "scatter", "x": "$t", "y": "$v"}]}
     check_bindings(fig, pattern=re.compile(r"^\$\w+$"))
     assert [p for p, _ in problems(fig)] == ["data[0].x", "data[0].y"]
+
+
+def test_template_defaults_are_checked():
+    found = problems({"layout": {"template": {"layout": {"shapedefaults": {"y0": 30, "y1": 30}}}}})
+    assert any(p.endswith("shapedefaults.y0") and "data axis" in m for p, m in found), found
+    found = problems({"layout": {"shapedefaults": {"colour": "red"}}})
+    assert any("colour" in p and "unknown key" in m for p, m in found), found

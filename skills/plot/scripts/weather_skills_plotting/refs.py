@@ -26,6 +26,7 @@ METHODS = {
     "clip": "select",
     "squeeze": "reshape",
     "lon360": "reshape",
+    "lon180": "reshape",
     "transpose": "reshape",
     "flat": "reshape",
     "strftime": "label",
@@ -215,12 +216,14 @@ def _method(base, name, args, kwargs, ref):
         if len(args) != 1 or kwargs:
             raise UsageError(f"{ref}: .dropna(dim) takes one dim, e.g. .dropna('station_id')")
         return da.dropna(_dim(da, args[0], ref))
-    if name == "lon360":
-        # Longitudes as 0..360, in order: a field across the dateline drawn in one piece.
+    if name in ("lon360", "lon180"):
+        # Longitudes as 0..360 or -180..180, in order, so a field that crosses the dateline
+        # (lon360) or the prime meridian (lon180) draws as one piece.
         lon = _dim(da, "lon", ref) if "lon" not in da.coords else "lon"
+        wrap = (lambda v: v % 360) if name == "lon360" else (lambda v: (v + 180) % 360 - 180)
         if da.name == lon:
-            da = da.copy(data=np.asarray(da.values) % 360)
-        da = da.assign_coords({lon: da[lon] % 360})
+            da = da.copy(data=wrap(np.asarray(da.values)))
+        da = da.assign_coords({lon: wrap(da[lon])})
         return da.sortby(lon) if lon in da.dims else da
     if name == "squeeze":
         return da.squeeze()
@@ -323,6 +326,8 @@ def evaluate(text: str, inputs: dict):
             data = [
                 np.asarray(side.values if hasattr(side, "dims") else side, float) for side in sides
             ]
+            if isinstance(node.op, ast.Div) and not np.all(data[1]):
+                raise UsageError(f"{ref}: division by zero")
             return ARITHMETIC[type(node.op)](*data)
         _refuse(node, ref)
 
@@ -546,7 +551,8 @@ def resolve(spec, inputs: dict):
         found[path] = node
         if hasattr(value, "attrs") and path.endswith((".z", ".marker.color")):
             color_units[path] = str(value.attrs.get("units", ""))
-        if hasattr(value, "dims") and value.squeeze().ndim == 1:
+        # A whole input (a Dataset) has no dims of its own; to_json_value names the fix.
+        if hasattr(value, "dims") and not hasattr(value, "data_vars") and value.squeeze().ndim == 1:
             dim = value.squeeze().dims[0]
             if dim in value.coords:
                 along[path] = (dim, np.asarray(value.squeeze()[dim].values))

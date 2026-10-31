@@ -16,3 +16,13 @@ def no_natural_earth(monkeypatch, request):
         return [LineString([(w, s), (e, n)])]
 
     monkeypatch.setattr(geodata, "load_ne_layer", fake)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def kaleido_server():
+    """One headless Chrome for every image a test writes (each write starts one otherwise)."""
+    import kaleido
+
+    kaleido.start_sync_server(silence_warnings=True)
+    yield
+    kaleido.stop_sync_server(silence_warnings=True)

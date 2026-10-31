@@ -243,6 +243,15 @@ class _Checker:
                 # own: they take the class of one item (layout.shape).
                 child_class = key if key in self.schema.children else keys.item_class(spec)
                 self.walk(value, child_class, child_rel + ".", child_path, context)
+                # A default applies to every shape / annotation / image, so its coordinates
+                # on a data axis are checked like an item's.
+                collection = child_rel.removesuffix("defaults") + "s"
+                if (
+                    context == "layout"
+                    and child_rel.endswith("defaults")
+                    and collection in ANCHORED
+                ):
+                    self.check_anchored(value, collection, child_path)
             elif kind == "CompoundArrayValidator":
                 if not isinstance(value, list):
                     self.problem(child_path, "expected a list")

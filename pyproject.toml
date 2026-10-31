@@ -50,6 +50,8 @@ filterwarnings = [
     # zarr-python warns on every consolidated write; consolidated=True is part
     # of the standard dataset contract, so the warning is expected noise in tests.
     "ignore:Consolidated metadata is currently not part in the Zarr format 3 specification",
+    # The tests share one kaleido Chrome server (root conftest.py), which ignores per-call options.
+    "ignore:The kopts argument is ignored if using a server",
 ]
 
 [tool.ruff]

@@ -145,3 +145,27 @@ def test_a_ragged_grid_labels_its_filled_edges():
     assert layout["yaxis11"]["showticklabels"]  # first filled panel of its row
     assert layout["xaxis11"]["showticklabels"] and not layout["xaxis7"]["showticklabels"]
     go.Figure(layout={**layout, "annotations": [ev("ws.rowTitle(4, 'GEFS')")]})
+
+
+@pytest.mark.parametrize(
+    "name", __import__("weather_skills_plotting.spec", fromlist=["x"]).palette_names()
+)
+def test_every_named_palette_is_a_valid_coloraxis(name):
+    go.Figure(layout={"coloraxis": ev(f"ws.stepped(ws.palettes.{name})")})
+
+
+def test_continuous_palette_has_no_bounds_ticks():
+    axis = ev("ws.stepped({colors: ['#000', '#888', '#fff']})")
+    assert axis["colorscale"] == [[0, "#000"], [0.5, "#888"], [1, "#fff"]] and "cmin" not in axis
+
+
+def test_a_dateline_window_reads_east_and_west():
+    axis = ev("ws.map({n: 10, w: 170, s: -10, e: -170}, pad=0).xaxis")
+    assert axis["range"] == [170, 190]
+    assert axis["ticktext"] == ["170°E", "175°E", "180°", "175°W", "170°W"]
+    assert "ticktext" not in ev(f"ws.map({BBOX}).xaxis")
+
+
+def test_class_bar_without_under_and_over_has_no_triangles():
+    layout = ev("ws.classBar({colors: ['#a', '#b'], bounds: [0, 1, 2]})")
+    assert all(s["type"] == "rect" for s in layout["shapes"])

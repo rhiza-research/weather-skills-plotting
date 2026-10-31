@@ -2,7 +2,7 @@
 // step fills in later, so nothing here can introduce numbers of its own.
 // Jsonnet still does the repetitive work: one panel per station, shared styles.
 //
-//   check_bindings(_jsonnet.evaluate_file('example.jsonnet'))  # from plotly_ref_lint
+//   check_bindings(_gojsonnet.evaluate_file('lint_example.jsonnet'))  # weather_skills_plotting.lint
 local stations = ['nairobi', 'mombasa', 'kisumu'];
 
 local ink = { primary: '#0b0b0b', secondary: '#52514e', grid: '#e4e3df', surface: '#fcfcfb' };
@@ -20,8 +20,8 @@ local panel(i, station) = {
       name: 'Daily',
       legendgroup: 'daily',
       showlegend: i == 1,
-      x: '@%s/time' % station,
-      y: '@%s/t2m' % station,
+      x: '@%s.time' % station,
+      y: '@%s.t2m' % station,
       xaxis: 'x' + suffix(i),
       yaxis: 'y' + suffix(i),
       opacity: 0.6,
@@ -32,8 +32,8 @@ local panel(i, station) = {
       name: '7-day mean',
       legendgroup: 'mean',
       showlegend: i == 1,
-      x: '@%s/time' % station,
-      y: '@%s/t2m_7d_mean' % station,
+      x: '@%s.time' % station,
+      y: '@%s.t2m_7d_mean' % station,
       xaxis: 'x' + suffix(i),
       yaxis: 'y' + suffix(i),
     },
@@ -70,7 +70,7 @@ local panels = [panel(i + 1, stations[i]) for i in std.range(0, std.length(stati
     annotations: [p.title for p in panels],
     // A freezing line drawn across every panel: on a data axis, so its y is a reference too.
     shapes: [
-      { type: 'line', xref: 'x' + suffix(i) + ' domain', x0: 0, x1: 1, yref: 'y' + suffix(i), y0: '@const/freezing_c', y1: '@const/freezing_c', line: { color: ink.secondary, dash: 'dot', width: 1 } }
+      { type: 'line', xref: 'x' + suffix(i) + ' domain', x0: 0, x1: 1, yref: 'y' + suffix(i), y0: '@const.freezing_c', y1: '@const.freezing_c', line: { color: ink.secondary, dash: 'dot', width: 1 } }
       for i in std.range(1, std.length(stations))
     ],
   },

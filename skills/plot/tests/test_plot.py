@@ -28,7 +28,7 @@ def plot_fn():
     return plot_mod.plot
 
 
-def _series(name, values, start="2026-01-01", **extra_dims):
+def _series(name, values, start="2026-01-01"):
     times = np.arange(np.datetime64(start), np.datetime64(start) + np.timedelta64(len(values), "D"))
     ds = xr.Dataset({name: ("time", np.asarray(values, float))}, coords={"time": times})
     ds[name].attrs["units"] = "mm day-1"
@@ -93,6 +93,8 @@ def _inputs(tmp_path):
         coords={"county": ["Kisumu", "Turkana", "Nairobi"]},
     )
     idx = _series("precip", [100, 200, 150]).assign(nino34=("time", [-1.0, 0.8, 1.6]))
+    stations = make_point_obs(n_time=3, n_points=3).rename(point_id="station_id")
+    stations["precip"].values = rng.uniform(0, 40, stations["precip"].shape)
     week = make_gridded(n_time=1)
     week["precip"].values = rng.uniform(0, 120, week["precip"].shape)
     hits = make_gridded(n_time=1, name="event_hit")
@@ -130,7 +132,7 @@ def _inputs(tmp_path):
     idx["nino34"].attrs["units"] = "K"
     files = {
         "OBS": grid,
-        "STN": make_point_obs(n_time=3, n_points=3).rename(point_id="station_id"),
+        "STN": stations,
         "FC": fc,
         "ENS": ens,
         "MEAN": ens.mean("number"),
@@ -146,10 +148,10 @@ def _inputs(tmp_path):
         "CTY": cty,
         "IDX": idx,
         "OW": week,
-        "FC1": week,
-        "FC2": week,
+        "FC1": week.copy(data={"precip": rng.uniform(0, 120, week["precip"].shape)}),
+        "FC2": week.copy(data={"precip": rng.uniform(0, 120, week["precip"].shape)}),
         "V1": hits,
-        "V2": hits,
+        "V2": hits.copy(data={"event_hit": rng.choice([-1.0, 0.0, 1.0], hits["event_hit"].shape)}),
         "EF": ef,
         "MC": mc,
         "EFM": ef.mean("number", keep_attrs=True),
@@ -197,9 +199,8 @@ def test_every_recipe_draws_only_stored_values(tmp_path, plot_fn, capsys, recipe
     values = {n: load_geojson(paths[n]) if n == "KENYA" else files[n] for n in names}
     meta = {n: input_metadata(v) for n, v in values.items()}
     sources = {n: GeoLines(v, n) if isinstance(v, list) else v for n, v in values.items()}
-    sources["const"] = dict(
-        plot_mod.parse_const(c) for c in argv[1::2] if c.count("=") == 1 and "/" not in c
-    )
+    consts = [c for flag, c in zip(argv[::2], argv[1::2], strict=True) if flag == "--const"]
+    sources["const"] = dict(plot_mod.parse_const(c) for c in consts)
     resolved, found = resolve(evaluate(SpecArg(str(recipe)), meta), sources)
     for path, ref in found.items():
         name = ref[1:].split(".")[0]
@@ -390,7 +391,7 @@ def test_still_image_refuses_more_than_100_panels(tmp_path, plot_fn, capsys):
 def test_recipes_by_name_and_listing(tmp_path, plot_fn, capsys):
     run_skill(plot_fn, "--recipe")
     listing = capsys.readouterr().out
-    assert listing.startswith("animation") and "map " in listing
+    assert "animation " in listing and "map " in listing
     run_skill(plot_fn, "--recipe", "map")
     assert "ws.basemap(bbox)" in capsys.readouterr().out
     grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")

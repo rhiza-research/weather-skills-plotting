@@ -154,7 +154,6 @@ def test_dropna_and_the_coords_of_what_is_left(inputs):
 
 
 def test_x_and_y_must_pair_up(inputs):
-    fc = inputs["FC"]
     with pytest.raises(UsageError, match="x has 3 values and y has 2"):
         resolve({"data": [{"x": "@OBS.time", "y": "@FC.tp.isel(step=0, lat=0, lon=0)"}]}, inputs)
     shifted = {
@@ -166,7 +165,6 @@ def test_x_and_y_must_pair_up(inputs):
             {"data": [{"x": "@A.precip.isel(lat=0, lon=0)", "y": "@B.precip.isel(lat=0, lon=0)"}]},
             shifted,
         )
-    del fc
 
 
 def test_the_innermost_refused_method_is_named(inputs):
@@ -229,3 +227,97 @@ def test_size_arithmetic_only_on_pixel_keys(inputs):
                 {"data": [{"x": "@OBS.lon", "y": "@OBS.lon", "marker": {"size": ref}}]},
                 {**inputs, "const": {"k": 2.0}},
             )
+
+
+@pytest.mark.parametrize(
+    ("ref", "match"),
+    [
+        ("@OBS", "name a variable or coordinate to draw"),
+        ("@OBS.precip.isel(0)", "takes dim=value pairs"),
+        ("@OBS.precip.isel(time=0, method='nearest')", "takes no method"),
+        ("@OBS.precip.sel(time='2026-01-01', method='pad')", "method must be 'nearest'"),
+        ("@OBS.time.dt.weekday", ".dt has"),
+        ("@OBS.precip.dt.year", "needs a time or timedelta"),
+        ("@OBS.precip.attrs.nope", "no attribute 'nope'"),
+        ("@NE.foo_10m.clip(1, 2, 0, 3).x", "NE has"),
+        ("@NE.coastline_50m.clip(1, 2, 3).x", "a Natural Earth layer takes"),
+        ("@OBS.precip.clip(1, 2, 0, 3)", "not allowed here"),
+        ("@OBS.precip.isel(time=0", "not a valid reference"),
+        ("@OBS.precip.dropna('lon', 'x')", "takes one dim"),
+        ("@OBS.precip.flat()", "needs two dims"),
+        ("@OBS.precip.isel(time=1 - 1)", "arithmetic"),
+        ("@OBS.precip.frobnicate()", "unknown method"),
+    ],
+)
+def test_more_errors_name_the_fix(inputs, ref, match):
+    with pytest.raises(UsageError, match=match):
+        one(ref, inputs)
+
+
+def test_flat_on_members_by_lead(inputs):
+    point = "@FC.tp.isel(latitude=0, longitude=0)"
+    assert one(point + ".flat('step')", inputs).tolist() == [0, 1, 2, 0, 1, 2]  # lead days
+    assert one(point + ".flat()", inputs).size == 6
+
+
+def test_lon180_and_lon360_order_the_field():
+    import xarray as xr
+
+    ds = xr.Dataset(
+        {"v": (("latitude", "longitude"), [[1.0, 2.0, 3.0, 4.0]])},
+        coords={"latitude": [0.0], "longitude": [350.0, 355.0, 0.0, 5.0]},
+    )
+    assert one("@X.v.lon180().lon", {"X": ds}).tolist() == [-10, -5, 0, 5]
+    assert one("@X.lon.lon180()", {"X": ds}).tolist() == [-10, -5, 0, 5]
+    across = ds.assign_coords(longitude=[175.0, -180.0, 170.0, -175.0])
+    z = one("@X.v.lon360()", {"X": across}, key="z")
+    assert z.tolist() == [[3, 1, 2, 4]]  # 170, 175, 180, 185
+
+
+def test_size_arithmetic_edges(inputs):
+    size = "@OBS.precip.isel(time=0, lat=0)"
+    trace = {
+        "x": "@OBS.lon",
+        "y": "@OBS.lon",
+        "marker": {"line": {"width": size + " / 2"}},
+        "textfont": {"size": size + " + 1"},
+    }
+    resolve({"data": [trace]}, inputs)
+    with pytest.raises(UsageError, match="only sets a size in pixels"):
+        resolve(
+            {
+                "data": [
+                    {"x": "@OBS.lon", "y": "@OBS.lon", "line": {"width": "@OBS.precip.max() * 2"}}
+                ]
+            },
+            inputs,
+        )
+    with pytest.raises(UsageError, match="division by zero"):
+        resolve(
+            {"data": [{"x": "@OBS.lon", "y": "@OBS.lon", "marker": {"size": size + " / 0"}}]},
+            inputs,
+        )
+    with pytest.raises(UsageError, match="is not a number"):
+        resolve(
+            {"data": [{"x": "@OBS.lon", "y": "@OBS.lon", "marker": {"size": size + " * const.t"}}]},
+            {**inputs, "const": {"t": "big"}},
+        )
+
+
+def test_mixed_units_warn_for_marker_colors_too(inputs, capsys):
+    total = inputs["OBS"].copy()
+    total["precip"].attrs["units"] = "mm"
+    spec = {
+        "data": [
+            {"x": "@R.lon", "y": "@R.lat", "z": "@R.precip.isel(time=0)", "coloraxis": "coloraxis"},
+            {
+                "x": "@T.lon",
+                "y": "@T.lon",
+                "marker": {"color": "@T.precip.isel(time=0, lat=0)", "coloraxis": "coloraxis"},
+            },
+        ]
+    }
+    resolve(spec, {"R": inputs["OBS"], "T": total})
+    assert "colors traces in different units" in capsys.readouterr().err
+    resolve(spec, {"R": inputs["OBS"], "T": inputs["OBS"]})
+    assert "different units" not in capsys.readouterr().err
