@@ -26,7 +26,7 @@ local at = {
     at { marker: { symbol: 'line-ns', size: speed + ' * %g' % (scale / 0.7), angle: from,
                    line: { width: 1.3, color: 'black' } } },
     at { marker: { symbol: 'arrow-down', color: 'black', angle: from, standoff: speed + ' * %g' % scale,
-                   size: 6 } },
+                   size: 4 } },
   ] + ws.basemap(bbox, rivers=false, admin1=false),
   layout: ws.map(bbox) + { title: { text: '10 m wind, %s' % ws.date(inputs.WD.coords.time[0]) } },
 }
