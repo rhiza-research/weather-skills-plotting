@@ -28,8 +28,8 @@ few lines, and long strings (selections, color tables) are written once.
 
 Where Plotly expects data, the spec holds a **reference**: a string that starts
 with `@` and names an input, `'@OBS.precip.isel(time=0)'`. Inputs are named on
-the command line, `-i rain.zarr=OBS`. There is no other binding: no `meta`
-keys, no inferred plot types, no layers or modes. What the spec says is what
+the command line, `-i rain.zarr=OBS`. There is no other binding: no inferred
+plot types, no layers or modes. What the spec says is what
 Plotly draws.
 
 ```mermaid
