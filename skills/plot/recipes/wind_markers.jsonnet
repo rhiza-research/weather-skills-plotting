@@ -3,7 +3,8 @@
 // wind_from_direction). Each arrow is a line-ns shaft and an arrow-down head, both centred
 // on the cell and turned to the from-direction. Plotly draws line-ns 1.4 times its size
 // long, so shaft size = speed * scale / 0.7 and head standoff = speed * scale put the head
-// tip on the shaft end: the arrow is 2 * scale px long per unit of speed. Arithmetic like
+// tip on the shaft end: the arrow is 2 * scale px long per unit of speed, and every head
+// is the same size. Arithmetic like
 // this is allowed only on marker sizes; the data drawn is unchanged. For arrows that keep
 // their length relative to the map (a true quiver), use the wind recipe.
 // plot.py -i wind_sd.zarr=WD --spec wind_markers.jsonnet -o wind.png
@@ -25,7 +26,7 @@ local at = {
     at { marker: { symbol: 'line-ns', size: speed + ' * %g' % (scale / 0.7), angle: from,
                    line: { width: 1.3, color: 'black' } } },
     at { marker: { symbol: 'arrow-down', color: 'black', angle: from, standoff: speed + ' * %g' % scale,
-                   size: speed + ' * %g + 3' % (0.4 * scale) } },
+                   size: 6 } },
   ] + ws.basemap(bbox, rivers=false, admin1=false),
   layout: ws.map(bbox) + { title: { text: '10 m wind, %s' % ws.date(inputs.WD.coords.time[0]) } },
 }
