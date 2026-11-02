@@ -283,6 +283,16 @@ def test_custom_binding_pattern():
     assert [p for p, _ in problems(fig)] == ["data[0].x", "data[0].y"]
 
 
+@pytest.mark.parametrize("name", ["plotly_white", "plotly_white+presentation", "none"])
+def test_named_templates_pass(name):
+    check_bindings({"data": [], "layout": {"template": name}})
+
+
+def test_an_unknown_template_name_is_named():
+    with pytest.raises(UnboundDataError, match="unknown template 'whiteish'"):
+        check_bindings({"layout": {"template": "whiteish"}})
+
+
 def test_template_defaults_are_checked():
     found = problems({"layout": {"template": {"layout": {"shapedefaults": {"y0": 30, "y1": 30}}}}})
     assert any(p.endswith("shapedefaults.y0") and "data axis" in m for p, m in found), found

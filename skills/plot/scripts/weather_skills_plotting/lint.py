@@ -321,8 +321,18 @@ class _Checker:
             self.walk(frame["layout"], "layout", "", f"{path}.layout", "layout")
 
     def check_template(self, template, path):
+        # A named Plotly template ('plotly_white', 'plotly_white+presentation') holds only styles.
+        if isinstance(template, str):
+            import plotly.io as pio
+
+            unknown = [n for n in template.split("+") if n not in pio.templates]
+            if unknown:
+                self.problem(
+                    path, f"unknown template {unknown[0]!r}; Plotly has {', '.join(pio.templates)}"
+                )
+            return
         if not isinstance(template, dict):
-            return self.problem(path, "expected a template object")
+            return self.problem(path, "expected a template object or a Plotly template name")
         for key in template.keys() - {"data", "layout"}:
             self.problem(f"{path}.{key}", "unknown template key, so it can't be checked for data")
         for trace_type, traces in template.get("data", {}).items():
