@@ -80,8 +80,8 @@ def _explain(exc) -> str:
     if re.search(r"for the '[xy]' property", text) and "Received value: '" in text:
         message += (
             " x and y take arrays; one value (a scalar coordinate such as a forecast's init "
-            "time, or a single picked position) is not an axis. For a forecast, run "
-            "step-to-time and use the valid times."
+            "time, or a single picked position) is not an axis. For a forecast, "
+            "relabel its leads as valid times with a data skill first."
         )
     if "'colorscale' property" in text:
         message += (
@@ -278,7 +278,7 @@ def report_figure(path, fig, *, digest=None):
     print(f"plot hash: {digest}")
     print(f"data: {status} ({detail or 'no data traces'})")
     if status == "NULL" and rows:
-        print("data is all NaN — inspect-zarr the input before treating this figure as valid")
+        print("data is all NaN — check the input's values before treating this figure as valid")
     elif rows:
         for name, (finite, n) in rows.items():
             if n and not finite:

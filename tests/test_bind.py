@@ -8,7 +8,7 @@ from weather_skills_core.errors import UsageError
 
 from conftest import make_forecast, make_gridded
 from weather_skills_plotting import bind
-from weather_skills_plotting.bind import METHODS, UPSTREAM, resolve
+from weather_skills_plotting.bind import resolve
 
 
 @pytest.fixture
@@ -25,10 +25,6 @@ def one(value, inputs, key="y"):
     trace = {key: value, "x": [0], "y": [0]} if key == "z" else {key: value}
     resolved, found = resolve({"data": [trace]}, inputs)
     return resolved["data"][0][key]
-
-
-def test_no_allowed_method_is_also_refused():
-    assert not set(METHODS) & set(UPSTREAM)
 
 
 def test_selection_reshape_and_labels(inputs):
@@ -71,15 +67,12 @@ def test_limits_only_on_scale_keys(inputs):
 @pytest.mark.parametrize(
     ("ref", "match"),
     [
-        ("@OBS.precip * 25.4", "unit-convert"),
-        ("@OBS.precip - OBS.precip", "difference"),
-        ("@OBS.precip.mean('time')", "summarize-dim"),
-        ("@OBS.precip.rolling(time=7)", "aggregate-temporal"),
-        ("@OBS.precip.resample(time='1W')", "aggregate-temporal"),
-        ("@OBS.precip.interp(lat=0)", "coarsen or downscale"),
-        ("@OBS.precip.where(OBS.precip > 1)", "clip-region"),
-        ("@OBS.precip.fillna(0)", "missing data stays missing"),
-        ("@OBS.precip.diff('time')", "difference"),
+        ("@OBS.precip * 25.4", "only for a size in pixels"),
+        ("@OBS.precip - OBS.precip", "only for a size in pixels"),
+        ("@OBS.precip.mean('time')", r"\.mean\(\) is not allowed.*data skill first"),
+        ("@OBS.precip.rolling(time=7)", r"\.rolling\(\) is not allowed"),
+        ("@OBS.precip.interp(lat=0)", r"\.interp\(\) is not allowed"),
+        ("@OBS.precip.where(OBS.precip > 1)", r"\.where\(\) is not allowed"),
         ("@OBS.precip.__class__", "not allowed"),
         ("@OBS.precip.values", "neither .dt, .attrs nor a coordinate"),
         ("@OBS.precip.max(dim='time')", "whole array only"),
@@ -101,7 +94,7 @@ def test_forbidden_references(inputs, ref, match):
         ("@OBS.precip.isel(time=0)", r"has dims \['latitude', 'longitude'\]"),
         ("@OBS.precip.isel(step=0)", "no dim 'step'"),
         ("@OBS.prcp", "data variables: precip"),
-        ("@FC.step", "lead times; run step-to-time"),
+        ("@FC.step", "lead times; to plot by valid date"),
         ("@OBS.precip.sel(time='1999-01-01')", "OBS.precip"),
         ("@OBS.precip.transpose('lat', 'lon')", r"dims \['time'\] are left"),
     ],
@@ -165,7 +158,7 @@ def test_x_and_y_must_pair_up(inputs):
 
 
 def test_the_innermost_refused_method_is_named(inputs):
-    with pytest.raises(UsageError, match="rolling.*aggregate-temporal"):
+    with pytest.raises(UsageError, match=r"\.rolling\(\) is not allowed"):
         one("@OBS.precip.rolling(time=7).mean()", inputs)
 
 
@@ -243,7 +236,7 @@ def test_size_arithmetic_only_on_pixel_keys(inputs):
         ("@OBS.precip.dropna('lon', 'x')", "takes one dim"),
         ("@OBS.precip.flat()", "needs two dims"),
         ("@OBS.precip.isel(time=1 - 1)", "arithmetic"),
-        ("@OBS.precip.frobnicate()", "unknown method"),
+        ("@OBS.precip.frobnicate()", r"\.frobnicate\(\) is not allowed"),
         ('@open("x").read()', "starts with an input name, not 'open'"),
         ('@__import__("os").system("ls")', "starts with an input name, not '__import__'"),
         ('@"x".upper()', "starts with an input name, not 'x'"),

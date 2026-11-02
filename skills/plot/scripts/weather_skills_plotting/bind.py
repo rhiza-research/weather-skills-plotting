@@ -2,12 +2,19 @@
 
 A string that starts with ``@`` is a reference; ``@@`` starts a literal ``@``.
 The text after ``@`` is a Python expression, parsed with :mod:`ast` and walked
-against a fixed table. Nothing is ``eval``'d.
+against the constants below. Nothing is ``eval``'d.
 
-Every method in the table selects values, reshapes them, labels them, or gives
-a display limit. Nothing computes new values, so every value drawn is a value
-stored in an input; calculations belong in data skills. The one exception is a
-size in pixels on ``SCALED_KEYS`` (below).
+A reference starts with a name: an input (``-i PATH=NAME``), ``NE`` (Natural
+Earth lines, ``NE_LAYERS``) or ``const`` (the ``--const`` values). Then come
+attributes (a variable, a coordinate, ``.dt.<DT_FIELDS>``, ``.attrs.<name>``)
+and calls to ``METHODS``; ``lat`` / ``lon`` / ``time`` stand for the input's
+own names for those dims (``_ALIASES``).
+
+Every method selects values, reshapes them, labels them, or gives a display
+limit, so every value drawn is a value stored in an input; calculations belong
+in data skills. Two kinds of reference are checked against the key they fill:
+a display limit only on ``LIMIT_KEYS``, and arithmetic, the one calculation
+allowed (a marker size in pixels), only on ``SCALED_KEYS``.
 """
 
 from __future__ import annotations
@@ -21,61 +28,58 @@ import numpy as np
 from weather_skills_core.cf import cf_dim
 from weather_skills_core.errors import UsageError
 
-# Select, reshape, label, then display limits (min / max / quantile, see LIMIT_KEYS).
+# The methods a reference may call. Any other method is refused.
 METHODS = (
+    # Select: by position, by value, the entries with a value, a Natural Earth layer's box.
     "isel",
     "sel",
     "dropna",
     "clip",
+    # Reshape: drop size-1 dims, relabel longitudes, set dim order, one value per cell.
     "squeeze",
     "lon360",
     "lon180",
     "transpose",
     "flat",
+    # Label: time as text, after .dt.
     "strftime",
+    # Display limit: one number from the whole array, only on LIMIT_KEYS.
     "min",
     "max",
     "quantile",
 )
 
-# Sizes in pixels, the only keys whose reference may take arithmetic: + - * / of data
-# by a number or @const ('@W.wind_speed.flat() * 3' is 3 px per unit, as Plotly's
-# sizeref scales marker.size). It sets how big a marker is on screen, not what is drawn.
-SCALED_KEYS = ("marker.size", "marker.standoff", "marker.line.width", "textfont.size")
-ARITHMETIC = {ast.Add: np.add, ast.Sub: np.subtract, ast.Mult: np.multiply, ast.Div: np.divide}
-
-# Time parts readable with .dt.NAME.
-DT_FIELDS = ("year", "month", "day", "hour", "dayofyear", "days")
-
-# Where a display limit may go: a reference ending in min / max / quantile is
-# accepted only when its JSON path ends in one of these keys (or sits in a range).
+# Keys a display limit may fill: a reference ending in .min(), .max() or .quantile(q)
+# goes only where its JSON path ends in one of these (or an item of range / tickvals).
 LIMIT_KEYS = frozenset({"zmin", "zmax", "zmid", "cmin", "cmax", "cmid", "range", "tickvals"})
 
+# Keys that are sizes in pixels, the only ones whose reference may take arithmetic: data
+# + - * / a number or @const ('@W.wind_speed.flat() * 3' is 3 px per unit, as Plotly's
+# sizeref scales marker.size). It sets how big a marker is on screen, not what is drawn.
+SCALED_KEYS = ("marker.size", "marker.standoff", "marker.line.width", "textfont.size")
 
-# Hints for the error message only, not a list of what is refused: any method not in
-# METHODS is refused. These common calculations name the data skill that does each.
-UPSTREAM = {
-    "mean": "summarize-dim",
-    "sum": "summarize-dim",
-    "median": "summarize-dim",
-    "std": "summarize-dim",
-    "var": "summarize-dim",
-    "cumsum": "summarize-dim",
-    "rolling": "aggregate-temporal",
-    "resample": "aggregate-temporal",
-    "coarsen": "aggregate-temporal or the coarsen skill",
-    "groupby": "aggregate-temporal or label-group",
-    "interp": "coarsen or downscale",
-    "interp_like": "coarsen or downscale",
-    "reindex": "coarsen or downscale",
-    "where": "clip-region",
-    "fillna": "nothing: missing data stays missing",
-    "diff": "difference",
-    "differentiate": "difference",
-    "astype": "unit-convert",
-}
+# The operators that arithmetic may use.
+ARITHMETIC = {ast.Add: np.add, ast.Sub: np.subtract, ast.Mult: np.multiply, ast.Div: np.divide}
 
+# Fields of .dt: parts of a time, and .days of a lead time.
+DT_FIELDS = ("year", "month", "day", "hour", "dayofyear", "days")
+
+# Short dim names a reference may use for any input; cf_dim finds the input's own name
+# (lat for latitude, and so on).
 _ALIASES = {"lat": "latitude", "lon": "longitude", "time": "time"}
+
+# Natural Earth layers for @NE.<layer>_<scale>: name → (category, shapefile name,
+# agreed-boundary filter). ``borders`` is agreed international boundaries; ``disputed``
+# is every other land line (disputed, indefinite, line of control). ``admin1`` exists
+# only at 10m.
+NE_LAYERS = {
+    "admin1": ("cultural", "admin_1_states_provinces", None),
+    "rivers": ("physical", "rivers_lake_centerlines", None),
+    "lakes": ("physical", "lakes", None),
+    "borders": ("cultural", "admin_0_boundary_lines_land", True),
+    "disputed": ("cultural", "admin_0_boundary_lines_land", False),
+    "coastline": ("physical", "coastline", None),
+}
 
 
 class GeoLines:
@@ -136,12 +140,12 @@ def _literal(node, ref):
 
 
 def _refuse(node, ref):
-    """The error for syntax outside the table, naming the skill that does the job."""
+    """The error for syntax outside the table."""
     if isinstance(node, ast.BinOp):
         raise UsageError(
             f"{ref}: arithmetic ({ast.unparse(node)!r}) is only for a size in pixels: + - * / "
-            f"of data by a number or @const, on {', '.join(SCALED_KEYS)}. For data, convert "
-            "units with unit-convert or subtract with difference, then plot the result"
+            f"of data by a number or @const, on {', '.join(SCALED_KEYS)}. For a calculated field, "
+            "compute it with a data skill first and plot the result"
         )
     raise UsageError(
         f"{ref}: {type(node).__name__} is not allowed in a reference; references select, "
@@ -152,13 +156,10 @@ def _refuse(node, ref):
 def _method(base, name, args, kwargs, ref):
     """Apply one method from the table to ``base``."""
     if name not in METHODS:
-        hint = UPSTREAM.get(name)
-        if hint:
-            raise UsageError(
-                f"{ref}: .{name}() computes new values, which plot does not do; use {hint} "
-                "first and plot its output"
-            )
-        raise UsageError(f"{ref}: unknown method .{name}(); allowed: {', '.join(METHODS)}")
+        raise UsageError(
+            f"{ref}: .{name}() is not allowed; references select, reshape and label stored "
+            f"values with {', '.join(METHODS)}. For a calculated field, compute it with a data skill first and plot the result"
+        )
     if isinstance(base, NELayer):
         if name != "clip" or len(args) != 4 or kwargs:
             raise UsageError(f"{ref}: a Natural Earth layer takes .clip(n, w, s, e)")
@@ -237,7 +238,7 @@ def _method(base, name, args, kwargs, ref):
         if kwargs or (name != "quantile" and args) or (name == "quantile" and len(args) != 1):
             raise UsageError(
                 f"{ref}: .{name}() works on the whole array only (a display limit); "
-                "averages over a dim come from summarize-dim"
+                "for an average over a dim, compute it with a data skill first and plot the result"
             )
         values = np.asarray(da.values, dtype=float)
         if not np.isfinite(values).any():
@@ -451,15 +452,15 @@ def to_json_value(value, path: str, ref: str):
             raise UsageError(
                 f"{path} = {ref} has dims {list(da.dims)}; {key} needs {want}. "
                 "Pick a position along the other dims with .isel(dim=…) / .sel(dim=…), "
-                "draw one trace per value (a Jsonnet loop), or reduce it upstream with summarize-dim"
+                "draw one trace per value (a Jsonnet loop), or reduce the dim with a data skill first"
             )
         values = np.asarray(da.values)
     else:
         values = np.asarray(value)
     if values.dtype.kind == "m":
         raise UsageError(
-            f"{path} = {ref}: these are lead times; run step-to-time to plot by valid date, "
-            "or use .dt.days for lead days"
+            f"{path} = {ref}: these are lead times; to plot by valid date, relabel the leads as "
+            "valid times with a data skill first, or use .dt.days for lead days"
         )
     if values.dtype.kind == "M":
         # ISO times; a time that is midnight drops its clock part (2026-10-01).
@@ -506,8 +507,7 @@ def resolve(spec, inputs: dict):
         if last == "arithmetic" and not path.endswith(SCALED_KEYS):
             raise UsageError(
                 f"{path} = {node}: arithmetic is only for a size in pixels, on "
-                f"{', '.join(SCALED_KEYS)}. For data, convert units with unit-convert or "
-                "subtract with difference, then plot the result"
+                f"{', '.join(SCALED_KEYS)}. For a calculated field, compute it with a data skill first and plot the result"
             )
         keys = [k for k in path.replace("[", ".[").split(".") if k and not k.startswith("[")]
         is_limit_key = keys[-1] in LIMIT_KEYS or {"range", "tickvals"} & set(keys[-2:])
@@ -598,18 +598,6 @@ def _at(tree, path):
 
 
 # ---- Lines for maps: Natural Earth layers (the built-in ``NE`` input) and GeoJSON inputs
-
-# NE layer name → (Natural Earth category, shapefile name, agreed-boundary filter).
-# ``borders`` is agreed international boundaries; ``disputed`` is every other land
-# line (disputed, indefinite, line of control). ``admin1`` exists only at 10m.
-NE_LAYERS = {
-    "admin1": ("cultural", "admin_1_states_provinces", None),
-    "rivers": ("physical", "rivers_lake_centerlines", None),
-    "lakes": ("physical", "lakes", None),
-    "borders": ("cultural", "admin_0_boundary_lines_land", True),
-    "disputed": ("cultural", "admin_0_boundary_lines_land", False),
-    "coastline": ("physical", "coastline", None),
-}
 
 
 def window_parts(w, e):
