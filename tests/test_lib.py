@@ -131,6 +131,11 @@ def test_maps_pad_the_bbox_unless_pad_is_zero():
     assert "clip(5.3, 32.7, -5.3, 42.3)" in ev(f"ws.basemap({BBOX})[0].x")
 
 
+def test_basemap_view_reaches_only_the_border_layers():
+    refs = {t["name"]: t["x"] for t in ev(f"ws.basemap({BBOX}, view='KEN')")}
+    assert all(('view="KEN"' in x) == (name in ("borders", "disputed")) for name, x in refs.items())
+
+
 def test_basemap_layers_are_on_unless_switched_off():
     names = lambda e: [t["name"] for t in ev(e)]  # noqa: E731
     assert names(f"ws.basemap({BBOX})") == [

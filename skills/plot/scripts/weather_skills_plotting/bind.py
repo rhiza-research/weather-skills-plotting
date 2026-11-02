@@ -169,10 +169,15 @@ def _method(base, name, args, kwargs, ref):
             f"values with {', '.join(METHODS)}. For a calculated field, compute it with a data skill first and plot the result"
         )
     if isinstance(base, NELayer):
-        if name != "clip" or len(args) != 4 or kwargs:
-            raise UsageError(f"{ref}: a Natural Earth layer takes .clip(n, w, s, e)")
+        if name != "clip" or len(args) != 4 or set(kwargs) - {"view"}:
+            raise UsageError(
+                f"{ref}: a Natural Earth layer takes .clip(n, w, s, e), or "
+                ".clip(n, w, s, e, view='KEN') for a country's own border"
+            )
         n, w, s, e = (float(v) for v in args)
-        return GeoLines(geo.load_ne_layer(base.layer, base.scale, n, w, s, e))
+        return GeoLines(
+            geo.load_ne_layer(base.layer, base.scale, n, w, s, e, view=kwargs.get("view"))
+        )
     if isinstance(base, _Accessor):
         if base.kind == "dt" and name == "strftime" and len(args) == 1 and not kwargs:
             return base.da.dt.strftime(args[0])

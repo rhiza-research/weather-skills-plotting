@@ -366,3 +366,37 @@ def test_offline_natural_earth_falls_back_to_bundled_outlines(monkeypatch, capsy
     assert lines and "drawing the bundled country outlines" in capsys.readouterr().err
     assert geo.load_ne_layer("rivers", "50m", 5, 30, -5, 45) == []
     assert "NE.rivers unavailable" in capsys.readouterr().err
+
+
+def test_a_natural_earth_clip_takes_only_a_view(inputs):
+    xs = one('@NE.borders_10m.clip(5, 33, -5, 42, view="KEN").x', inputs)
+    assert np.isfinite(xs).any()
+    with pytest.raises(UsageError, match="view='KEN'"):
+        one('@NE.borders_10m.clip(5, 33, -5, 42, scale="x").x', inputs)
+
+
+@pytest.mark.overlays
+def test_view_draws_the_country_border_its_own_way(monkeypatch):
+    """Offline, borders are every country's edge; view=KEN keeps Kenya's land border only."""
+    import cartopy.io.shapereader as shpreader
+    import shapely
+    from shapely.geometry import Point
+    from weather_skills_core import region
+
+    def offline(**kwargs):
+        raise OSError("no network")
+
+    monkeypatch.setattr(shpreader, "natural_earth", offline)
+    from importlib.resources import files
+
+    raw = files("weather_skills_core.data").joinpath("countries.geojson").read_text()
+    countries = json.loads(raw)["features"]
+    kenya = next(f for f in countries if f["properties"]["iso3"] == "KEN")
+    monkeypatch.setattr(region, "lookup_region", lambda code: kenya)
+    lines = shapely.union_all(geo.load_ne_layer("borders", "50m", 6, 33, -5, 42.5, view="KEN"))
+    country, land = geo.view_country("KEN")
+    coast = max(shapely.get_coordinates(country.boundary), key=lambda xy: land.distance(Point(xy)))
+    assert lines.distance(Point(coast)) > 0.01  # the coast is not a border
+    assert lines.buffer(1e-6).covers(land)  # every land edge is drawn
+    with pytest.raises(UsageError, match="ISO 3166 alpha-3"):
+        geo.view_country("Kenya")

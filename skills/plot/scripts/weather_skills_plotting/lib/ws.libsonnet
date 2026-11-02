@@ -144,8 +144,10 @@ local basemapStyles = {
   // draws admin-1 lines on maps up to 20° across. Drawn bottom first: admin1, rivers,
   // lakes (filled, opaque over the data), borders, disputed, coastline.
   // style overrides a layer's Plotly keys: style={borders: {line: {color: 'red'}}}.
+  // view='KEN' (an ISO3 code) draws that country's border its own way, from core's
+  // countries: Natural Earth's borders and disputed lines on or inside it give way.
   basemap(box, i=0, coastline=true, borders=true, disputed=true, lakes=true, rivers=true,
-          admin1='auto', style={}, pad=0.03)::
+          admin1='auto', style={}, pad=0.03, view=null)::
     local bbox = $.pad(box, pad);
     local on = {
       admin1: if admin1 == 'auto' then std.max(box.e - box.w, box.n - box.s) <= 20 else admin1,
@@ -153,7 +155,10 @@ local basemapStyles = {
     };
     [
       local res = if name == 'admin1' then '10m' else scaleFor(bbox);
-      local clip = '.clip(%g, %g, %g, %g)' % [bbox.n, bbox.w, bbox.s, bbox.e];
+      // view='KEN': the borders and disputed layers draw that country's border its own way.
+      local viewed = view != null && std.member(['borders', 'disputed'], name);
+      local clip = '.clip(%g, %g, %g, %g%s)' % [bbox.n, bbox.w, bbox.s, bbox.e,
+                                               if viewed then ', view="%s"' % view else ''];
       {
         type: 'scatter', mode: 'lines', name: name, uid: 'basemap-%s-%d' % [name, i],
         hoverinfo: 'skip', showlegend: false,

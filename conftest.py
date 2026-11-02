@@ -12,7 +12,7 @@ def no_natural_earth(monkeypatch, request):
 
     from weather_skills_plotting import geo
 
-    def fake(layer, scale, n, w, s, e):
+    def fake(layer, scale, n, w, s, e, view=None):
         return [LineString([(w, s), (e, n)])]
 
     monkeypatch.setattr(geo, "load_ne_layer", fake)

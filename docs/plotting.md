@@ -117,7 +117,11 @@ agent can read them and override any part with `+`.
 - **Base map.** `ws.basemap` returns line traces whose `x` / `y` reference the
   built-in `NE` input (Natural Earth via cartopy, clipped to the bbox, scale
   from the map span). If borders or coastline can't be fetched, the country
-  outlines bundled with core stand in.
+  outlines bundled with core stand in. Natural Earth draws disputed areas its
+  own way (the Ilemi Triangle sits outside Kenya); `view='KEN'` passes
+  `.clip(n, w, s, e, view="KEN")` to the `borders` and `disputed` layers, which
+  then drop Natural Earth's lines within 0.05° of the country and draw its land
+  border from core's region lookup, the same outline `resolve-region` writes.
 - **Palettes.** `ws.palettes` holds the CHC class palettes and the verify
   palettes as `{colors, bounds}` (and `labels` where classes have names).
   `ws.stepped` turns one into a coloraxis whose colors step at the bounds, so

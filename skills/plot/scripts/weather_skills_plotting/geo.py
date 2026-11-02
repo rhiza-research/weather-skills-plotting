@@ -44,16 +44,56 @@ def window_parts(w, e):
     return parts
 
 
-def load_ne_layer(layer: str, scale: str, n, w, s, e):
+# How far (degrees) from a view country's own border Natural Earth's lines are dropped:
+# its 10m lines and core's 50m country polygons differ by up to a few hundredths.
+VIEW_GAP = 0.05
+
+
+def view_country(iso3: str):
+    """``(polygon, land border)`` of a country as core's region lookup draws it.
+
+    The outline is the one resolve-region writes (geoBoundaries, or core's coarser
+    Natural Earth 50m outline when that can't be reached), so a resolve-region outline
+    drawn on top lines up. The land border is the part of its edge within 0.25° of a
+    neighbour in core's bundled countries: coasts are left out, borders through
+    lakes kept. A code that isn't three capital letters is a UsageError.
+    """
+    import shapely
+    from shapely.geometry import shape
+    from weather_skills_core.region import lookup_region
+
+    if not (len(iso3) == 3 and iso3.isalpha() and iso3.isupper()):
+        raise UsageError(f"view={iso3!r}: pass a country's ISO 3166 alpha-3 code, e.g. view='KEN'")
+    country = shape(lookup_region(iso3)["geometry"])
+    raw = json.loads(files("weather_skills_core.data").joinpath("countries.geojson").read_text())
+    neighbours = shapely.union_all(
+        [
+            shape(f["geometry"])
+            for f in raw.get("features") or []
+            if f.get("geometry") and f["properties"].get("iso3") != iso3
+        ]
+    ).intersection(country.buffer(0.5))
+    return country, country.boundary.intersection(neighbours.buffer(0.25))
+
+
+def load_ne_layer(layer: str, scale: str, n, w, s, e, view=None):
     """A Natural Earth layer's shapes clipped to the bbox (downloaded once by cartopy).
 
     If borders or coastline can't be fetched, the country outlines bundled with
     core stand in for both, with a warning; other layers are left out.
+
+    ``view`` (an ISO3 code such as ``'KEN'``) draws that country's border its own
+    way: the ``borders`` and ``disputed`` lines on or inside it are dropped, and
+    ``borders`` draws its land border from core's countries instead.
     """
     import shapely
     from shapely.geometry import box, shape
 
     category, name, agreed = NE_LAYERS[layer]
+    if view is not None and layer in ("borders", "disputed"):
+        country, own_border = view_country(view)
+    else:
+        view = None
     geoms = []
     for west, east, shift in window_parts(w, e):
         clip = box(west, s, east, n)
@@ -95,6 +135,17 @@ def load_ne_layer(layer: str, scale: str, n, w, s, e):
                 clipped = geom.intersection(clip)
                 if not clipped.is_empty:
                     parts.extend(getattr(clipped, "geoms", [clipped]))
+        if view is not None:
+            # Natural Earth's lines near the view country give way to its own border.
+            parts = [p.difference(country.buffer(VIEW_GAP)) for p in parts]
+            if layer == "borders":
+                parts.append(own_border.intersection(clip))
+            parts = [
+                g
+                for p in parts
+                for g in getattr(p, "geoms", [p])
+                if not g.is_empty and g.geom_type in ("LineString", "LinearRing")
+            ]
         geoms += [shapely.transform(g, lambda xy, d=shift: xy + [d, 0.0]) for g in parts]
     return geoms
 
