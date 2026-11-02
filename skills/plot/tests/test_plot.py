@@ -162,7 +162,7 @@ def _inputs(tmp_path):
     }
     files["C"]["precip_std"].attrs["units"] = "mm day-1"
     paths = {name: write_zarr(ds, tmp_path / f"{name}.zarr") for name, ds in files.items()}
-    paths["KENYA"] = _geojson(tmp_path / "kenya.geojson")
+    paths["REGION"] = _geojson(tmp_path / "region.geojson")
     return paths, files
 
 
@@ -196,7 +196,7 @@ def test_every_recipe_draws_only_stored_values(tmp_path, plot_fn, capsys, recipe
     names = [
         a.split("=")[-1] for flag, a in zip(argv[::2], argv[1::2], strict=True) if flag == "-i"
     ]
-    values = {n: load_geojson(paths[n]) if n == "KENYA" else files[n] for n in names}
+    values = {n: load_geojson(paths[n]) if n == "REGION" else files[n] for n in names}
     meta = {n: input_metadata(v) for n, v in values.items()}
     sources = {n: GeoLines(v) if isinstance(v, list) else v for n, v in values.items()}
     consts = [c for flag, c in zip(argv[::2], argv[1::2], strict=True) if flag == "--const"]
@@ -336,6 +336,7 @@ def test_bad_input_name(plot_fn, capsys, argv, match):
         ("{data: [{type: 'heatmap', z: '@G.precip'}]}", "needs 2-D"),
         ("{data: [{type: 'heatmap', z: '@G.prcp.isel(time=0)'}]}", "data variables: precip"),
         ("{data: [{type: 'heatmap', z: '@X.precip'}]}", "'X' is not an input; inputs are G"),
+        ("{layout: {title: {text: std.extVar('inputs').X.attrs.name}}}", "pass it with -i FILE=X"),
         ("{data: [{type: 'scatter', y: [1, 2, 3]}]}", "data[0].y: data key needs an @binding"),
         (
             "{data: [{type: 'scatter', x: '@G.time', y: '@G.precip.isel(lat=0, lon=0)'}],"
@@ -409,19 +410,17 @@ def test_recipes_by_name_and_listing(tmp_path, plot_fn, capsys):
     listing = capsys.readouterr().out
     assert "animation " in listing and "map " in listing
     run_skill(plot_fn, "--recipe", "map")
-    assert "ws.basemap(bbox, borders=false)" in capsys.readouterr().out
+    assert "ws.basemap(bbox)" in capsys.readouterr().out
     grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
     # A bare name, and a path whose ${CLAUDE_SKILL_DIR} was never expanded, both find the recipe.
     for spec in ("map", "${CLAUDE_SKILL_DIR}/recipes/map.jsonnet"):
-        with pytest.raises(SystemExit):
-            run_skill(plot_fn, "-i", f"{grid}=OBS", "--spec", spec, "--dump-spec", "-")
-        err = capsys.readouterr().err
-        assert "Field does not exist: KENYA" in err and "pass it with -i FILE=KENYA" in err
+        run_skill(plot_fn, "-i", f"{grid}=OBS", "--spec", spec, "--dump-spec", "-")
+        assert "@REGION.x" in capsys.readouterr().out
 
 
 def test_importstr_reads_a_recipe(plot_fn, capsys):
     run_skill(plot_fn, "--spec", "{text: importstr 'map.jsonnet'}", "--dump-spec", "-")
-    assert "ws.basemap(bbox, borders=false)" in json.loads(capsys.readouterr().out)["text"]
+    assert "ws.basemap(bbox)" in json.loads(capsys.readouterr().out)["text"]
 
 
 def test_gif_size_is_reported_and_large_ones_warn(tmp_path, plot_fn, capsys, monkeypatch):
