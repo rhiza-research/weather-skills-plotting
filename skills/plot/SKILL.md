@@ -30,7 +30,7 @@ Start from a recipe. `--recipe` lists them, `--recipe NAME` prints one to copy a
 | `members.jsonnet` | Ensemble members in grey and the mean in bold, at the cell nearest a point |
 | `band.jsonnet` | A shaded 10–90% band between two quantile lines, with observations |
 | `seasons.jsonnet` | Past years and a forecast plume on one day-of-year axis |
-| `wind.jsonnet` | Wind speed shading with arrows on every 3rd cell, as long as the wind is strong (`scale` px per unit each side) |
+| `wind.jsonnet` | Wind speed shading with about 25 arrows across (`step` from `inputs.WD.dims.longitude`), as long as the wind is strong (`scale` px per unit each side) |
 | `animation.jsonnet` | A map played through time: HTML with play / slider, or a looping GIF |
 | `cross_section.jsonnet` | A field over longitude and pressure, 1000 hPa at the bottom |
 | `bars.jsonnet` | Horizontal bars per county from a name coordinate |

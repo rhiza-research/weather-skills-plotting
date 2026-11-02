@@ -1,4 +1,4 @@
-// Wind speed shading with arrows on every 3rd cell, each as long as its wind is strong.
+// Wind speed shading with about 25 arrows across the map, each as long as its wind is strong.
 // wind_speed and wind_from_direction come from the wind-speed-direction skill.
 // Each arrow is two Plotly markers centred on the cell, turned to the from-direction:
 // a line-ns shaft and an arrow-down head whose tip is moved downwind by standoff.
@@ -10,7 +10,8 @@ local ws = import 'ws.libsonnet';
 local inputs = std.extVar('inputs');
 local bbox = inputs.WD.bbox;
 local sel = '.isel(time=0)';
-local thin = '.isel(time=0, lat=slice(None, None, 3), lon=slice(None, None, 3))';
+local step = std.max(1, std.ceil(inputs.WD.dims.longitude / 25));  // every step-th cell: about 25 arrows across
+local thin = '.isel(time=0, lat=slice(None, None, %d), lon=slice(None, None, %d))' % [step, step];
 local scale = 2;  // px per unit of speed, each side of the cell: 10 m/s draws a 40 px arrow
 local speed = '@WD.wind_speed' + thin + '.flat()';
 local from = '@WD.wind_from_direction' + thin + '.flat()';
