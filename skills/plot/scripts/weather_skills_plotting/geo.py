@@ -100,7 +100,11 @@ def load_ne_layer(layer: str, scale: str, n, w, s, e):
 
 
 def load_geojson(path):
-    """Every geometry in a GeoJSON file (FeatureCollection, Feature or bare geometry)."""
+    """Every geometry in a GeoJSON file, as shapely shapes.
+
+    Reads a FeatureCollection, a Feature or a bare geometry; features without a
+    geometry are skipped. An unreadable file is a UsageError.
+    """
     from shapely.geometry import shape
 
     try:

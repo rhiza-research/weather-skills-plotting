@@ -81,6 +81,8 @@ class NaturalEarth:
 
 
 class NELayer:
+    """``@NE.<layer>_<scale>`` before its ``.clip(n, w, s, e)``: which layer to load."""
+
     def __init__(self, layer, scale):
         self.layer, self.scale = layer, scale
 
@@ -93,7 +95,11 @@ class _Accessor:
 
 
 def _dim(da, name, ref):
-    """The dim of ``da`` that ``name`` means: itself, or the CF lat / lon / time it aliases."""
+    """The name of the dim of ``da`` that ``name`` means.
+
+    That is ``name`` itself, or for ``lat`` / ``lon`` / ``time`` the input's own CF
+    latitude / longitude / time dim. A UsageError lists the dims if there is none.
+    """
     if name in da.dims:
         return name
     if name in _ALIASES:
@@ -104,7 +110,12 @@ def _dim(da, name, ref):
 
 
 def _literal(node, ref):
-    """A constant argument: number, string, None, list / tuple of those, -number, slice(...)."""
+    """A method argument as a Python value.
+
+    Only constants are allowed: numbers (negative too), strings, None, lists or
+    tuples of them, and ``slice(...)``. Anything else (a name, a call, arithmetic)
+    is a UsageError.
+    """
     if isinstance(node, ast.Constant):
         return node.value
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
@@ -127,7 +138,11 @@ def _literal(node, ref):
 
 
 def _refuse(node, ref):
-    """The error for syntax outside the table."""
+    """Raise the UsageError for a part of a reference that isn't allowed.
+
+    Arithmetic outside a pixel size has its own message; any other syntax
+    (a subscript, a comprehension, a bare call) gets a generic one.
+    """
     if isinstance(node, ast.BinOp):
         raise UsageError(
             f"{ref}: arithmetic ({ast.unparse(node)!r}) is only for a size in pixels: + - * / "
@@ -141,7 +156,13 @@ def _refuse(node, ref):
 
 
 def _method(base, name, args, kwargs, ref):
-    """Apply one method from the table to ``base``."""
+    """Return ``base.<name>(*args, **kwargs)`` for one of METHODS, checking its arguments.
+
+    ``base`` is what the reference holds so far: a DataArray, a Natural Earth
+    layer (which only takes ``.clip``), or a ``.dt`` accessor (only ``.strftime``).
+    A method outside METHODS, wrong arguments, or a selection that finds nothing
+    (the error then says what each picked dim holds) is a UsageError.
+    """
     if name not in METHODS:
         raise UsageError(
             f"{ref}: .{name}() is not allowed; references select, reshape and label stored "
@@ -237,7 +258,13 @@ def _method(base, name, args, kwargs, ref):
 
 
 def evaluate(text: str, inputs: dict):
-    """The value a reference stands for (before conversion to JSON)."""
+    """Evaluate one reference, e.g. ``'@OBS.precip.isel(time=0)'``, against ``inputs``.
+
+    ``inputs`` maps each input name to a Dataset or GeoLines, and ``const`` to the
+    --const values. Returns ``(value, last)``: the value (a DataArray, array, number
+    or text, not yet JSON) and what the reference ends in (``'arithmetic'``, the
+    last method's name, or None), which ``resolve`` checks against the key it fills.
+    """
     ref = text
     try:
         tree = ast.parse(text[1:], mode="eval")
@@ -248,6 +275,7 @@ def evaluate(text: str, inputs: dict):
         ) from None
 
     def walk(node):
+        """The value of one node of the parsed reference."""
         if isinstance(node, ast.Name):
             if node.id == "NE":
                 return NaturalEarth()
@@ -342,6 +370,13 @@ def _has_data(node):
 
 
 def _attribute(base, attr, ref):
+    """Return ``base.<attr>``, for the kinds of ``base`` a reference can reach.
+
+    A --const value, a Natural Earth layer by name, a GeoJSON input's ``.x`` / ``.y``,
+    a ``.dt`` or ``.attrs`` field, or a variable or coordinate of an input or of a
+    selection (``lat`` / ``lon`` / ``time`` by alias). Names starting with ``_`` and
+    anything else are a UsageError.
+    """
     if attr.startswith("_"):
         raise UsageError(f"{ref}: {attr!r} is not allowed")
     if isinstance(base, dict):
@@ -409,7 +444,14 @@ def _attribute(base, attr, ref):
 
 
 def to_json_value(value, path: str, ref: str):
-    """A resolved reference as a Plotly value, checking its shape for the key at ``path``."""
+    """The JSON value Plotly takes at ``path`` for a resolved reference.
+
+    Its shape is checked against the key: ``z`` is 2-D (a lat/lon grid as rows of
+    latitude), ``customdata`` 1-D or 2-D, anything else 1-D or one value, after
+    size-1 dims are dropped. Times become ISO text (a midnight drops its clock),
+    numbers a float array, anything else a list. Lead times, and a whole input or
+    layer with no variable named, are a UsageError.
+    """
     if isinstance(value, (str, int, float)):
         return value
     if isinstance(value, (GeoLines, NELayer, NaturalEarth, _Accessor)) or hasattr(
@@ -466,13 +508,20 @@ def to_json_value(value, path: str, ref: str):
 
 
 def _iso(item):
+    """An object coordinate value (a cftime date, a label) as text, ISO when it is a date."""
     return item.isoformat() if hasattr(item, "isoformat") else str(item)
 
 
 def resolve(spec, inputs: dict):
-    """Replace every reference in ``spec`` with its values; check guardrails first.
+    """Replace every ``@`` reference in ``spec`` with its data from ``inputs``.
 
-    Returns a new spec and ``{path: reference}`` for every reference resolved.
+    Each reference is evaluated, checked against the key it fills (arithmetic only
+    on SCALED_KEYS, a display limit only on LIMIT_KEYS) and turned into JSON by
+    ``to_json_value``; ``@@`` text loses one ``@``. Then the whole figure is
+    checked: a trace's x and y pair up point by point, a lat/lon ``z`` has x and y
+    set, and traces sharing a coloraxis in different units print a warning.
+
+    Returns the filled spec and ``{path: reference}`` for every reference.
     """
     found = {}
     grids = []
@@ -482,6 +531,7 @@ def resolve(spec, inputs: dict):
     color_units = {}
 
     def walk(node, path):
+        """``node`` with its references filled; ``path`` is its JSON path (``data[0].z``)."""
         if isinstance(node, dict):
             return {k: walk(v, f"{path}.{k}" if path else k) for k, v in node.items()}
         if isinstance(node, list):
@@ -578,6 +628,7 @@ def resolve(spec, inputs: dict):
 
 
 def _at(tree, path):
+    """The object at a JSON path such as ``data[0].marker`` in ``tree``."""
     for part in path.replace("[", ".[").split("."):
         if part:
             tree = tree[int(part[1:-1])] if part.startswith("[") else tree[part]
