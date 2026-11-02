@@ -9,7 +9,8 @@ local t = inputs.OBS.coords.time;
     { type: 'heatmap', x: '@OBS.lon', y: '@OBS.lat', z: '@OBS.precip.isel(time=0)', coloraxis: 'coloraxis' },
     { type: 'scatter', mode: 'lines', x: '@KENYA.x', y: '@KENYA.y', line: { color: 'black', width: 2 },
       hoverinfo: 'skip', showlegend: false },
-  ] + ws.basemap(bbox),
+  // borders=false: the outline is the country's border; Natural Earth's would draw it twice.
+  ] + ws.basemap(bbox, borders=false),
   layout: ws.map(bbox) + ws.classBar(ws.palettes.ppt_week, 'mm') + {
     title: { text: 'Rainfall, week of %s' % ws.date(t[0]) },
   },

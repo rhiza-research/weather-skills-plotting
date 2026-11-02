@@ -409,7 +409,7 @@ def test_recipes_by_name_and_listing(tmp_path, plot_fn, capsys):
     listing = capsys.readouterr().out
     assert "animation " in listing and "map " in listing
     run_skill(plot_fn, "--recipe", "map")
-    assert "ws.basemap(bbox)" in capsys.readouterr().out
+    assert "ws.basemap(bbox, borders=false)" in capsys.readouterr().out
     grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
     # A bare name, and a path whose ${CLAUDE_SKILL_DIR} was never expanded, both find the recipe.
     for spec in ("map", "${CLAUDE_SKILL_DIR}/recipes/map.jsonnet"):
@@ -421,7 +421,7 @@ def test_recipes_by_name_and_listing(tmp_path, plot_fn, capsys):
 
 def test_importstr_reads_a_recipe(plot_fn, capsys):
     run_skill(plot_fn, "--spec", "{text: importstr 'map.jsonnet'}", "--dump-spec", "-")
-    assert "ws.basemap(bbox)" in json.loads(capsys.readouterr().out)["text"]
+    assert "ws.basemap(bbox, borders=false)" in json.loads(capsys.readouterr().out)["text"]
 
 
 def test_gif_size_is_reported_and_large_ones_warn(tmp_path, plot_fn, capsys, monkeypatch):
