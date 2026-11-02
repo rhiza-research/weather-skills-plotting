@@ -270,14 +270,13 @@ class _Checker:
         self.schema = _schema()
         self.problems = []
 
-    def is_binding(self, value):
-        return isinstance(value, str) and bool(self.pattern.match(value))
-
     def problem(self, path, message):
         self.problems.append((path, message))
 
     def require(self, value, path, what):
-        bad = next((v for v in leaves(value) if not self.is_binding(v)), None)
+        bad = next(
+            (v for v in leaves(value) if not (isinstance(v, str) and self.pattern.match(v))), None
+        )
         if bad is not None or value == []:
             shown = json.dumps(bad, ensure_ascii=False)[:60] if bad is not None else "[]"
             self.problem(path, f"{what} needs an @binding, found {shown}")

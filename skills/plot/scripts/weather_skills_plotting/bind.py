@@ -79,18 +79,11 @@ UPSTREAM = {
 _ALIASES = {"lat": "latitude", "lon": "longitude", "time": "time"}
 
 
-def is_ref(value) -> bool:
-    return isinstance(value, str) and value.startswith("@") and not value.startswith("@@")
-
-
 class GeoLines:
-    """Lines and polygon rings as NaN-separated ``x`` / ``y`` arrays."""
+    """Shapes from a GeoJSON input or a clipped Natural Earth layer, drawn as ``.x`` / ``.y``."""
 
-    def __init__(self, geoms, label):
-        self.geoms, self.label = geoms, label
-
-    def xy(self):
-        return geoms_to_xy(self.geoms)
+    def __init__(self, geoms):
+        self.geoms = geoms
 
 
 class NaturalEarth:
@@ -100,13 +93,6 @@ class NaturalEarth:
 class NELayer:
     def __init__(self, layer, scale):
         self.layer, self.scale = layer, scale
-
-
-class _Constants:
-    """``@const.NAME``: a number or text passed with --const NAME=VALUE."""
-
-    def __init__(self, values):
-        self.values = values
 
 
 class _Accessor:
@@ -178,7 +164,7 @@ def _method(base, name, args, kwargs, ref):
         if name != "clip" or len(args) != 4 or kwargs:
             raise UsageError(f"{ref}: a Natural Earth layer takes .clip(n, w, s, e)")
         n, w, s, e = (float(v) for v in args)
-        return GeoLines(load_ne_layer(base.layer, base.scale, n, w, s, e), ref)
+        return GeoLines(load_ne_layer(base.layer, base.scale, n, w, s, e))
     if isinstance(base, _Accessor):
         if base.kind == "dt" and name == "strftime" and len(args) == 1 and not kwargs:
             return base.da.dt.strftime(args[0])
@@ -202,11 +188,7 @@ def _method(base, name, args, kwargs, ref):
             held = []
             for dim in picks:
                 values = da[dim].values
-                first, last = (
-                    _iso(values[0].item() if hasattr(values[0], "item") else values[0]),
-                    None,
-                )
-                last = _iso(values[-1].item() if hasattr(values[-1], "item") else values[-1])
+                first, last = (_iso(v.item() if hasattr(v, "item") else v) for v in values[[0, -1]])
                 held.append(f"{dim} has {values.size} values, {first} to {last}")
             raise UsageError(
                 f"{ref}: nothing at that {'position' if name == 'isel' else 'value'} "
@@ -283,7 +265,7 @@ def evaluate(text: str, inputs: dict):
             if node.id == "NE":
                 return NaturalEarth()
             if node.id == "const":
-                return _Constants(inputs.get("const", {}))
+                return inputs.get("const", {})
             if node.id not in inputs:
                 raise UsageError(
                     f"{ref}: {node.id!r} is not an input; inputs are "
@@ -319,22 +301,41 @@ def evaluate(text: str, inputs: dict):
             # a size never combines two fields.
             if _has_data(node.left) == _has_data(node.right):
                 _refuse(node, ref)
-            sides = [
-                walk(n) if _has_data(n) else _number(n, inputs, ref)
-                for n in (node.left, node.right)
-            ]
-            data = [
-                np.asarray(side.values if hasattr(side, "dims") else side, float) for side in sides
-            ]
+            data = []
+            for side in (node.left, node.right):
+                if _has_data(side):
+                    value = walk(side)
+                    data.append(
+                        np.asarray(value.values if hasattr(value, "dims") else value, float)
+                    )
+                    continue
+                # A number: a literal, or @const.NAME.
+                if isinstance(side, ast.Attribute) and getattr(side.value, "id", None) == "const":
+                    number = _attribute(inputs.get("const", {}), side.attr, ref)
+                else:
+                    number = _literal(side, ref)
+                if not isinstance(number, (int, float)) or isinstance(number, bool):
+                    raise UsageError(f"{ref}: {ast.unparse(side)!r} is not a number")
+                data.append(np.asarray(float(number)))
             if isinstance(node.op, ast.Div) and not np.all(data[1]):
                 raise UsageError(f"{ref}: division by zero")
             return ARITHMETIC[type(node.op)](*data)
         _refuse(node, ref)
 
-    last = "arithmetic" if isinstance(tree.body, ast.BinOp) else _last_method(tree.body)
-    if last != "arithmetic" and any(isinstance(n, ast.BinOp) for n in ast.walk(tree.body)):
-        _refuse(next(n for n in ast.walk(tree.body) if isinstance(n, ast.BinOp)), ref)
-    return walk(tree.body), last
+    # What the reference ends in: arithmetic, or a method (max in @A.b.max()).
+    body = tree.body
+    if isinstance(body, ast.BinOp):
+        last = "arithmetic"
+    else:
+        last = (
+            body.func.attr
+            if isinstance(body, ast.Call) and isinstance(body.func, ast.Attribute)
+            else None
+        )
+        nested = next((n for n in ast.walk(body) if isinstance(n, ast.BinOp)), None)
+        if nested is not None:
+            _refuse(nested, ref)
+    return walk(body), last
 
 
 def _has_data(node):
@@ -343,38 +344,17 @@ def _has_data(node):
     return any(name != "const" for name in names)
 
 
-def _number(node, inputs, ref):
-    """A number operand: a literal, or @const.NAME."""
-    if (
-        isinstance(node, ast.Attribute)
-        and isinstance(node.value, ast.Name)
-        and node.value.id == "const"
-    ):
-        value = _attribute(_Constants(inputs.get("const", {})), node.attr, ref)
-    else:
-        value = _literal(node, ref)
-    if not isinstance(value, (int, float)) or isinstance(value, bool):
-        raise UsageError(f"{ref}: {ast.unparse(node)!r} is not a number")
-    return float(value)
-
-
-def _last_method(node):
-    """The method a reference ends in, e.g. ``max`` for ``@A.b.max()``."""
-    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-        return node.func.attr
-    return None
-
-
 def _attribute(base, attr, ref):
     if attr.startswith("_"):
         raise UsageError(f"{ref}: {attr!r} is not allowed")
-    if isinstance(base, _Constants):
-        if attr not in base.values:
+    if isinstance(base, dict):
+        # @const.NAME: a number or text passed with --const NAME=VALUE.
+        if attr not in base:
             raise UsageError(
                 f"{ref}: no constant {attr!r}; pass it with --const {attr}=VALUE "
-                f"(given: {', '.join(base.values) or 'none'})"
+                f"(given: {', '.join(base) or 'none'})"
             )
-        return base.values[attr]
+        return base[attr]
     if isinstance(base, NaturalEarth):
         layer, _, scale = attr.rpartition("_")
         if layer not in NE_LAYERS or scale not in ("10m", "50m", "110m"):
@@ -392,7 +372,7 @@ def _attribute(base, attr, ref):
     if isinstance(base, GeoLines):
         if attr not in ("x", "y", "lon", "lat"):
             raise UsageError(f"{ref}: a GeoJSON input has .x (or .lon) and .y (or .lat)")
-        return base.xy()[0 if attr in ("x", "lon") else 1]
+        return geoms_to_xy(base.geoms)[0 if attr in ("x", "lon") else 1]
     if isinstance(base, _Accessor):
         if base.kind == "attrs":
             if attr not in base.da.attrs:
@@ -457,10 +437,13 @@ def to_json_value(value, path: str, ref: str):
                 f"{path} = {ref} has dims {list(da.dims)}; z needs a 2-D grid, so keep two dims "
                 "(lat and lon, or e.g. vertical and lon) and pick only the others"
             )
-        if key == "z" and da.ndim != 2:
-            raise UsageError(_shape_error(path, ref, da, 2))
         if da.ndim > allowed:
-            raise UsageError(_shape_error(path, ref, da, allowed))
+            want = "2-D (a grid)" if allowed == 2 else "1-D or a single value"
+            raise UsageError(
+                f"{path} = {ref} has dims {list(da.dims)}; {key} needs {want}. "
+                "Pick a position along the other dims with .isel(dim=…) / .sel(dim=…), "
+                "draw one trace per value (a Jsonnet loop), or reduce it upstream with summarize-dim"
+            )
         values = np.asarray(da.values)
     else:
         values = np.asarray(value)
@@ -470,9 +453,12 @@ def to_json_value(value, path: str, ref: str):
             "or use .dt.days for lead days"
         )
     if values.dtype.kind == "M":
-        values = np.datetime_as_string(values, unit="s")
-        return _strip_midnight(values)
-    if values.dtype == object:
+        # ISO times; a time that is midnight drops its clock part (2026-10-01).
+        text = np.datetime_as_string(values, unit="s")
+        values = np.vectorize(lambda v: v[:10] if v.endswith("T00:00:00") else v, otypes=[object])(
+            text
+        )
+    elif values.dtype == object:
         values = np.vectorize(_iso, otypes=[object])(values)
     if values.ndim == 0:
         item = values.item()
@@ -484,26 +470,6 @@ def to_json_value(value, path: str, ref: str):
 
 def _iso(item):
     return item.isoformat() if hasattr(item, "isoformat") else str(item)
-
-
-def _strip_midnight(values):
-    """ISO times; a time that is midnight drops its clock part (2026-10-01)."""
-    out = [v[:10] if v.endswith("T00:00:00") else v for v in np.ravel(values).tolist()]
-    return (
-        out[0]
-        if np.ndim(values) == 0
-        else np.reshape(np.array(out, dtype=object), values.shape).tolist()
-    )
-
-
-def _shape_error(path, ref, da, allowed):
-    want = "2-D (a grid)" if allowed == 2 else "1-D or a single value"
-    extra = [d for d in da.dims]
-    return (
-        f"{path} = {ref} has dims {extra}; {path.rsplit('.', 1)[-1]} needs {want}. "
-        "Pick a position along the other dims with .isel(dim=…) / .sel(dim=…), "
-        "draw one trace per value (a Jsonnet loop), or reduce it upstream with summarize-dim"
-    )
 
 
 def resolve(spec, inputs: dict):
@@ -523,17 +489,19 @@ def resolve(spec, inputs: dict):
             return {k: walk(v, f"{path}.{k}" if path else k) for k, v in node.items()}
         if isinstance(node, list):
             return [walk(v, f"{path}[{i}]") for i, v in enumerate(node)]
-        if isinstance(node, str) and node.startswith("@@"):
-            return node[1:]
-        if not is_ref(node):
+        if not isinstance(node, str) or not node.startswith("@"):
             return node
+        if node.startswith("@@"):
+            return node[1:]
         value, last = evaluate(node, inputs)
         if last == "arithmetic" and not path.endswith(SCALED_KEYS):
             raise UsageError(
                 f"{path} = {node}: arithmetic only sets a size in pixels ({', '.join(SCALED_KEYS)}); "
                 "data to draw is stored values (unit-convert, difference first)"
             )
-        if METHODS.get(last) == "limit" and not _limit_path(path):
+        keys = [k for k in path.replace("[", ".[").split(".") if k and not k.startswith("[")]
+        is_limit_key = keys[-1] in LIMIT_KEYS or {"range", "tickvals"} & set(keys[-2:])
+        if METHODS.get(last) == "limit" and not is_limit_key:
             raise UsageError(
                 f"{path} = {node}: .{last}() gives one number, for a scale only "
                 f"({', '.join(sorted(LIMIT_KEYS))}); data to draw is stored values"
@@ -554,9 +522,12 @@ def resolve(spec, inputs: dict):
 
     resolved = walk(spec, "")
     # x and y pair up point by point; different lengths mean a dim was left in one of them.
-    for path, trace in _traces_and_layout(resolved):
+    traces = [(f"data[{i}]", t) for i, t in enumerate(resolved.get("data") or [])]
+    for f, frame in enumerate(resolved.get("frames") or []):
+        traces += [(f"frames[{f}].data[{i}]", t) for i, t in enumerate(frame.get("data") or [])]
+    for path, trace in traces:
         # Gridded traces (z) take x and y as the grid's two axes, of their own lengths.
-        if path == "layout" or "z" in trace:
+        if not isinstance(trace, dict) or "z" in trace:
             continue
         x, y = trace.get("x"), trace.get("y")
         if (
@@ -616,24 +587,6 @@ def _at(tree, path):
     return tree
 
 
-def _traces_and_layout(spec):
-    """``(path, object)`` for every trace (frames included) and the layout."""
-    out = [(f"data[{i}]", t) for i, t in enumerate(spec.get("data") or []) if isinstance(t, dict)]
-    for f, frame in enumerate(spec.get("frames") or []):
-        out += [(f"frames[{f}].data[{i}]", t) for i, t in enumerate(frame.get("data") or [])]
-    if isinstance(spec.get("layout"), dict):
-        out.append(("layout", spec["layout"]))
-    return out
-
-
-def _limit_path(path: str) -> bool:
-    parts = path.replace("[", ".[").split(".")
-    keys = [p for p in parts if p and not p.startswith("[")]
-    return bool(keys) and (
-        keys[-1] in LIMIT_KEYS or "range" in keys[-2:] or "tickvals" in keys[-2:]
-    )
-
-
 # ---- Lines for maps: Natural Earth layers (the built-in ``NE`` input) and GeoJSON inputs
 
 # NE layer name → (Natural Earth category, shapefile name, agreed-boundary filter).
@@ -673,7 +626,7 @@ def load_ne_layer(layer: str, scale: str, n, w, s, e):
     core stand in for both, with a warning; other layers are left out.
     """
     import shapely
-    from shapely.geometry import box
+    from shapely.geometry import box, shape
 
     category, name, agreed = NE_LAYERS[layer]
     geoms = []
@@ -692,7 +645,16 @@ def load_ne_layer(layer: str, scale: str, n, w, s, e):
                 f"Warning: NE.{layer} unavailable ({exc}); drawing the bundled country outlines.",
                 file=sys.stderr,
             )
-            parts = _bundled_country_lines(clip)
+            raw = files("weather_skills_core.data").joinpath("countries.geojson").read_text()
+            parts = []
+            for feat in json.loads(raw).get("features") or []:
+                geom = shape(feat["geometry"]) if feat.get("geometry") else None
+                if geom is None or not geom.intersects(clip):
+                    continue
+                clipped = geom.intersection(clip)
+                for part in getattr(clipped, "geoms", [clipped]):
+                    if part.geom_type in ("Polygon", "MultiPolygon") and not part.is_empty:
+                        parts.append(shapely.boundary(part))
         else:
             parts = []
             for rec in records:
@@ -709,25 +671,6 @@ def load_ne_layer(layer: str, scale: str, n, w, s, e):
                 if not clipped.is_empty:
                     parts.extend(getattr(clipped, "geoms", [clipped]))
         geoms += [shapely.transform(g, lambda xy, d=shift: xy + [d, 0.0]) for g in parts]
-    return geoms
-
-
-def _bundled_country_lines(clip):
-    """Country outlines from the Natural Earth extract bundled with core."""
-    import shapely
-    from shapely.geometry import shape
-
-    raw = json.loads(files("weather_skills_core.data").joinpath("countries.geojson").read_text())
-    geoms = []
-    for feat in raw.get("features") or []:
-        if not feat.get("geometry"):
-            continue
-        poly = shape(feat["geometry"])
-        if not poly.intersects(clip):
-            continue
-        for part in getattr(poly.intersection(clip), "geoms", [poly.intersection(clip)]):
-            if part.geom_type in ("Polygon", "MultiPolygon") and not part.is_empty:
-                geoms.append(shapely.boundary(part))
     return geoms
 
 

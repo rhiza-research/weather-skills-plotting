@@ -187,7 +187,7 @@ def plot(inputs, output, spec, const, dpi, recipe, dump_spec, **kwargs):
         ) from None
     # Bind: GeoJSON inputs resolve as lines ('@KENYA.x' / '@KENYA.y'), constants as '@const.NAME'.
     sources = {
-        name: GeoLines(value, name) if isinstance(value, list) else value
+        name: GeoLines(value) if isinstance(value, list) else value
         for name, value in datasets.items()
     }
     sources["const"] = consts

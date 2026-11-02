@@ -197,7 +197,7 @@ def test_every_recipe_draws_only_stored_values(tmp_path, plot_fn, capsys, recipe
     ]
     values = {n: load_geojson(paths[n]) if n == "KENYA" else files[n] for n in names}
     meta = {n: input_metadata(v) for n, v in values.items()}
-    sources = {n: GeoLines(v, n) if isinstance(v, list) else v for n, v in values.items()}
+    sources = {n: GeoLines(v) if isinstance(v, list) else v for n, v in values.items()}
     consts = [c for flag, c in zip(argv[::2], argv[1::2], strict=True) if flag == "--const"]
     sources["const"] = dict(plot_mod.parse_const(c) for c in consts)
     resolved, found = resolve(evaluate(SpecArg(str(recipe)), meta, sources["const"]), sources)

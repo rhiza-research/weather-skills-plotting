@@ -225,20 +225,19 @@ def _float32(obj):
 # ---- QA lines
 
 
-def hash_png_pixels(path) -> str:
-    """sha256 of RGB pixels (of the first frame for a GIF). Provenance metadata does not change it."""
-    from PIL import Image
+def report_figure(path, fig, *, digest=None):
+    """Print ``plot hash`` and ``data:`` lines.
 
-    with Image.open(path) as img:
-        payload = img.convert("RGB").tobytes()
-    return hashlib.sha256(payload).hexdigest()
-
-
-def figure_counts(fig) -> list[tuple[str, int, int]]:
-    """``(trace, n_finite, n)`` per trace name: its ``z``, marker colors, ``y`` or ``r``.
-
-    Base-map lines (``ws.basemap``, uids ``basemap-…``) are left out.
+    The hash is ``digest``, else the sha256 of the image's RGB pixels (the first frame of a
+    GIF), which provenance metadata does not change. The data line counts finite values per
+    trace name in its ``z``, marker colors, ``y`` or ``r``; base-map lines (``ws.basemap``,
+    uids ``basemap-…``) are left out.
     """
+    if digest is None:
+        from PIL import Image
+
+        with Image.open(path) as img:
+            digest = hashlib.sha256(img.convert("RGB").tobytes()).hexdigest()
     rows: dict[str, list[int]] = {}
     # A frame's traces count under the base trace they update.
     traces = [(tr.uid or tr.name or f"data[{i}]", tr) for i, tr in enumerate(fig.data)]
@@ -274,28 +273,13 @@ def figure_counts(fig) -> list[tuple[str, int, int]]:
         count = rows.setdefault(name, [0, 0])
         count[0] += int(np.isfinite(values).sum())
         count[1] += values.size
-    return [(name, finite, n) for name, (finite, n) in rows.items()]
-
-
-def report_figure(path, fig, *, digest=None, file=None) -> str:
-    """Print ``plot hash`` and ``data:`` lines. Returns the hash."""
-    dest = sys.stdout if file is None else file
-    if digest is None:
-        digest = hash_png_pixels(path)
-    rows = figure_counts(fig)
-    detail = (
-        ", ".join(f"{name} {finite}/{n} finite" for name, finite, n in rows) or "no data traces"
-    )
-    status = "not null" if any(finite for _, finite, _ in rows) else "NULL"
-    print(f"plot hash: {digest}", file=dest)
-    print(f"data: {status} ({detail})", file=dest)
+    detail = ", ".join(f"{name} {finite}/{n} finite" for name, (finite, n) in rows.items())
+    status = "not null" if any(finite for finite, _ in rows.values()) else "NULL"
+    print(f"plot hash: {digest}")
+    print(f"data: {status} ({detail or 'no data traces'})")
     if status == "NULL" and rows:
-        print(
-            "data is all NaN — inspect-zarr the input before treating this figure as valid",
-            file=dest,
-        )
+        print("data is all NaN — inspect-zarr the input before treating this figure as valid")
     elif rows:
-        for name, finite, n in rows:
+        for name, (finite, n) in rows.items():
             if n and not finite:
-                print(f"data: {name} is all NaN and draws nothing", file=dest)
-    return digest
+                print(f"data: {name} is all NaN and draws nothing")

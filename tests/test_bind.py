@@ -138,7 +138,7 @@ def test_geojson_lon_lat_name_its_x_y():
 
     from weather_skills_plotting.bind import GeoLines
 
-    lines = {"K": GeoLines([LineString([(30, 1), (31, 2)])], "K")}
+    lines = {"K": GeoLines([LineString([(30, 1), (31, 2)])])}
     assert one("@K.lon", lines).tolist()[:2] == [30, 31]
     assert one("@K.lat", lines).tolist()[:2] == [1, 2]
 
