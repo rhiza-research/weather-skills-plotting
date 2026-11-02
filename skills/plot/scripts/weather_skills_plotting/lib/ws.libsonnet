@@ -228,31 +228,36 @@ local basemapStyles = {
     local packed = std.length(p.colors) == nb + 1,
     local classes = if packed then p.colors[1:nb] else p.colors,
     local h = len / (nb - 1),
+    // Shapes and annotations are named for the axis, so a classBar added on top of
+    // another for the same axis replaces it; bars for other axes, and your own
+    // shapes and annotations, are kept.
+    local tag = 'classBar-' + axis,
+    local others(key) = if key in super then [o for o in super[key] if std.get(o, 'name', '') != tag] else [],
     local box(y0, y1, color) = {
       type: 'rect', xref: 'paper', yref: 'paper', x0: x, x1: x + width, y0: y0, y1: y1,
-      fillcolor: color, line: { width: 0.5, color: '#333333' }, layer: 'above',
+      fillcolor: color, line: { width: 0.5, color: '#333333' }, layer: 'above', name: tag,
     },
     local triangle(base, tip, color) = {
       type: 'path', xref: 'paper', yref: 'paper', fillcolor: color, layer: 'above',
-      line: { width: 0.5, color: '#333333' },
+      line: { width: 0.5, color: '#333333' }, name: tag,
       path: 'M %f,%f L %f,%f L %f,%f Z' % [x, base, x + width, base, x + width / 2, tip],
     },
     [axis]: $.stepped(p) + { showscale: false },
-    shapes+: [box(y + k * h, y + (k + 1) * h, classes[k]) for k in std.range(0, nb - 2)]
+    shapes: others('shapes') + [box(y + k * h, y + (k + 1) * h, classes[k]) for k in std.range(0, nb - 2)]
              + (if packed then [
                   triangle(y, y - 0.8 * h, p.colors[0]),
                   triangle(y + len, y + len + 0.8 * h, p.colors[nb]),
                 ] else []),
     local label(text, at) = {
-      text: text, showarrow: false, font: { size: 11 },
+      text: text, showarrow: false, font: { size: 11 }, name: tag,
       xref: 'paper', yref: 'paper', x: x + width + 0.005, y: at, xanchor: 'left', yanchor: 'middle',
     },
     // A palette with labels names each class at its middle; otherwise the bounds are labelled.
-    annotations+: (
+    annotations: others('annotations') + (
       if std.objectHas(p, 'labels') then [label(p.labels[k], y + (k + 0.5) * h) for k in std.range(0, nb - 2)]
       else [label(format % b[i], y + i * h) for i in std.range(0, nb - 1)]
     ) + (if title == '' then [] else [{
-      text: title, showarrow: false, font: { size: 12 },
+      text: title, showarrow: false, font: { size: 12 }, name: tag,
       xref: 'paper', yref: 'paper', x: x + width / 2, y: y + len + (if packed then 0.8 * h else 0) + 0.015,
       xanchor: 'center', yanchor: 'bottom',
     }]),

@@ -86,6 +86,20 @@ def test_class_bar_names_classes_when_the_palette_has_labels():
     assert "coloraxis2" in layout
 
 
+def test_class_bar_replaces_its_own_axis_bar_only():
+    daily = ev("ws.classBar(ws.palettes.ppt_daily, 'mm')")
+    swapped = ev(
+        "{annotations: [{text: 'mine'}]} + ws.classBar(ws.palettes.ppt_week, 'mm')"
+        " + ws.classBar(ws.palettes.ppt_daily, 'mm')"
+    )
+    assert swapped["shapes"] == daily["shapes"]
+    assert swapped["annotations"] == [{"text": "mine"}] + daily["annotations"]
+    two = ev(
+        "ws.classBar(ws.palettes.ppt_daily, 'mm') + ws.classBar(ws.palettes.hits, axis='coloraxis2')"
+    )
+    assert {s["name"] for s in two["shapes"]} == {"classBar-coloraxis", "classBar-coloraxis2"}
+
+
 def test_dates_and_day_of_year_ticks():
     assert ev("ws.date('2026-10-26')") == "26 Oct 2026"
     assert ev("ws.date('2026-10-30T12:00:00', year=false)") == "30 Oct 12 UTC"
