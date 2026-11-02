@@ -7,7 +7,10 @@
 // plot.py -i forecast.zarr=EF -i mclimate.zarr=MC -i forecast_mean.zarr=EFM --spec mediogram.jsonnet -o mediogram.png
 local ws = import 'ws.libsonnet';
 local inputs = std.extVar('inputs');
-local pt = '.sel(lat=1.2, lon=10.8, method="nearest")';
+local lat = 1.2;
+local lon = 10.8;
+local pt = '.sel(lat=%g, lon=%g, method="nearest")' % [lat, lon];
+local deg(v, pos, neg) = '%g°%s' % [std.abs(v), if v < 0 then neg else pos];
 local box(name, color, legend) = {
   type: 'box', name: legend, marker: { color: color }, boxpoints: false,
   x: '@%s.tp%s.flat("step")' % [name, pt], y: '@%s.tp%s.flat()' % [name, pt],
@@ -21,7 +24,7 @@ local box(name, color, legend) = {
   ],
   layout: {
     boxmode: 'group',
-    title: { text: 'Rainfall at 1.2°N, 10.8°E, init %s' % ws.date(inputs.EF.coords.time) },
+    title: { text: 'Rainfall at %s, %s, init %s' % [deg(lat, 'N', 'S'), deg(lon, 'E', 'W'), ws.date(inputs.EF.coords.time)] },
     xaxis: { title: { text: 'Lead (days)' }, dtick: 1 },
     yaxis: { title: { text: 'mm' }, rangemode: 'tozero' },
   },

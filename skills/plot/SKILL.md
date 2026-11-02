@@ -127,7 +127,7 @@ References select and label stored values; they never compute, except a size in 
 - `ws.date(t, year=true)` — `'2026-10-26'` → `26 Oct 2026`; a time not at midnight adds `12 UTC`.
 - `ws.dayOfYearTicks` — `xaxis` ticks at the 1st of each month for a `.dt.dayofyear` axis (counted in a non-leap year; after 28 Feb a leap year sits a day later).
 - `ws.player(names, duration=500)` — play / pause buttons and a slider for frames named `names`; a `.gif` plays at the same `duration` (ms).
-- `ws.template` — the house colorway (no grey, kept for ensemble members), as `layout.template`. Without it the plot area is Plotly's default grey-blue.
+- `ws.template` — the house colorway (no grey, kept for ensemble members) on a white plot area. A spec that sets no `layout.template` gets it; extend it with `template: ws.template + {layout+: {...}}`, or set `template: {}` for Plotly's bare defaults.
 
 ## Notes
 - A season across New Year (Oct–Feb) on one axis: `x: '@Y.time.dt.strftime("%d %b")'` with `xaxis: {type: 'category', categoryorder: 'array', categoryarray: '@LEAP.time.dt.strftime("%d %b")'}`, the order taken from one input that covers the season in a leap year.

@@ -4,7 +4,8 @@
 // plot.py -i rh.zarr=RH --spec cross_section.jsonnet -o section.png
 local inputs = std.extVar('inputs');
 local levels = '.sel(vertical=slice(1000, 100))';
-local pick = '.isel(step=0).sel(lat=-1, method="nearest")';
+local lat = -1;
+local pick = '.isel(step=0).sel(lat=%g, method="nearest")' % lat;
 {
   data: [
     { type: 'contour', x: '@RH.lon', y: '@RH.vertical' + levels,
@@ -13,7 +14,7 @@ local pick = '.isel(step=0).sel(lat=-1, method="nearest")';
       colorbar: { title: { text: '%' } } },
   ],
   layout: {
-    title: { text: 'Relative humidity along 1°S, %s' % (import 'ws.libsonnet').date(inputs.RH.coords.time) },
+    title: { text: 'Relative humidity along %g°%s, %s' % [std.abs(lat), if lat < 0 then 'S' else 'N', (import 'ws.libsonnet').date(inputs.RH.coords.time)] },
     xaxis: { title: { text: 'Longitude' }, ticksuffix: '°' },
     // A log pressure axis labels only the levels, not Plotly's minor ticks.
     yaxis: { title: { text: 'Pressure (hPa)' }, type: 'log', autorange: 'reversed', tickvals: '@RH.vertical' + levels },

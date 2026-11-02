@@ -32,7 +32,13 @@ from weather_skills_core.units import dequantify_dataset
 from weather_skills_plotting.bind import GeoLines, load_geojson, resolve
 from weather_skills_plotting.export import export, key_hint, validate
 from weather_skills_plotting.lint import UnboundDataError, check_bindings
-from weather_skills_plotting.render import SpecArg, evaluate, input_metadata, recipe_text
+from weather_skills_plotting.render import (
+    SpecArg,
+    evaluate,
+    house_template,
+    input_metadata,
+    recipe_text,
+)
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
 _SKILL_VERSION = "1.0.10"
@@ -157,6 +163,8 @@ def plot(inputs, output, spec, const, dpi, recipe, dump_spec, **kwargs):
     meta = {name: input_metadata(value) for name, value in datasets.items()}
     consts = dict(const or ())
     figure = evaluate(spec, meta, consts)
+    # A spec with no template gets the house one, not Plotly's grey-blue default.
+    figure.setdefault("layout", {}).setdefault("template", house_template())
     spec.evaluated = figure
     if dump_spec is not None:
         text = json.dumps(figure, indent=2, ensure_ascii=False)

@@ -295,6 +295,13 @@ def test_inputs_metadata(tmp_path, plot_fn, capsys):
     assert meta["bbox"] == {"n": 2.0, "w": 10.0, "s": 1.0, "e": 11.0}
 
 
+def test_a_spec_without_a_template_gets_the_house_one(tmp_path, plot_fn, capsys):
+    run_skill(plot_fn, "--spec", "{data: [], layout: {}}", "--dump-spec", "-")
+    assert "colorway" in json.loads(capsys.readouterr().out)["layout"]["template"]["layout"]
+    run_skill(plot_fn, "--spec", "{data: [], layout: {template: {}}}", "--dump-spec", "-")
+    assert json.loads(capsys.readouterr().out)["layout"]["template"] == {}
+
+
 def test_gif_needs_frames(tmp_path, plot_fn, capsys):
     grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
     with pytest.raises(SystemExit):

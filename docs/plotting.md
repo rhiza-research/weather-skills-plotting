@@ -125,7 +125,11 @@ agent can read them and override any part with `+`.
   linear in value, which would make the 0–1–2 mm classes slivers, so
   `ws.classBar` hides it and draws its own from layout shapes and annotations:
   one equal-height band per class, labelled at the bounds, with under / over
-  triangles.
+  triangles. A second `ws.classBar` for the same axis replaces the first: its
+  shapes and annotations are named for the axis.
+- **Template.** A spec that sets no `layout.template` gets `ws.template` (the
+  house colorway on a white plot area) instead of Plotly's grey-blue default;
+  the dumped and recorded spec includes it, so a replay draws the same figure.
 - **Animation.** Standard Plotly `frames`; `ws.player` adds play / pause and a
   slider. A `.gif` output draws each frame with kaleido and joins them on one
   shared palette, at the play button's frame duration. Scatter traces that the

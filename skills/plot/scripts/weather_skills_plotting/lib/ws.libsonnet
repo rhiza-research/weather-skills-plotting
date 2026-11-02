@@ -228,6 +228,11 @@ local basemapStyles = {
     local packed = std.length(p.colors) == nb + 1,
     local classes = if packed then p.colors[1:nb] else p.colors,
     local h = len / (nb - 1),
+    // The under / over triangles are 0.8 of a band tall, at most 24 px when the
+    // layout's height is known (ws.map / ws.grid before classBar), so they stay short
+    // in a tall figure.
+    local plotH = if 'height' in super && 'margin' in super then super.height - super.margin.t - super.margin.b else 0,
+    local tri = if plotH > 0 then std.min(0.8 * h, 24 / plotH) else 0.8 * h,
     // Shapes and annotations are named for the axis, so a classBar added on top of
     // another for the same axis replaces it; bars for other axes, and your own
     // shapes and annotations, are kept.
@@ -245,8 +250,8 @@ local basemapStyles = {
     [axis]: $.stepped(p) + { showscale: false },
     shapes: others('shapes') + [box(y + k * h, y + (k + 1) * h, classes[k]) for k in std.range(0, nb - 2)]
              + (if packed then [
-                  triangle(y, y - 0.8 * h, p.colors[0]),
-                  triangle(y + len, y + len + 0.8 * h, p.colors[nb]),
+                  triangle(y, y - tri, p.colors[0]),
+                  triangle(y + len, y + len + tri, p.colors[nb]),
                 ] else []),
     local label(text, at) = {
       text: text, showarrow: false, font: { size: 11 }, name: tag,
@@ -258,7 +263,7 @@ local basemapStyles = {
       else [label(format % b[i], y + i * h) for i in std.range(0, nb - 1)]
     ) + (if title == '' then [] else [{
       text: title, showarrow: false, font: { size: 12 }, name: tag,
-      xref: 'paper', yref: 'paper', x: x + width / 2, y: y + len + (if packed then 0.8 * h else 0) + 0.015,
+      xref: 'paper', yref: 'paper', x: x + width / 2, y: y + len + (if packed then tri else 0) + 0.015,
       xanchor: 'center', yanchor: 'bottom',
     }]),
   },

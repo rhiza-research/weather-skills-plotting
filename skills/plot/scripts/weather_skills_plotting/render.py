@@ -200,6 +200,16 @@ def evaluate(spec: SpecArg, inputs_meta: dict, consts: dict) -> dict:
     return fig
 
 
+def house_template() -> dict:
+    """ws.template, the Plotly template a figure gets when its spec sets none."""
+    import _gojsonnet
+
+    text = _gojsonnet.evaluate_snippet(
+        "template", "(import 'ws.libsonnet').template", jpathdir=[str(LIB_DIR)]
+    )
+    return json.loads(text)
+
+
 def palette_names() -> list[str]:
     import _gojsonnet
 

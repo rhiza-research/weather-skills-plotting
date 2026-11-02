@@ -86,6 +86,17 @@ def test_class_bar_names_classes_when_the_palette_has_labels():
     assert "coloraxis2" in layout
 
 
+def test_class_bar_triangles_stay_short_in_a_tall_figure():
+    layout = ev(
+        "ws.grid({n: 5, w: 33, s: -5, e: 42}, rows=4, cols=3) + ws.classBar(ws.palettes.ppt_daily)"
+    )
+    plot_h = layout["height"] - layout["margin"]["t"] - layout["margin"]["b"]
+    tip = [s for s in layout["shapes"] if s["type"] == "path"][0]["path"]
+    # "M x,y L x,y L x,y Z": the first pair is on the base, the last is the tip.
+    base, point = (float(tip.split()[i].split(",")[1]) for i in (1, 5))
+    assert 0 < (base - point) * plot_h <= 24.01
+
+
 def test_class_bar_replaces_its_own_axis_bar_only():
     daily = ev("ws.classBar(ws.palettes.ppt_daily, 'mm')")
     swapped = ev(
