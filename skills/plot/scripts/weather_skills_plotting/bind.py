@@ -52,7 +52,8 @@ DT_FIELDS = ("year", "month", "day", "hour", "dayofyear", "days")
 LIMIT_KEYS = frozenset({"zmin", "zmax", "zmid", "cmin", "cmax", "cmid", "range", "tickvals"})
 
 
-# Calculations the plotter refuses, and the data skill that does each.
+# Hints for the error message only, not a list of what is refused: any method not in
+# METHODS is refused. These common calculations name the data skill that does each.
 UPSTREAM = {
     "mean": "summarize-dim",
     "sum": "summarize-dim",

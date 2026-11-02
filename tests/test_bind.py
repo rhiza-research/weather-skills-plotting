@@ -27,7 +27,7 @@ def one(value, inputs, key="y"):
     return resolved["data"][0][key]
 
 
-def test_every_method_has_a_job():
+def test_no_allowed_method_is_also_refused():
     assert not set(METHODS) & set(UPSTREAM)
 
 
