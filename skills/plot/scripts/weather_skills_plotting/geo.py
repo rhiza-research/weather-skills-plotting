@@ -6,6 +6,7 @@ NaN-separated x / y arrays a Plotly line trace draws.
 
 from __future__ import annotations
 
+import functools
 import json
 import sys
 from importlib.resources import files
@@ -51,6 +52,7 @@ def window_parts(w, e):
 VIEW_GAP = 0.05
 
 
+@functools.cache
 def view_country(iso3: str):
     """``(polygon, land border)`` of a country as core's region lookup draws it.
 
@@ -78,6 +80,7 @@ def view_country(iso3: str):
     return country, country.boundary.intersection(neighbours.buffer(0.25))
 
 
+@functools.cache
 def load_ne_layer(layer: str, scale: str, n, w, s, e, view=None):
     """A Natural Earth layer's shapes clipped to the bbox (downloaded once by cartopy).
 
@@ -87,6 +90,8 @@ def load_ne_layer(layer: str, scale: str, n, w, s, e, view=None):
     ``view`` (an ISO3 code such as ``'KEN'``) draws that country's border its own
     way: the ``borders`` and ``disputed`` lines on or inside it are dropped, and
     ``borders`` draws its land border from core's countries instead.
+
+    Results are cached: every panel's ``.x`` and ``.y`` of one clip share one load.
     """
     import shapely
     from shapely.geometry import box, shape
@@ -94,6 +99,7 @@ def load_ne_layer(layer: str, scale: str, n, w, s, e, view=None):
     category, name, agreed = NE_LAYERS[layer]
     if view is not None and layer in ("borders", "disputed"):
         country, own_border = view_country(view)
+        near_country = country.buffer(VIEW_GAP)
     else:
         view = None
     geoms = []
@@ -139,7 +145,7 @@ def load_ne_layer(layer: str, scale: str, n, w, s, e, view=None):
                     parts.extend(getattr(clipped, "geoms", [clipped]))
         if view is not None:
             # Natural Earth's lines near the view country give way to its own border.
-            parts = [p.difference(country.buffer(VIEW_GAP)) for p in parts]
+            parts = [p.difference(near_country) for p in parts]
             if layer == "borders":
                 parts.append(own_border.intersection(clip))
             parts = [
