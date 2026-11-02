@@ -407,8 +407,14 @@ def _attribute(base, attr, ref):
     if isinstance(base, NELayer):
         raise UsageError(f"{ref}: clip a Natural Earth layer first: .clip(n, w, s, e).{attr}")
     if isinstance(base, GeoLines):
+        if attr == "path":
+            # A filled shape's SVG path (the sea under the data), not points to draw.
+            return geo.geoms_to_path(base.geoms)
         if attr not in ("x", "y", "lon", "lat"):
-            raise UsageError(f"{ref}: a GeoJSON input has .x (or .lon) and .y (or .lat)")
+            raise UsageError(
+                f"{ref}: a GeoJSON input has .x (or .lon) and .y (or .lat), and .path "
+                "for a filled path shape"
+            )
         return geo.geoms_to_xy(base.geoms)[0 if attr in ("x", "lon") else 1]
     if isinstance(base, _Accessor):
         if base.kind == "attrs":

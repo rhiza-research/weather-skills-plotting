@@ -114,6 +114,12 @@ agent can read them and override any part with `+`.
   subplots, which cannot hold a heatmap. `ws.map` sizes the canvas from the
   bbox aspect; `ws.grid` lays out panels row by row with tick labels on the
   outer edge.
+- **Sea.** Plotly draws every heatmap under every scatter trace, whatever their
+  order, so a filled scatter can't sit under the data (the lakes sit over it on
+  purpose). `ws.map` and `ws.grid` add the sea as a `path` shape with
+  `layer: 'below'`, under all traces; its path is `@NE.ocean_….clip(…).path`,
+  each polygon's holes (islands) wound against its outer ring so they stay
+  empty. It shows wherever the field has no data.
 - **Base map.** `ws.basemap` returns line traces whose `x` / `y` reference the
   built-in `NE` input (Natural Earth via cartopy, clipped to the bbox, scale
   from the map span). If borders or coastline can't be fetched, the country

@@ -34,6 +34,15 @@ local scaleFor(bbox) =
   local span = std.max(bbox.e - bbox.w, bbox.n - bbox.s);
   if span > 90 then '110m' else if span > 45 then '50m' else '10m';
 
+// The sea on panel i: Natural Earth's ocean as a filled path shape under every trace
+// (heatmaps included), so it shows wherever the data has none. Islands are holes.
+local seaShape(bbox, i, color) = {
+  type: 'path', layer: 'below', name: 'basemap-sea-%d' % i, fillcolor: color, line: { width: 0 },
+  xref: if i == 0 then 'x' else 'x%d' % (i + 1),
+  yref: if i == 0 then 'y' else 'y%d' % (i + 1),
+  path: '@NE.ocean_%s.clip(%g, %g, %g, %g).path' % [scaleFor(bbox), bbox.n, bbox.w, bbox.s, bbox.e],
+};
+
 // Base-map line styles, drawn bottom first.
 local basemapStyles = {
   admin1: { line: { color: '#737373', width: 0.6 } },
@@ -72,9 +81,13 @@ local basemapStyles = {
   },
 
   // One map: lon/lat axes on the bbox with equal degrees, and a canvas sized to its aspect.
-  map(box, width=760, pad=0.03)::
+  // sea colors the sea under the data (null for none).
+  map(box, width=760, pad=0.03, sea='#c9d1d8')::
     local bbox = $.pad(box, pad);
     {
+    // Other shapes (a classBar's) stay, in either order; an earlier sea is replaced.
+    shapes: (if 'shapes' in super then [s for s in super.shapes if !std.startsWith(std.get(s, 'name', ''), 'basemap-sea-')] else [])
+            + (if sea == null then [] else [seaShape(bbox, 0, sea)]),
     local plotw = width - margin.l - margin.r,
     width: width,
     height: round(plotw * (bbox.n - bbox.s) / (bbox.e - bbox.w)) + margin.t + margin.b,
@@ -89,7 +102,7 @@ local basemapStyles = {
   },
 
   // Maps in a grid, filled row by row from the top left: panel i is ws.axes(i).
-  grid(box, rows, cols, panel=340, gap=0.04, pad=0.03, empty=[])::
+  grid(box, rows, cols, panel=340, gap=0.04, pad=0.03, empty=[], sea='#c9d1d8')::
     local bbox = $.pad(box, pad);
     local filled(i) = !std.member(empty, i);
     // Longitude labels on the lowest filled panel of each column, latitude labels on
@@ -98,6 +111,8 @@ local basemapStyles = {
     local leftmost(i) = filled(i) && [j for j in std.range(i - i % cols, i) if j < i && filled(j)] == [];
     {
     local aspect = (bbox.n - bbox.s) / (bbox.e - bbox.w),
+    shapes: (if 'shapes' in super then [s for s in super.shapes if !std.startsWith(std.get(s, 'name', ''), 'basemap-sea-')] else [])
+            + (if sea == null then [] else [seaShape(bbox, i, sea) for i in std.range(0, rows * cols - 1) if filled(i)]),
     width: cols * panel + margin.l + margin.r,
     height: round(rows * panel * aspect / (1 - gap)) + margin.t + margin.b,
     margin: margin,

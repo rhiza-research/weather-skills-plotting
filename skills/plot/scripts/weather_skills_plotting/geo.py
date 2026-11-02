@@ -14,7 +14,8 @@ import numpy as np
 from weather_skills_core.errors import UsageError
 
 # Natural Earth layers for @NE.<layer>_<scale>: name → (category, shapefile name,
-# agreed-boundary filter). ``borders`` is agreed international boundaries; ``disputed``
+# agreed-boundary filter). ``ocean`` is polygons, the sea ws.map fills as a path shape.
+# ``borders`` is agreed international boundaries; ``disputed``
 # is every other land line (disputed, indefinite, line of control). ``admin1`` exists
 # only at 10m.
 NE_LAYERS = {
@@ -24,6 +25,7 @@ NE_LAYERS = {
     "borders": ("cultural", "admin_0_boundary_lines_land", True),
     "disputed": ("cultural", "admin_0_boundary_lines_land", False),
     "coastline": ("physical", "coastline", None),
+    "ocean": ("physical", "ocean", None),
 }
 
 
@@ -169,6 +171,27 @@ def load_geojson(path):
     else:
         items = [raw]
     return [shape(g) for g in items if g]
+
+
+def geoms_to_path(geoms):
+    """An SVG path tracing every polygon in ``geoms``, for a filled Plotly path shape.
+
+    Each polygon's outer ring winds one way and its holes the other, so a nonzero
+    fill leaves the holes (islands in the sea) empty.
+    """
+    import shapely
+    from shapely.geometry.polygon import orient
+
+    parts = []
+    for geom in geoms:
+        for part in shapely.get_parts(shapely.get_parts(geom)):
+            if part.geom_type != "Polygon" or part.is_empty:
+                continue
+            part = orient(part, 1.0)
+            for ring in [part.exterior, *part.interiors]:
+                xy = " L".join(f"{x:.4f},{y:.4f}" for x, y in ring.coords)
+                parts.append(f"M{xy}Z")
+    return "".join(parts)
 
 
 def geoms_to_xy(geoms):

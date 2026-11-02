@@ -91,7 +91,9 @@ def test_class_bar_triangles_stay_short_in_a_tall_figure():
         "ws.grid({n: 5, w: 33, s: -5, e: 42}, rows=4, cols=3) + ws.classBar(ws.palettes.ppt_daily)"
     )
     plot_h = layout["height"] - layout["margin"]["t"] - layout["margin"]["b"]
-    tip = [s for s in layout["shapes"] if s["type"] == "path"][0]["path"]
+    tip = [
+        s for s in layout["shapes"] if s.get("name") == "classBar-coloraxis" and s["type"] == "path"
+    ][0]["path"]
     # "M x,y L x,y L x,y Z": the first pair is on the base, the last is the tip.
     base, point = (float(tip.split()[i].split(",")[1]) for i in (1, 5))
     assert 0 < (base - point) * plot_h <= 24.01
@@ -129,6 +131,18 @@ def test_maps_pad_the_bbox_unless_pad_is_zero():
     assert ev(f"ws.map({BBOX}, pad=0).yaxis.range") == [-5, 5]
     assert ev(f"ws.grid({BBOX}, 1, 2).xaxis2.range[1]") > 42
     assert "clip(5.3, 32.7, -5.3, 42.3)" in ev(f"ws.basemap({BBOX})[0].x")
+
+
+def test_maps_fill_the_sea_under_the_data():
+    seas = lambda layout: [s for s in layout["shapes"] if s["name"].startswith("basemap-sea")]  # noqa: E731
+    sea = seas(ev(f"ws.map({BBOX})"))
+    assert len(sea) == 1 and sea[0]["layer"] == "below" and sea[0]["path"].startswith("@NE.ocean_")
+    assert seas(ev(f"ws.map({BBOX}, sea=null)")) == []
+    # In either order with a classBar, both keep their shapes; a second map's sea replaces the first.
+    bar = ev(f"ws.classBar(ws.palettes.ppt_daily) + ws.map({BBOX}) + ws.map({BBOX}, sea='red')")
+    assert [s["fillcolor"] for s in seas(bar)] == ["red"] and len(bar["shapes"]) > 1
+    grid = ev(f"ws.grid({BBOX}, rows=2, cols=2, empty=[3])")
+    assert [s["xref"] for s in seas(grid)] == ["x", "x2", "x3"]
 
 
 def test_basemap_view_reaches_only_the_border_layers():

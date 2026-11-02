@@ -400,3 +400,17 @@ def test_view_draws_the_country_border_its_own_way(monkeypatch):
     assert lines.buffer(1e-6).covers(land)  # every land edge is drawn
     with pytest.raises(UsageError, match="ISO 3166 alpha-3"):
         geo.view_country("Kenya")
+
+
+def test_a_path_keeps_islands_as_holes():
+    from shapely.geometry import Polygon
+
+    sea = Polygon([(0, 0), (4, 0), (4, 4), (0, 4)], [[(1, 1), (1, 2), (2, 2), (2, 1)]])
+    path = geo.geoms_to_path([sea])
+    assert path.count("M") == 2 and path.count("Z") == 2
+    rings = [
+        [tuple(map(float, p.split(","))) for p in r.strip("MZ").split(" L")]
+        for r in path.split("Z")[:2]
+    ]
+    area = lambda r: sum(x0 * y1 - x1 * y0 for (x0, y0), (x1, y1) in zip(r, r[1:], strict=False))  # noqa: E731
+    assert area(rings[0]) > 0 > area(rings[1])  # outer ring and island wind opposite ways
