@@ -80,7 +80,10 @@ def test_limits_only_on_scale_keys(inputs):
         ("@OBS.precip.isel(time=len('ab'))", "arguments must be"),
         ("@open('x')", "starts with an input name, not 'open'"),
         ("@NE.coastline_50m.x", "clip a Natural Earth layer first"),
-        ("@NE.admin1_50m.clip(1, 2, 0, 3).x", "only at 10m"),
+        ("@NE.admin1_10m.clip(1, 2, 0, 3).x", "admin lines are @GB.admin1"),
+        ("@GB.admin3.clip(1, 2, 0, 3).x", "GB has admin1 and admin2"),
+        ("@GB.admin1.x", "clip a geoBoundaries layer first"),
+        ("@GB.admin1.clip(1, 2, 0, 3, view='KEN').x", r"takes \.clip\(n, w, s, e\)"),
     ],
 )
 def test_forbidden_references(inputs, ref, match):
@@ -400,6 +403,29 @@ def test_view_draws_the_country_border_its_own_way(monkeypatch):
     assert lines.buffer(1e-6).covers(land)  # every land edge is drawn
     with pytest.raises(UsageError, match="ISO 3166 alpha-3"):
         geo.view_country("Kenya")
+
+
+@pytest.mark.overlays
+def test_admin_lines_are_the_lines_between_a_countrys_units(monkeypatch, capsys):
+    """Two units side by side: their shared edge is drawn, the country's outline is not."""
+    import shapely
+    from shapely.geometry import Point, box, mapping
+    from weather_skills_core import region
+
+    units = [box(0, 0, 1, 1), box(1, 0, 2, 1)]
+    feats = [{"properties": {"iso3": "AAA"}, "geometry": mapping(u)} for u in units]
+    monkeypatch.setattr(region, "level_features", lambda level, bbox: feats)
+    lines = shapely.union_all(geo.load_admin_lines(1, 2, -1, -1, 3))
+    assert lines.distance(Point(1, 0.5)) < 1e-9  # the shared edge
+    assert lines.distance(Point(0, 0.5)) > 0.004  # the outline, left to borders / coastline
+    assert one("@GB.admin1.clip(2, -1, -1, 3).y", {}).size
+
+    def offline(level, bbox):
+        raise OSError("no network")
+
+    monkeypatch.setattr(region, "level_features", offline)
+    assert geo.load_admin_lines(2, 2, -1, -1, 3) == []
+    assert "GB.admin2 unavailable" in capsys.readouterr().err
 
 
 def test_a_path_keeps_islands_as_holes():

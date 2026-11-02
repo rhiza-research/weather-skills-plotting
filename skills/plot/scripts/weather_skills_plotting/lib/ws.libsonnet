@@ -45,7 +45,7 @@ local seaShape(bbox, i, color) = {
 
 // Base-map line styles, drawn bottom first.
 local basemapStyles = {
-  admin1: { line: { color: '#737373', width: 0.6 } },
+  admin: { line: { color: '#737373', width: 0.6 } },
   rivers: { line: { color: '#708090', width: 0.6 } },
   lakes: { line: { color: '#708090', width: 0.4 }, fill: 'toself', fillcolor: '#708090' },
   borders: { line: { color: '#262626', width: 1.2 } },
@@ -154,33 +154,37 @@ local basemapStyles = {
     yref: (if i == 0 then 'y' else 'y%d' % (i + 1)) + ' domain', y: 1.01, yanchor: 'bottom',
   },
 
-  // Base-map lines from the built-in Natural Earth input NE on panel i, clipped to
-  // the padded bbox. Every layer is on unless switched off by name; admin1='auto'
-  // draws admin-1 lines on maps up to 20° across. Drawn bottom first: admin1, rivers,
-  // lakes (filled, opaque over the data), borders, disputed, coastline.
+  // Base-map lines on panel i, clipped to the padded bbox: Natural Earth (the built-in
+  // NE input) and geoBoundaries admin lines (GB). Every layer is on unless switched off
+  // by name. admin is the admin level drawn inside each country: 1, 2 or false;
+  // 'auto' is 1 on maps up to 20° across. Drawn bottom first: admin, rivers, lakes
+  // (filled, opaque over the data), borders, disputed, coastline.
   // style overrides a layer's Plotly keys: style={borders: {line: {color: 'red'}}}.
   // view='KEN' (an ISO3 code) draws that country's border its own way, from core's
   // countries: Natural Earth's borders and disputed lines on or inside it give way.
   basemap(box, i=0, coastline=true, borders=true, disputed=true, lakes=true, rivers=true,
-          admin1='auto', style={}, pad=0.03, view=null)::
+          admin='auto', style={}, pad=0.03, view=null)::
     local bbox = $.pad(box, pad);
+    local level = if admin == 'auto' then (if std.max(box.e - box.w, box.n - box.s) <= 20 then 1 else false)
+                  else admin;
+    assert std.member([false, 1, 2], level) : "admin is 1, 2, false or 'auto', not %s" % [admin];
     local on = {
-      admin1: if admin1 == 'auto' then std.max(box.e - box.w, box.n - box.s) <= 20 else admin1,
-      rivers: rivers, lakes: lakes, borders: borders, disputed: disputed, coastline: coastline,
+      admin: level != false, rivers: rivers, lakes: lakes, borders: borders, disputed: disputed,
+      coastline: coastline,
     };
     [
-      local res = if name == 'admin1' then '10m' else scaleFor(bbox);
       // view='KEN': the borders and disputed layers draw that country's border its own way.
       local viewed = view != null && std.member(['borders', 'disputed'], name);
       local clip = '.clip(%g, %g, %g, %g%s)' % [bbox.n, bbox.w, bbox.s, bbox.e,
                                                if viewed then ', view="%s"' % view else ''];
+      local layer = if name == 'admin' then 'GB.admin%d' % level else 'NE.%s_%s' % [name, scaleFor(bbox)];
       {
         type: 'scatter', mode: 'lines', name: name, uid: 'basemap-%s-%d' % [name, i],
         hoverinfo: 'skip', showlegend: false,
-        x: '@NE.%s_%s%s.x' % [name, res, clip],
-        y: '@NE.%s_%s%s.y' % [name, res, clip],
+        x: '@%s%s.x' % [layer, clip],
+        y: '@%s%s.y' % [layer, clip],
       } + $.axes(i) + basemapStyles[name] + std.get(style, name, {})
-      for name in ['admin1', 'rivers', 'lakes', 'borders', 'disputed', 'coastline']
+      for name in ['admin', 'rivers', 'lakes', 'borders', 'disputed', 'coastline']
       if on[name]
     ],
 

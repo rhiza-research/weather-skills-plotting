@@ -5,7 +5,8 @@ The text after ``@`` is a Python expression, parsed with :mod:`ast` and walked
 against the constants below. Nothing is ``eval``'d.
 
 A reference starts with a name: an input (``-i PATH=NAME``), ``NE`` (Natural
-Earth lines, ``geo.NE_LAYERS``) or ``const`` (the ``--const`` values). Then come
+Earth lines, ``geo.NE_LAYERS``), ``GB`` (geoBoundaries admin lines, ``admin1`` /
+``admin2``) or ``const`` (the ``--const`` values). Then come
 attributes (a variable, a coordinate, ``.dt.<DT_FIELDS>``, ``.attrs.<name>``)
 and calls to ``METHODS``; ``lat`` / ``lon`` / ``time`` stand for the input's
 own names for those dims (``_ALIASES``).
@@ -85,6 +86,17 @@ class NELayer:
 
     def __init__(self, layer, scale):
         self.layer, self.scale = layer, scale
+
+
+class GeoBoundaries:
+    """The built-in ``GB`` input: ``GB.admin1.clip(n, w, s, e)`` or ``GB.admin2``."""
+
+
+class GBLayer:
+    """``@GB.admin<level>`` before its ``.clip(n, w, s, e)``: which level to load."""
+
+    def __init__(self, level):
+        self.level = level
 
 
 class _Accessor:
@@ -178,6 +190,11 @@ def _method(base, name, args, kwargs, ref):
         return GeoLines(
             geo.load_ne_layer(base.layer, base.scale, n, w, s, e, view=kwargs.get("view"))
         )
+    if isinstance(base, GBLayer):
+        if name != "clip" or len(args) != 4 or kwargs:
+            raise UsageError(f"{ref}: a geoBoundaries layer takes .clip(n, w, s, e)")
+        n, w, s, e = (float(v) for v in args)
+        return GeoLines(geo.load_admin_lines(base.level, n, w, s, e))
     if isinstance(base, _Accessor):
         if base.kind == "dt" and name == "strftime" and len(args) == 1 and not kwargs:
             return base.da.dt.strftime(args[0])
@@ -284,6 +301,8 @@ def evaluate(text: str, inputs: dict):
         if isinstance(node, ast.Name):
             if node.id == "NE":
                 return NaturalEarth()
+            if node.id == "GB":
+                return GeoBoundaries()
             if node.id == "const":
                 return inputs.get("const", {})
             if node.id not in inputs:
@@ -300,7 +319,7 @@ def evaluate(text: str, inputs: dict):
             root = node
             while isinstance(root, (ast.Attribute, ast.Call)):
                 root = root.func if isinstance(root, ast.Call) else root.value
-            if not (isinstance(root, ast.Name) and root.id in {*inputs, "NE", "const"}):
+            if not (isinstance(root, ast.Name) and root.id in {*inputs, "NE", "GB", "const"}):
                 start = repr(root.id) if isinstance(root, ast.Name) else ast.unparse(root)
                 raise UsageError(
                     f"{ref}: a reference starts with an input name, not {start}; inputs are "
@@ -397,13 +416,16 @@ def _attribute(base, attr, ref):
         if layer not in geo.NE_LAYERS or scale not in ("10m", "50m", "110m"):
             raise UsageError(
                 f"{ref}: NE has {', '.join(geo.NE_LAYERS)}, each as NAME_10m, NAME_50m or "
-                "NAME_110m (admin1 only 10m), e.g. @NE.coastline_50m.clip(n, w, s, e).x"
-            )
-        if layer == "admin1" and scale != "10m":
-            raise UsageError(
-                f"{ref}: NE.admin1 exists only at 10m: @NE.admin1_10m.clip(n, w, s, e)"
+                "NAME_110m, e.g. @NE.coastline_50m.clip(n, w, s, e).x; admin lines are "
+                "@GB.admin1 / @GB.admin2"
             )
         return NELayer(layer, scale)
+    if isinstance(base, GeoBoundaries):
+        if attr not in ("admin1", "admin2"):
+            raise UsageError(f"{ref}: GB has admin1 and admin2, e.g. @GB.admin1.clip(n, w, s, e).x")
+        return GBLayer(int(attr[-1]))
+    if isinstance(base, GBLayer):
+        raise UsageError(f"{ref}: clip a geoBoundaries layer first: .clip(n, w, s, e).{attr}")
     if isinstance(base, NELayer):
         raise UsageError(f"{ref}: clip a Natural Earth layer first: .clip(n, w, s, e).{attr}")
     if isinstance(base, GeoLines):
@@ -465,9 +487,9 @@ def to_json_value(value, path: str, ref: str):
     """
     if isinstance(value, (str, int, float)):
         return value
-    if isinstance(value, (GeoLines, NELayer, NaturalEarth, _Accessor)) or hasattr(
-        value, "data_vars"
-    ):
+    if isinstance(
+        value, (GeoLines, NELayer, NaturalEarth, GBLayer, GeoBoundaries, _Accessor)
+    ) or hasattr(value, "data_vars"):
         raise UsageError(f"{path} = {ref}: name a variable or coordinate to draw")
     key = path.rsplit(".", 1)[-1].split("[")[0]
     if hasattr(value, "dims"):

@@ -33,6 +33,6 @@ local at = {
                    line: { width: 1.3, color: 'black' } } },
     at { marker: { symbol: 'arrow-down', color: 'black', angle: from, standoff: speed + ' * %g' % scale,
                    size: 4 } },
-  ] + ws.basemap(bbox, rivers=false, admin1=false),
+  ] + ws.basemap(bbox, rivers=false, admin=false),
   layout: layout + { title: { text: '10 m wind, %s' % ws.date(inputs.WD.coords.time[0]) } },
 }

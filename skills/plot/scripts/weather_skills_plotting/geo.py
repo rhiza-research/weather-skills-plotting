@@ -1,4 +1,5 @@
-"""Map lines: Natural Earth layers (the built-in ``NE`` input) and GeoJSON inputs.
+"""Map lines: Natural Earth layers (the built-in ``NE`` input), geoBoundaries admin
+lines (the built-in ``GB`` input) and GeoJSON inputs.
 
 Each loader returns shapely geometries; ``geoms_to_xy`` turns them into the
 NaN-separated x / y arrays a Plotly line trace draws.
@@ -17,10 +18,8 @@ from weather_skills_core.errors import UsageError
 # Natural Earth layers for @NE.<layer>_<scale>: name → (category, shapefile name,
 # agreed-boundary filter). ``ocean`` is polygons, the sea ws.map fills as a path shape.
 # ``borders`` is agreed international boundaries; ``disputed``
-# is every other land line (disputed, indefinite, line of control). ``admin1`` exists
-# only at 10m.
+# is every other land line (disputed, indefinite, line of control).
 NE_LAYERS = {
-    "admin1": ("cultural", "admin_1_states_provinces", None),
     "rivers": ("physical", "rivers_lake_centerlines", None),
     "lakes": ("physical", "lakes", None),
     "borders": ("cultural", "admin_0_boundary_lines_land", True),
@@ -155,6 +154,45 @@ def load_ne_layer(layer: str, scale: str, n, w, s, e, view=None):
                 if not g.is_empty and g.geom_type in ("LineString", "LinearRing")
             ]
         geoms += [shapely.transform(g, lambda xy, d=shift: xy + [d, 0.0]) for g in parts]
+    return geoms
+
+
+# How far (degrees) an admin edge may sit from its country's outline and still count
+# as that outline: geoBoundaries' simplified units leave slivers between neighbours.
+ADMIN_GAP = 0.005
+
+
+@functools.cache
+def load_admin_lines(level: int, n, w, s, e):
+    """geoBoundaries admin-``level`` lines (1 or 2) inside each country, clipped to the bbox.
+
+    The units come from core's region lookup (the source resolve-region, clip-region
+    and label-group use), one download per country the box touches. Only the lines
+    between a country's units are kept: its outline is the borders and coastline
+    layers' to draw. If the units can't be fetched, a warning is printed and nothing
+    is drawn.
+    """
+    import shapely
+    from shapely.geometry import box, shape
+    from weather_skills_core.region import level_features
+
+    geoms = []
+    for west, east, shift in window_parts(w, e):
+        try:
+            features = level_features(f"admin_{level}", (n, west, s, east))
+        except Exception as exc:  # noqa: BLE001 — offline, or geoBoundaries down
+            print(f"Warning: GB.admin{level} unavailable ({exc}); not drawn.", file=sys.stderr)
+            return []
+        by_country = {}
+        for feat in features:
+            by_country.setdefault(feat["properties"]["iso3"], []).append(shape(feat["geometry"]))
+        clip = box(west, s, east, n)
+        for units in by_country.values():
+            outline = shapely.union_all(units).boundary.buffer(ADMIN_GAP)
+            inner = shapely.union_all([u.boundary for u in units]).difference(outline)
+            inner = inner.intersection(clip)
+            if not inner.is_empty:
+                geoms.append(shapely.transform(inner, lambda xy, d=shift: xy + [d, 0.0]))
     return geoms
 
 

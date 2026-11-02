@@ -11,7 +11,7 @@ local rows = std.ceil(n / cols);
 {
   data: std.flattenArrays([
     [{ type: 'heatmap', x: '@FC.lon', y: '@FC.lat', z: '@FC.tp.isel(step=%d)' % i, coloraxis: 'coloraxis' } + ws.axes(i)]
-    + ws.basemap(bbox, i, rivers=false, admin1=false)
+    + ws.basemap(bbox, i, rivers=false, admin=false)
     for i in std.range(0, n - 1)
   ]),
   layout: ws.grid(bbox, rows=rows, cols=cols, empty=std.range(n, rows * cols - 1)) + ws.classBar(ws.palettes.ppt_daily, 'mm') + {

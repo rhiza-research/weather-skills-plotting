@@ -55,7 +55,7 @@ def test_map_grid_and_titles_are_valid_plotly():
 def test_basemap_traces_reference_natural_earth():
     traces = ev(f"ws.basemap({BBOX}, 2)")
     assert [t["name"] for t in traces] == [
-        "admin1",
+        "admin",
         "rivers",
         "lakes",
         "borders",
@@ -63,6 +63,10 @@ def test_basemap_traces_reference_natural_earth():
         "coastline",
     ]
     assert traces[-1]["x"] == "@NE.coastline_10m.clip(5.3, 32.7, -5.3, 42.3).x"
+    assert traces[0]["x"] == "@GB.admin1.clip(5.3, 32.7, -5.3, 42.3).x"
+    assert ev(f"ws.basemap({BBOX}, admin=2)")[0]["x"].startswith("@GB.admin2.clip(")
+    with pytest.raises(Exception, match="admin is 1, 2, false or 'auto'"):
+        ev(f"ws.basemap({BBOX}, admin=3)")
     assert traces[0]["xaxis"] == "x3"
     wide = ev("ws.basemap({n: 40, w: -20, s: -40, e: 60})")
     assert wide[0]["name"] == "rivers" and "_50m" in wide[0]["x"]
@@ -166,7 +170,7 @@ def test_basemap_view_reaches_only_the_border_layers():
 def test_basemap_layers_are_on_unless_switched_off():
     names = lambda e: [t["name"] for t in ev(e)]  # noqa: E731
     assert names(f"ws.basemap({BBOX})") == [
-        "admin1",
+        "admin",
         "rivers",
         "lakes",
         "borders",
@@ -174,15 +178,15 @@ def test_basemap_layers_are_on_unless_switched_off():
         "coastline",
     ]
     assert names(f"ws.basemap({BBOX}, lakes=false)") == [
-        "admin1",
+        "admin",
         "rivers",
         "borders",
         "disputed",
         "coastline",
     ]
-    assert "admin1" not in names("ws.basemap({n: 20, w: 20, s: -20, e: 60})")
-    assert "admin1" in names("ws.basemap({n: 20, w: 20, s: -20, e: 60}, admin1=true)")
-    assert names(f"ws.basemap({BBOX}, disputed=false, rivers=false, admin1=false)") == [
+    assert "admin" not in names("ws.basemap({n: 20, w: 20, s: -20, e: 60})")
+    assert "admin" in names("ws.basemap({n: 20, w: 20, s: -20, e: 60}, admin=2)")
+    assert names(f"ws.basemap({BBOX}, disputed=false, rivers=false, admin=false)") == [
         "lakes",
         "borders",
         "coastline",

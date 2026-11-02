@@ -14,6 +14,6 @@ local t = '.isel(time=0)';
       colorbar: { title: { text: 'm/s' } } },
     { type: 'scattergl', mode: 'lines', x: '@WD.arrow_x' + t, y: '@WD.arrow_y' + t,
       line: { color: 'black', width: 1 }, hoverinfo: 'skip', showlegend: false },
-  ] + ws.basemap(bbox, rivers=false, admin1=false),
+  ] + ws.basemap(bbox, rivers=false, admin=false),
   layout: ws.map(bbox) + { title: { text: '10 m wind, %s' % ws.date(inputs.WD.coords.time[0]) } },
 }

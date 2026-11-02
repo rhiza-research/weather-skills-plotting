@@ -183,7 +183,7 @@ def evaluate(spec: SpecArg, inputs_meta: dict, consts: dict) -> dict:
         if "function has no parameter layers" in message:
             message += (
                 "\nws.basemap switches layers by name: coastline=, borders=, disputed=, "
-                "lakes=, rivers= (true / false) and admin1= ('auto', true, false)"
+                "lakes=, rivers= (true / false) and admin= ('auto', 1, 2, false)"
             )
         elif "function has no parameter" in message:
             message += "\nSKILL.md lists each ws.libsonnet function's parameters"
