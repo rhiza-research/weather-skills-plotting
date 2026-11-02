@@ -12,8 +12,13 @@
 local ws = import 'ws.libsonnet';
 local inputs = std.extVar('inputs');
 local bbox = inputs.WD.bbox;
-local thin = '.isel(time=0, lat=slice(None, None, 2), lon=slice(None, None, 2))';
-local scale = 2;  // px per unit of speed, each side of the cell: 10 m/s draws a 40 px arrow
+local layout = ws.map(bbox);
+// About 25 arrows across the map, and 10 m/s drawn one arrow spacing long.
+local across = 25;
+local step = std.max(1, std.ceil(inputs.WD.dims.longitude / across));
+local spacing = (layout.width - layout.margin.l - layout.margin.r) * step / inputs.WD.dims.longitude;
+local scale = spacing / (2 * 10);  // px per unit of speed, each side of the cell
+local thin = '.isel(time=0, lat=slice(None, None, %d), lon=slice(None, None, %d))' % [step, step];
 local speed = '@WD.wind_speed' + thin + '.flat()';
 local from = '@WD.wind_from_direction' + thin + '.flat()';
 local at = {
@@ -29,5 +34,5 @@ local at = {
     at { marker: { symbol: 'arrow-down', color: 'black', angle: from, standoff: speed + ' * %g' % scale,
                    size: 4 } },
   ] + ws.basemap(bbox, rivers=false, admin1=false),
-  layout: ws.map(bbox) + { title: { text: '10 m wind, %s' % ws.date(inputs.WD.coords.time[0]) } },
+  layout: layout + { title: { text: '10 m wind, %s' % ws.date(inputs.WD.coords.time[0]) } },
 }

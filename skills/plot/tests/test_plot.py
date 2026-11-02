@@ -182,7 +182,8 @@ def _recipe_inputs(recipe: Path, paths: dict) -> list[str]:
 @pytest.mark.parametrize("recipe", sorted(RECIPES.glob("*.jsonnet")), ids=lambda p: p.stem)
 def test_every_recipe_draws_only_stored_values(tmp_path, plot_fn, capsys, recipe):
     """Each recipe renders, and every data value it draws is a value stored in its input."""
-    from weather_skills_plotting.bind import GeoLines, load_geojson, resolve
+    from weather_skills_plotting.bind import GeoLines, resolve
+    from weather_skills_plotting.geo import load_geojson
     from weather_skills_plotting.render import SpecArg, evaluate, input_metadata
 
     paths, files = _inputs(tmp_path)

@@ -7,7 +7,7 @@ import pytest
 from weather_skills_core.errors import UsageError
 
 from conftest import make_forecast, make_gridded
-from weather_skills_plotting import bind
+from weather_skills_plotting import geo
 from weather_skills_plotting.bind import resolve
 
 
@@ -184,7 +184,7 @@ def test_one_colorbar_in_two_units_warns(inputs, capsys):
 def test_a_grid_across_the_dateline_draws_in_one_piece():
     import xarray as xr
 
-    from weather_skills_plotting.bind import window_parts
+    from weather_skills_plotting.geo import window_parts
     from weather_skills_plotting.render import input_metadata
 
     lons = [170.0, 175.0, -180.0, -175.0]
@@ -338,7 +338,7 @@ RING = [[10, 1], [13, 1], [13, 3], [10, 3], [10, 1]]
 def test_geojson_wrappers_give_the_same_lines(tmp_path, doc):
     path = tmp_path / "a.geojson"
     path.write_text(json.dumps(doc))
-    x, y = bind.geoms_to_xy(bind.load_geojson(path))
+    x, y = geo.geoms_to_xy(geo.load_geojson(path))
     assert x[:5].tolist() == [10, 13, 13, 10, 10] and np.isnan(x[5])
 
 
@@ -346,12 +346,12 @@ def test_unreadable_geojson_is_a_usage_error(tmp_path):
     path = tmp_path / "bad.geojson"
     path.write_text("{not json")
     with pytest.raises(UsageError, match="GeoJSON input"):
-        bind.load_geojson(path)
+        geo.load_geojson(path)
 
 
 def test_window_parts_split_at_the_dateline():
-    assert bind.window_parts(170, -175) == [(170, 180, 0.0), (-180, -175, 360.0)]
-    assert bind.window_parts(170, 195) == [(170, 180, 0.0), (-180, -165, 360.0)]
+    assert geo.window_parts(170, -175) == [(170, 180, 0.0), (-180, -175, 360.0)]
+    assert geo.window_parts(170, 195) == [(170, 180, 0.0), (-180, -165, 360.0)]
 
 
 @pytest.mark.overlays
@@ -362,7 +362,7 @@ def test_offline_natural_earth_falls_back_to_bundled_outlines(monkeypatch, capsy
         raise OSError("no network")
 
     monkeypatch.setattr(shpreader, "natural_earth", offline)
-    lines = bind.load_ne_layer("coastline", "50m", 5, 30, -5, 45)
+    lines = geo.load_ne_layer("coastline", "50m", 5, 30, -5, 45)
     assert lines and "drawing the bundled country outlines" in capsys.readouterr().err
-    assert bind.load_ne_layer("rivers", "50m", 5, 30, -5, 45) == []
+    assert geo.load_ne_layer("rivers", "50m", 5, 30, -5, 45) == []
     assert "NE.rivers unavailable" in capsys.readouterr().err

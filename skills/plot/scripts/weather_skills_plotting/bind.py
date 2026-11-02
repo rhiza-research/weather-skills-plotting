@@ -5,7 +5,7 @@ The text after ``@`` is a Python expression, parsed with :mod:`ast` and walked
 against the constants below. Nothing is ``eval``'d.
 
 A reference starts with a name: an input (``-i PATH=NAME``), ``NE`` (Natural
-Earth lines, ``NE_LAYERS``) or ``const`` (the ``--const`` values). Then come
+Earth lines, ``geo.NE_LAYERS``) or ``const`` (the ``--const`` values). Then come
 attributes (a variable, a coordinate, ``.dt.<DT_FIELDS>``, ``.attrs.<name>``)
 and calls to ``METHODS``; ``lat`` / ``lon`` / ``time`` stand for the input's
 own names for those dims (``_ALIASES``).
@@ -20,13 +20,13 @@ allowed (a marker size in pixels), only on ``SCALED_KEYS``.
 from __future__ import annotations
 
 import ast
-import json
 import sys
-from importlib.resources import files
 
 import numpy as np
 from weather_skills_core.cf import cf_dim
 from weather_skills_core.errors import UsageError
+
+from weather_skills_plotting import geo
 
 # The methods a reference may call. Any other method is refused.
 METHODS = (
@@ -67,19 +67,6 @@ DT_FIELDS = ("year", "month", "day", "hour", "dayofyear", "days")
 # Short dim names a reference may use for any input; cf_dim finds the input's own name
 # (lat for latitude, and so on).
 _ALIASES = {"lat": "latitude", "lon": "longitude", "time": "time"}
-
-# Natural Earth layers for @NE.<layer>_<scale>: name → (category, shapefile name,
-# agreed-boundary filter). ``borders`` is agreed international boundaries; ``disputed``
-# is every other land line (disputed, indefinite, line of control). ``admin1`` exists
-# only at 10m.
-NE_LAYERS = {
-    "admin1": ("cultural", "admin_1_states_provinces", None),
-    "rivers": ("physical", "rivers_lake_centerlines", None),
-    "lakes": ("physical", "lakes", None),
-    "borders": ("cultural", "admin_0_boundary_lines_land", True),
-    "disputed": ("cultural", "admin_0_boundary_lines_land", False),
-    "coastline": ("physical", "coastline", None),
-}
 
 
 class GeoLines:
@@ -164,7 +151,7 @@ def _method(base, name, args, kwargs, ref):
         if name != "clip" or len(args) != 4 or kwargs:
             raise UsageError(f"{ref}: a Natural Earth layer takes .clip(n, w, s, e)")
         n, w, s, e = (float(v) for v in args)
-        return GeoLines(load_ne_layer(base.layer, base.scale, n, w, s, e))
+        return GeoLines(geo.load_ne_layer(base.layer, base.scale, n, w, s, e))
     if isinstance(base, _Accessor):
         if base.kind == "dt" and name == "strftime" and len(args) == 1 and not kwargs:
             return base.da.dt.strftime(args[0])
@@ -367,9 +354,9 @@ def _attribute(base, attr, ref):
         return base[attr]
     if isinstance(base, NaturalEarth):
         layer, _, scale = attr.rpartition("_")
-        if layer not in NE_LAYERS or scale not in ("10m", "50m", "110m"):
+        if layer not in geo.NE_LAYERS or scale not in ("10m", "50m", "110m"):
             raise UsageError(
-                f"{ref}: NE has {', '.join(NE_LAYERS)}, each as NAME_10m, NAME_50m or "
+                f"{ref}: NE has {', '.join(geo.NE_LAYERS)}, each as NAME_10m, NAME_50m or "
                 "NAME_110m (admin1 only 10m), e.g. @NE.coastline_50m.clip(n, w, s, e).x"
             )
         if layer == "admin1" and scale != "10m":
@@ -382,7 +369,7 @@ def _attribute(base, attr, ref):
     if isinstance(base, GeoLines):
         if attr not in ("x", "y", "lon", "lat"):
             raise UsageError(f"{ref}: a GeoJSON input has .x (or .lon) and .y (or .lat)")
-        return geoms_to_xy(base.geoms)[0 if attr in ("x", "lon") else 1]
+        return geo.geoms_to_xy(base.geoms)[0 if attr in ("x", "lon") else 1]
     if isinstance(base, _Accessor):
         if base.kind == "attrs":
             if attr not in base.da.attrs:
@@ -595,116 +582,3 @@ def _at(tree, path):
         if part:
             tree = tree[int(part[1:-1])] if part.startswith("[") else tree[part]
     return tree
-
-
-# ---- Lines for maps: Natural Earth layers (the built-in ``NE`` input) and GeoJSON inputs
-
-
-def window_parts(w, e):
-    """``[(west, east, shift)]``: a lon window in Natural Earth's [-180, 180] longitudes.
-
-    A window past 180° (170 to 200, or w > e as 170 to -160) is split at the
-    dateline; its far part is clipped at -180..-160 and moved by ``shift`` (360°)
-    to sit beside the near part on the map's continuous axis.
-    """
-    if w > e:
-        e += 360.0
-    parts = []
-    for shift in (0.0, 360.0, -360.0):
-        west, east = max(w - shift, -180.0), min(e - shift, 180.0)
-        if west < east:
-            parts.append((west, east, shift))
-    return parts
-
-
-def load_ne_layer(layer: str, scale: str, n, w, s, e):
-    """A Natural Earth layer's shapes clipped to the bbox (downloaded once by cartopy).
-
-    If borders or coastline can't be fetched, the country outlines bundled with
-    core stand in for both, with a warning; other layers are left out.
-    """
-    import shapely
-    from shapely.geometry import box, shape
-
-    category, name, agreed = NE_LAYERS[layer]
-    geoms = []
-    for west, east, shift in window_parts(w, e):
-        clip = box(west, s, east, n)
-        try:
-            import cartopy.io.shapereader as shpreader
-
-            path = shpreader.natural_earth(resolution=scale, category=category, name=name)
-            records = list(shpreader.Reader(path, bbox=clip.bounds).records())
-        except Exception as exc:  # noqa: BLE001 — offline, or cartopy missing
-            if layer not in ("borders", "coastline"):
-                print(f"Warning: NE.{layer} unavailable ({exc}); not drawn.", file=sys.stderr)
-                return []
-            print(
-                f"Warning: NE.{layer} unavailable ({exc}); drawing the bundled country outlines.",
-                file=sys.stderr,
-            )
-            raw = files("weather_skills_core.data").joinpath("countries.geojson").read_text()
-            parts = []
-            for feat in json.loads(raw).get("features") or []:
-                geom = shape(feat["geometry"]) if feat.get("geometry") else None
-                if geom is None or not geom.intersects(clip):
-                    continue
-                clipped = geom.intersection(clip)
-                for part in getattr(clipped, "geoms", [clipped]):
-                    if part.geom_type in ("Polygon", "MultiPolygon") and not part.is_empty:
-                        parts.append(shapely.boundary(part))
-        else:
-            parts = []
-            for rec in records:
-                if agreed is not None:
-                    is_agreed = str(rec.attributes.get("FEATURECLA", "")).startswith(
-                        "International boundary"
-                    )
-                    if is_agreed != agreed:
-                        continue
-                geom = rec.geometry
-                if geom is None or geom.is_empty or not geom.intersects(clip):
-                    continue
-                clipped = geom.intersection(clip)
-                if not clipped.is_empty:
-                    parts.extend(getattr(clipped, "geoms", [clipped]))
-        geoms += [shapely.transform(g, lambda xy, d=shift: xy + [d, 0.0]) for g in parts]
-    return geoms
-
-
-def load_geojson(path):
-    """Every geometry in a GeoJSON file (FeatureCollection, Feature or bare geometry)."""
-    from shapely.geometry import shape
-
-    try:
-        raw = json.loads(open(path).read())
-    except (OSError, ValueError) as exc:
-        raise UsageError(f"GeoJSON input {path}: {exc}") from None
-    if raw.get("type") == "FeatureCollection":
-        items = [f.get("geometry") for f in raw.get("features") or []]
-    elif raw.get("type") == "Feature":
-        items = [raw.get("geometry")]
-    else:
-        items = [raw]
-    return [shape(g) for g in items if g]
-
-
-def geoms_to_xy(geoms):
-    """NaN-separated x / y arrays tracing every line and polygon ring in ``geoms``."""
-    import shapely
-
-    xs, ys = [], []
-    # get_parts splits multi-part shapes and collections into single shapes.
-    for geom in geoms:
-        for part in shapely.get_parts(shapely.get_parts(geom)):
-            if part.geom_type == "Polygon":
-                rings = [part.exterior, *part.interiors]
-            elif part.geom_type in ("LineString", "LinearRing"):
-                rings = [part]
-            else:
-                continue
-            for ring in rings:
-                x, y = ring.xy
-                xs += [*x, np.nan]
-                ys += [*y, np.nan]
-    return np.array(xs, dtype=float), np.array(ys, dtype=float)
