@@ -257,6 +257,17 @@ def test_png_with_provenance_and_qa(tmp_path, plot_fn, capsys):
     assert entry["args"]["inputs"] == [f"{grid}=G"]
 
 
+def test_html_with_an_empty_base_map_layer(tmp_path, plot_fn, capsys, monkeypatch):
+    # A layer with no lines in the window (no coast in a landlocked box) is an empty array.
+    from weather_skills_plotting import geo
+
+    monkeypatch.setattr(geo, "load_ne_layer", lambda *args, **kwargs: [])
+    spec = "local ws = import 'ws.libsonnet'; local b = {n: 4, w: 30, s: -1, e: 35}; {data: ws.basemap(b), layout: ws.map(b)}"
+    out = tmp_path / "empty.html"
+    run_skill(plot_fn, "--spec", spec, "-o", str(out))
+    assert "Plotly.newPlot" in out.read_text() and "plot hash:" in capsys.readouterr().out
+
+
 def test_html_pdf_svg_outputs(tmp_path, plot_fn, capsys):
     grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
     spec = "{data: [{type: 'heatmap', x: '@G.lon', y: '@G.lat', z: '@G.precip.isel(time=0)'}]}"

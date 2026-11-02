@@ -236,8 +236,9 @@ local basemapStyles = {
   ),
 
   // A class palette on a coloraxis, with a colorbar of equal-height bands, one per
-  // class, labelled at the bounds (or by the palette's labels, one per class);
-  // under / over colors are triangles at the ends.
+  // class, labelled at the bounds; under / over colors are triangles at the ends.
+  // A palette's labels name the classes instead: one per class, or with under / over
+  // colors one per color, the first and last labelling the triangles.
   // The map colors come from ws.stepped (exact at the bounds); Plotly's own colorbar
   // is hidden and this one is drawn as layout shapes and annotations, so it adds to
   // the layout's shapes and annotations (write yours as annotations+: [...] after it).
@@ -248,6 +249,10 @@ local basemapStyles = {
     local packed = std.length(p.colors) == nb + 1,
     local classes = if packed then p.colors[1:nb] else p.colors,
     local h = len / (nb - 1),
+    local nl = if std.objectHas(p, 'labels') then std.length(p.labels) else 0,
+    assert nl == 0 || nl == nb - 1 || (packed && nl == nb + 1) :
+           'palette has %d labels for %d classes: give one label per class (%d)%s'
+           % [nl, nb - 1, nb - 1, if packed then ', or one per color with the under / over triangles first and last (%d)' % (nb + 1) else ''],
     // The under / over triangles are 0.8 of a band tall, at most 24 px when the
     // layout's height is known (ws.map / ws.grid before classBar), so they stay short
     // in a tall figure.
@@ -277,10 +282,14 @@ local basemapStyles = {
       text: text, showarrow: false, font: { size: 11 }, name: tag,
       xref: 'paper', yref: 'paper', x: x + width + 0.005, y: at, xanchor: 'left', yanchor: 'middle',
     },
-    // A palette with labels names each class at its middle; otherwise the bounds are labelled.
+    // A palette with labels names each class at its middle, and each triangle when it
+    // has a label of its own; otherwise the bounds are labelled.
+    local named = if nl == nb + 1 then p.labels[1:nb] else std.get(p, 'labels', []),
     annotations: others('annotations') + (
-      if std.objectHas(p, 'labels') then [label(p.labels[k], y + (k + 0.5) * h) for k in std.range(0, nb - 2)]
+      if nl > 0 then [label(named[k], y + (k + 0.5) * h) for k in std.range(0, nb - 2)]
       else [label(format % b[i], y + i * h) for i in std.range(0, nb - 1)]
+    ) + (
+      if nl == nb + 1 then [label(p.labels[0], y - tri / 2), label(p.labels[nb], y + len + tri / 2)] else []
     ) + (if title == '' then [] else [{
       text: title, showarrow: false, font: { size: 12 }, name: tag,
       xref: 'paper', yref: 'paper', x: x + width / 2, y: y + len + (if packed then tri else 0) + 0.015,

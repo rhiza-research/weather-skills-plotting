@@ -86,6 +86,19 @@ def test_class_bar_names_classes_when_the_palette_has_labels():
     assert "coloraxis2" in layout
 
 
+def test_class_bar_labels_one_per_class_or_one_per_color():
+    palette = "{colors: ['#0', '#1', '#2', '#3'], bounds: [1, 10, 20]"
+    inner = ev(f"ws.classBar({palette}, labels: ['a', 'b']}})")
+    assert [a["text"] for a in inner["annotations"]] == ["a", "b"]
+    every = ev(f"ws.classBar({palette}, labels: ['<1', 'a', 'b', '>20']}})")
+    texts = {a["text"]: a["y"] for a in every["annotations"]}
+    # The under label sits below the first band, the over label above the last.
+    assert list(texts) == ["a", "b", "<1", ">20"]
+    assert texts["<1"] < 0.05 < texts["a"] < texts["b"] < 0.9 < texts[">20"]
+    with pytest.raises(Exception, match=r"3 labels for 2 classes.*\(2\).*\(4\)"):
+        ev(f"ws.classBar({palette}, labels: ['a', 'b', 'c']}})")
+
+
 def test_class_bar_triangles_stay_short_in_a_tall_figure():
     layout = ev(
         "ws.grid({n: 5, w: 33, s: -5, e: 42}, rows=4, cols=3) + ws.classBar(ws.palettes.ppt_daily)"

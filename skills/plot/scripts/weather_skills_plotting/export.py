@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import json
 import re
 import sys
 import tempfile
@@ -132,8 +131,10 @@ def export(fig, output, *, scale=1):
                 "displaylogo": False,
             },
         )
-        # An HTML page has no pixels to hash; hash the figure JSON it embeds.
-        report_figure(output, fig, digest=hashlib.sha256(json.dumps(spec).encode()).hexdigest())
+        # An HTML page has no pixels to hash; hash the figure JSON it embeds. Plotly's
+        # encoder, not json.dumps: an empty array stays a numpy array in the spec.
+        digest = hashlib.sha256(pio.to_json(spec, validate=False).encode()).hexdigest()
+        report_figure(output, fig, digest=digest)
         return output
     if suffix == ".gif":
         if not spec.get("frames"):
