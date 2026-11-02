@@ -86,13 +86,6 @@ def parse_const(value):
         return key, text
 
 
-def parse_ext(value):
-    key, sep, text = str(value).partition("=")
-    if not sep or not _NAME.fullmatch(key):
-        raise argparse.ArgumentTypeError(f"--ext-str expects KEY=VALUE; got {value!r}")
-    return key, text
-
-
 @weather_skill(name="plot", version=_SKILL_VERSION)
 @weather_skill.argument(
     "-i",
@@ -113,18 +106,12 @@ def parse_ext(value):
     "for map axes, grids, base maps, palettes and an animation player.",
 )
 @weather_skill.argument(
-    "--ext-str",
-    type=parse_ext,
-    action="append",
-    help="KEY=VALUE, read in the spec as std.extVar('KEY'). Repeat.",
-)
-@weather_skill.argument(
     "--const",
     type=parse_const,
     action="append",
-    help="NAME=VALUE, a constant to place on a data axis: '@const.NAME' (a threshold line at "
-    "--const nino=0.5, a date). Numbers and text; repeat. Every value drawn is an input or one "
-    "of these, never typed into the spec.",
+    help="NAME=VALUE, a constant: '@const.NAME' on a data axis (a threshold line at "
+    "--const nino=0.5, a date), std.extVar('const').NAME in text such as a title. Numbers and "
+    "text; repeat. Every value drawn is an input or one of these, never typed into the spec.",
 )
 @weather_skill.argument(
     "--dpi",
@@ -147,7 +134,7 @@ def parse_ext(value):
     probe=True,
     help="Print (-) or save (a path) the evaluated spec, @ references unresolved, and draw nothing.",
 )
-def plot(inputs, output, spec, ext_str, const, dpi, recipe, dump_spec, **kwargs):
+def plot(inputs, output, spec, const, dpi, recipe, dump_spec, **kwargs):
     """Draw weather-skills Zarrs with a Jsonnet spec that evaluates to a Plotly figure."""
     if recipe is not None:
         print(recipe_text(recipe))
@@ -168,7 +155,8 @@ def plot(inputs, output, spec, ext_str, const, dpi, recipe, dump_spec, **kwargs)
             # Plain arrays, with units in CF form (g kg-1, mm day-1).
             datasets[x.name] = dequantify_dataset(x.ds)
     meta = {name: input_metadata(value) for name, value in datasets.items()}
-    figure = evaluate(spec, meta, ext_strs=ext_str or ())
+    consts = dict(const or ())
+    figure = evaluate(spec, meta, consts)
     spec.evaluated = figure
     if dump_spec is not None:
         text = json.dumps(figure, indent=2, ensure_ascii=False)
@@ -202,7 +190,7 @@ def plot(inputs, output, spec, ext_str, const, dpi, recipe, dump_spec, **kwargs)
         name: GeoLines(value, name) if isinstance(value, list) else value
         for name, value in datasets.items()
     }
-    sources["const"] = dict(const or ())
+    sources["const"] = consts
     resolved, _ = resolve(figure, sources)
     fig = validate(resolved)
     n_panels = len(list(fig.select_xaxes()))

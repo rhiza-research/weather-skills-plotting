@@ -200,7 +200,7 @@ def test_every_recipe_draws_only_stored_values(tmp_path, plot_fn, capsys, recipe
     sources = {n: GeoLines(v, n) if isinstance(v, list) else v for n, v in values.items()}
     consts = [c for flag, c in zip(argv[::2], argv[1::2], strict=True) if flag == "--const"]
     sources["const"] = dict(plot_mod.parse_const(c) for c in consts)
-    resolved, found = resolve(evaluate(SpecArg(str(recipe)), meta), sources)
+    resolved, found = resolve(evaluate(SpecArg(str(recipe)), meta, sources["const"]), sources)
     for path, ref in found.items():
         name = ref[1:].split(".")[0]
         # Pixel sizes (marker.size, standoff) may scale stored values; they aren't data.
@@ -274,10 +274,10 @@ def test_dump_spec_prints_evaluated_jsonnet(tmp_path, plot_fn, capsys):
     grid = write_zarr(make_gridded(n_time=2), tmp_path / "grid.zarr")
     spec = (
         "local v = '@G.precip'; local t = std.extVar('inputs').G.coords.time; "
-        "{data: [{type: 'heatmap', z: v + '.isel(time=1)'}], layout: {title: {text: t[1] + ' ' + std.extVar('who')}}}"
+        "{data: [{type: 'heatmap', z: v + '.isel(time=1)'}], layout: {title: {text: t[1] + ' ' + std.extVar('const').who}}}"
     )
     run_skill(
-        plot_fn, "-i", f"{grid}=G", "--spec", spec, "--ext-str", "who=CHIRPS", "--dump-spec", "-"
+        plot_fn, "-i", f"{grid}=G", "--spec", spec, "--const", "who=CHIRPS", "--dump-spec", "-"
     )
     dumped = json.loads(capsys.readouterr().out)
     assert dumped["data"][0]["z"] == "@G.precip.isel(time=1)"

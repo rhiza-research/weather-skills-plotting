@@ -54,11 +54,10 @@ Start from a recipe. `--recipe` lists them, `--recipe NAME` prints one to copy a
 - `-i`, `--input` — `PATH=NAME`, repeat. A Zarr, or a GeoJSON (`.geojson` / `.json`) of outlines. `NAME` is a letter or `_`, then letters, digits and `_` (`OBS`, `fc_week1`); it is how the spec refers to the file. Readable legend text goes in a trace's `"name"`, not here.
 - `--spec` — a `.jsonnet` / `.json` file, a recipe name (`map`), or the Jsonnet text itself.
 - `--recipe [NAME]` — list the recipes, or print one's Jsonnet; draws nothing.
-- `--const NAME=VALUE` — a constant to place on a data axis as `'@const.NAME'`: a threshold line (`--const el_nino=0.5`), a date. Numbers or text; repeat.
+- `--const NAME=VALUE` — a constant: `'@const.NAME'` on a data axis, such as a threshold line (`--const el_nino=0.5`) or a date; `std.extVar('const').NAME` in text, such as a title. Numbers or text; repeat.
 - `--dpi N` — pixel density of PNG, JPG and GIF output. The layout is in CSS pixels at 96 dpi (the default); `192` doubles the pixels at the same layout, `300` is print quality. `layout.width` / `height` set the layout itself.
 - `-o`, `--output` — `.png`, `.jpg`, `.pdf`, `.svg`, `.html`, or `.gif` (plays the spec's `frames`). Repeat to write several.
 - `--dump-spec` — print (`-`) or save (a path) the evaluated spec, `@` strings unresolved, and draw nothing.
-- `--ext-str KEY=VALUE` — read in the spec as `std.extVar('KEY')`; repeat.
 
 ## The spec
 

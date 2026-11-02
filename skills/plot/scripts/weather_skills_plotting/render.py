@@ -147,24 +147,21 @@ def input_metadata(value) -> dict:
     return meta
 
 
-def evaluate(spec: SpecArg, inputs_meta: dict, *, ext_strs=()) -> dict:
-    """Evaluate the Jsonnet to a figure dict, with std.extVar('inputs') and --ext-str set."""
+def evaluate(spec: SpecArg, inputs_meta: dict, consts: dict) -> dict:
+    """Evaluate the Jsonnet to a figure dict, with std.extVar('inputs') and 'const' set."""
     import _gojsonnet
 
     # Recipes import by name too: importstr 'map.jsonnet' reads one.
     # Imports are found beside the spec file, in the working folder (a palettes file
     # written there, such as my_palettes.libsonnet), in the library and in the recipes.
     jpathdir = [str(Path.cwd()), str(LIB_DIR), str(RECIPES_DIR)]
-    ext_vars = dict(ext_strs)
-    ext_codes = {"inputs": json.dumps(inputs_meta)}
+    ext_codes = {"inputs": json.dumps(inputs_meta), "const": json.dumps(consts)}
     try:
         if spec.path is not None:
-            text = _gojsonnet.evaluate_file(
-                str(spec.path), jpathdir=jpathdir, ext_vars=ext_vars, ext_codes=ext_codes
-            )
+            text = _gojsonnet.evaluate_file(str(spec.path), jpathdir=jpathdir, ext_codes=ext_codes)
         else:
             text = _gojsonnet.evaluate_snippet(
-                "--spec", spec.value, jpathdir=jpathdir, ext_vars=ext_vars, ext_codes=ext_codes
+                "--spec", spec.value, jpathdir=jpathdir, ext_codes=ext_codes
             )
     except RuntimeError as exc:
         message = str(exc).strip()
