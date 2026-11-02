@@ -8,7 +8,7 @@ from weather_skills_core.errors import UsageError
 
 from conftest import make_forecast, make_gridded
 from weather_skills_plotting import bind
-from weather_skills_plotting.bind import JOBS, METHODS, UPSTREAM, resolve
+from weather_skills_plotting.bind import METHODS, UPSTREAM, resolve
 
 
 @pytest.fixture
@@ -28,7 +28,7 @@ def one(value, inputs, key="y"):
 
 
 def test_every_method_has_a_job():
-    assert set(METHODS.values()) <= set(JOBS)
+    assert set(METHODS.values()) <= {"select", "reshape", "label", "limit"}
     assert not set(METHODS) & set(UPSTREAM)
 
 

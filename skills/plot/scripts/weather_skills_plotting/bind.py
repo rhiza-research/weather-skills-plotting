@@ -22,7 +22,7 @@ import numpy as np
 from weather_skills_core.cf import cf_dim
 from weather_skills_core.errors import UsageError
 
-# Each method's job. A test checks every method has one of the four.
+# Each method's job: select, reshape, label, or a display limit (see the docstring).
 METHODS = {
     "isel": "select",
     "sel": "select",
@@ -38,7 +38,6 @@ METHODS = {
     "max": "limit",
     "quantile": "limit",
 }
-JOBS = ("select", "reshape", "label", "limit")
 
 # Sizes in pixels, the only keys whose reference may take arithmetic by a number:
 # '@W.wind_speed.flat() * 3' draws a marker 3 px per unit, the way Plotly's own sizeref
