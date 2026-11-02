@@ -4,11 +4,10 @@ A string that starts with ``@`` is a reference; ``@@`` starts a literal ``@``.
 The text after ``@`` is a Python expression, parsed with :mod:`ast` and walked
 against a fixed table. Nothing is ``eval``'d.
 
-Every operation in the table has one job: select values, reshape them, label
-them, or give a display limit. Nothing computes new values, so every value
-drawn is a value stored in an input; calculations belong in data skills. The one
-exception is a size in pixels: ``+ - * /`` by a number or constant, only on
-``SCALED_KEYS`` (marker.size, marker.standoff, marker.line.width, textfont.size).
+Every method in the table selects values, reshapes them, labels them, or gives
+a display limit. Nothing computes new values, so every value drawn is a value
+stored in an input; calculations belong in data skills. The one exception is a
+size in pixels on ``SCALED_KEYS`` (below).
 """
 
 from __future__ import annotations
@@ -22,26 +21,26 @@ import numpy as np
 from weather_skills_core.cf import cf_dim
 from weather_skills_core.errors import UsageError
 
-# Each method's job: select, reshape, label, or a display limit (see the docstring).
-METHODS = {
-    "isel": "select",
-    "sel": "select",
-    "dropna": "select",
-    "clip": "select",
-    "squeeze": "reshape",
-    "lon360": "reshape",
-    "lon180": "reshape",
-    "transpose": "reshape",
-    "flat": "reshape",
-    "strftime": "label",
-    "min": "limit",
-    "max": "limit",
-    "quantile": "limit",
-}
+# Select, reshape, label, then display limits (min / max / quantile, see LIMIT_KEYS).
+METHODS = (
+    "isel",
+    "sel",
+    "dropna",
+    "clip",
+    "squeeze",
+    "lon360",
+    "lon180",
+    "transpose",
+    "flat",
+    "strftime",
+    "min",
+    "max",
+    "quantile",
+)
 
-# Sizes in pixels, the only keys whose reference may take arithmetic by a number:
-# '@W.wind_speed.flat() * 3' draws a marker 3 px per unit, the way Plotly's own sizeref
-# scales marker.size. The data drawn is unchanged; only its size on screen is.
+# Sizes in pixels, the only keys whose reference may take arithmetic: + - * / of data
+# by a number or @const ('@W.wind_speed.flat() * 3' is 3 px per unit, as Plotly's
+# sizeref scales marker.size). It sets how big a marker is on screen, not what is drawn.
 SCALED_KEYS = ("marker.size", "marker.standoff", "marker.line.width", "textfont.size")
 ARITHMETIC = {ast.Add: np.add, ast.Sub: np.subtract, ast.Mult: np.multiply, ast.Div: np.divide}
 
@@ -139,9 +138,9 @@ def _refuse(node, ref):
     """The error for syntax outside the table, naming the skill that does the job."""
     if isinstance(node, ast.BinOp):
         raise UsageError(
-            f"{ref}: arithmetic ({ast.unparse(node)!r}) is only a size in pixels: + - * / by a "
-            f"number or @const, on {', '.join(SCALED_KEYS)}. For data, convert units with "
-            "unit-convert, subtract with difference, then plot the result"
+            f"{ref}: arithmetic ({ast.unparse(node)!r}) is only for a size in pixels: + - * / "
+            f"of data by a number or @const, on {', '.join(SCALED_KEYS)}. For data, convert "
+            "units with unit-convert or subtract with difference, then plot the result"
         )
     raise UsageError(
         f"{ref}: {type(node).__name__} is not allowed in a reference; references select, "
@@ -275,6 +274,16 @@ def evaluate(text: str, inputs: dict):
             base = walk(node.value)
             return _attribute(base, node.attr, ref)
         if isinstance(node, ast.Call):
+            # Name the start of the chain before its methods: @open("x").read() is not an input.
+            root = node
+            while isinstance(root, (ast.Attribute, ast.Call)):
+                root = root.func if isinstance(root, ast.Call) else root.value
+            if not (isinstance(root, ast.Name) and root.id in {*inputs, "NE", "const"}):
+                start = repr(root.id) if isinstance(root, ast.Name) else ast.unparse(root)
+                raise UsageError(
+                    f"{ref}: a reference starts with an input name, not {start}; inputs are "
+                    f"{', '.join(inputs) or 'none'} (name each with -i PATH=NAME)"
+                )
             if not isinstance(node.func, ast.Attribute):
                 _refuse(node, ref)
             refused = [
@@ -495,12 +504,13 @@ def resolve(spec, inputs: dict):
         value, last = evaluate(node, inputs)
         if last == "arithmetic" and not path.endswith(SCALED_KEYS):
             raise UsageError(
-                f"{path} = {node}: arithmetic only sets a size in pixels ({', '.join(SCALED_KEYS)}); "
-                "data to draw is stored values (unit-convert, difference first)"
+                f"{path} = {node}: arithmetic is only for a size in pixels, on "
+                f"{', '.join(SCALED_KEYS)}. For data, convert units with unit-convert or "
+                "subtract with difference, then plot the result"
             )
         keys = [k for k in path.replace("[", ".[").split(".") if k and not k.startswith("[")]
         is_limit_key = keys[-1] in LIMIT_KEYS or {"range", "tickvals"} & set(keys[-2:])
-        if METHODS.get(last) == "limit" and not is_limit_key:
+        if last in ("min", "max", "quantile") and not is_limit_key:
             raise UsageError(
                 f"{path} = {node}: .{last}() gives one number, for a scale only "
                 f"({', '.join(sorted(LIMIT_KEYS))}); data to draw is stored values"

@@ -351,6 +351,15 @@ def test_spec_errors(tmp_path, plot_fn, capsys, spec, match):
     assert match in capsys.readouterr().err
 
 
+def test_an_unknown_key_alone_gets_no_binding_reminder(tmp_path, plot_fn, capsys):
+    grid = write_zarr(make_gridded(n_time=2), tmp_path / "grid.zarr")
+    spec = "{data: [{type: 'heatmap', z: '@G.precip', line: {}}]}"
+    with pytest.raises(SystemExit):
+        run_skill(plot_fn, "-i", f"{grid}=G", "--spec", spec, "-o", str(tmp_path / "x.png"))
+    err = capsys.readouterr().err
+    assert "a heatmap has no property 'line'" in err and "Data comes from the inputs" not in err
+
+
 def test_literal_at_sign(tmp_path, plot_fn, capsys):
     spec = "{layout: {annotations: [{text: '@@rhiza', xref: 'paper', yref: 'paper', x: 0, y: 1}]}}"
     run_skill(plot_fn, "--spec", spec, "--dump-spec", "-")

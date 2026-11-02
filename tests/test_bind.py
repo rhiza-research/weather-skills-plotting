@@ -28,7 +28,6 @@ def one(value, inputs, key="y"):
 
 
 def test_every_method_has_a_job():
-    assert set(METHODS.values()) <= {"select", "reshape", "label", "limit"}
     assert not set(METHODS) & set(UPSTREAM)
 
 
@@ -86,7 +85,7 @@ def test_limits_only_on_scale_keys(inputs):
         ("@OBS.precip.max(dim='time')", "whole array only"),
         ("@OBS.precip[0]", "Subscript is not allowed"),
         ("@OBS.precip.isel(time=len('ab'))", "arguments must be"),
-        ("@open('x')", "Call is not allowed"),
+        ("@open('x')", "starts with an input name, not 'open'"),
         ("@NE.coastline_50m.x", "clip a Natural Earth layer first"),
         ("@NE.admin1_50m.clip(1, 2, 0, 3).x", "only at 10m"),
     ],
@@ -217,10 +216,10 @@ def test_size_arithmetic_only_on_pixel_keys(inputs):
     resolved, _ = resolve({"data": [trace]}, {**inputs, "const": {"k": 2.0}})
     assert resolved["data"][0]["marker"]["size"].tolist() == [4, 6, 8, 10]
     assert resolved["data"][0]["marker"]["standoff"].tolist() == [0, 0.5, 1, 1.5]
-    with pytest.raises(UsageError, match="only sets a size in pixels"):
+    with pytest.raises(UsageError, match="only for a size in pixels"):
         one("@OBS.lon * 2", inputs)
     for ref in (size + " - OBS.precip.isel(time=1, lat=0)", "@const.k + 2"):
-        with pytest.raises(UsageError, match="only a size in pixels"):
+        with pytest.raises(UsageError, match="only for a size in pixels"):
             resolve(
                 {"data": [{"x": "@OBS.lon", "y": "@OBS.lon", "marker": {"size": ref}}]},
                 {**inputs, "const": {"k": 2.0}},
@@ -245,6 +244,9 @@ def test_size_arithmetic_only_on_pixel_keys(inputs):
         ("@OBS.precip.flat()", "needs two dims"),
         ("@OBS.precip.isel(time=1 - 1)", "arithmetic"),
         ("@OBS.precip.frobnicate()", "unknown method"),
+        ('@open("x").read()', "starts with an input name, not 'open'"),
+        ('@__import__("os").system("ls")', "starts with an input name, not '__import__'"),
+        ('@"x".upper()', "starts with an input name, not 'x'"),
     ],
 )
 def test_more_errors_name_the_fix(inputs, ref, match):
@@ -281,7 +283,7 @@ def test_size_arithmetic_edges(inputs):
         "textfont": {"size": size + " + 1"},
     }
     resolve({"data": [trace]}, inputs)
-    with pytest.raises(UsageError, match="only sets a size in pixels"):
+    with pytest.raises(UsageError, match="only for a size in pixels"):
         resolve(
             {
                 "data": [

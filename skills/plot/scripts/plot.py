@@ -181,17 +181,25 @@ def plot(inputs, output, spec, const, dpi, recipe, dump_spec, **kwargs):
         check_bindings(figure)
     except UnboundDataError as exc:
         lines = []
+        unbound = False
         for path, message in exc.problems:
             unknown = re.match(r"unknown key for ([\w.]+)", message)
             if unknown:
                 # A key Plotly doesn't have: say what to do instead.
                 kind, key = unknown.group(1).split(".")[-1], path.rsplit(".", 1)[-1]
                 message = f"a {kind} has no property {key!r}.{key_hint(kind, key)}"
+            else:
+                unbound = True
             lines.append(f"  {path}: {message}")
-        raise UsageError(
-            f"the spec has {len(lines)} problem(s) before binding:\n" + "\n".join(lines) + "\n"
-            "Data comes from the inputs: -i FILE=NAME, then '@NAME.var' in the key. A constant "
+        # How data gets in, only when a value is missing its binding.
+        footer = (
+            "\nData comes from the inputs: -i FILE=NAME, then '@NAME.var' in the key. A constant "
             "on a data axis (a threshold line) is --const NAME=VALUE, then '@const.NAME'"
+            if unbound
+            else ""
+        )
+        raise UsageError(
+            f"the spec has {len(lines)} problem(s) before binding:\n" + "\n".join(lines) + footer
         ) from None
     # Bind: GeoJSON inputs resolve as lines ('@KENYA.x' / '@KENYA.y'), constants as '@const.NAME'.
     sources = {
