@@ -383,11 +383,6 @@ def test_bad_input_name(plot_fn, capsys, argv, match):
         ("{data: [{type: 'heatmap', z: '@X.precip'}]}", "'X' is not an input; inputs are G"),
         ("{layout: {title: {text: std.extVar('inputs').X.attrs.name}}}", "pass it with -i FILE=X"),
         ("{data: [{type: 'scatter', y: [1, 2, 3]}]}", "data[0].y: data key needs an @binding"),
-        (
-            "{data: [{type: 'scatter', x: '@G.time', y: '@G.precip.isel(lat=0, lon=0)'}],"
-            " layout: {shapes: [{type: 'line', x0: 0.5, x1: 0.5, yref: 'paper', y0: 0, y1: 1}]}}",
-            "'x0' is on a data axis",
-        ),
         ("{data: [{type: 'box', y: '@G.precip', x0: 'Day 1'}]}", "generates a value"),
     ],
 )
@@ -441,6 +436,18 @@ def test_constants_bind_on_a_data_axis(tmp_path, plot_fn, capsys):
     with pytest.raises(SystemExit):
         run_skill(plot_fn, "-i", f"{grid}=G", "--spec", spec, "-o", str(tmp_path / "d.html"))
     assert "no constant 'day'; pass it with --const day=VALUE" in capsys.readouterr().err
+
+
+def test_shapes_and_annotations_take_typed_in_positions(tmp_path, plot_fn, capsys):
+    grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
+    spec = (
+        "{data: [{type: 'heatmap', x: '@G.lon', y: '@G.lat', z: '@G.precip.isel(time=0)'}],"
+        " layout: {shapes: [{type: 'line', x0: 36, x1: 36, yref: 'paper', y0: 0, y1: 1}],"
+        " annotations: [{x: 36, y: 1.02, yref: 'paper', text: 'Lake', showarrow: false}]}}"
+    )
+    out = tmp_path / "s.html"
+    run_skill(plot_fn, "-i", f"{grid}=G", "--spec", spec, "-o", str(out))
+    assert '"x0":36' in out.read_text().replace(" ", "")
 
 
 def test_still_image_refuses_more_than_100_panels(tmp_path, plot_fn, capsys):
