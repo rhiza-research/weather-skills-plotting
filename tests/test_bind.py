@@ -148,7 +148,9 @@ def test_dropna_and_the_coords_of_what_is_left(inputs):
 
 def test_x_and_y_must_pair_up(inputs):
     with pytest.raises(UsageError, match="x has 3 values and y has 2"):
-        resolve({"data": [{"x": "@OBS.time", "y": "@FC.precip.isel(step=0, lat=0, lon=0)"}]}, inputs)
+        resolve(
+            {"data": [{"x": "@OBS.time", "y": "@FC.precip.isel(step=0, lat=0, lon=0)"}]}, inputs
+        )
     shifted = {
         "A": inputs["OBS"],
         "B": inputs["OBS"].assign_coords(time=inputs["OBS"].time + np.timedelta64(1, "D")),
