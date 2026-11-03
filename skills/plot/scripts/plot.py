@@ -42,7 +42,7 @@ from weather_skills_plotting.render import (
 )
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "1.0.10"
+_SKILL_VERSION = "2.0.0"
 
 # A still image with more panels than this is refused: Chrome takes ~7 s to render
 # 200 small maps and never finishes 1,826. Frames have no limit.
