@@ -14,7 +14,7 @@ local kept = '@STN.precip' + day + '.dropna("station_id")';
       text: kept + '.station_id', textposition: 'top center',
       marker: { size: 12, color: kept, coloraxis: 'coloraxis', line: { color: 'black', width: 1 } } },
   ] + ws.basemap(bbox),
-  layout: ws.map(bbox) + ws.classBar(ws.palettes.ppt_daily, 'mm/day') + {
+  layout: ws.map(bbox) + ws.classBar(ws.palettes.ppt_day, 'mm/day') + {
     title: { text: 'Gridded rain and station gauges' },
   },
 }

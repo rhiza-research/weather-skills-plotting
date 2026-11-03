@@ -36,7 +36,7 @@ def test_stepped_under_and_over_get_a_class_width_each():
     assert [c for _, c in axis["colorscale"]] == ["u", "u", "a", "a", "o", "o"]
 
 
-@pytest.mark.parametrize("name", ["ppt_daily", "ppt_week", "ppt_anom_month", "spi", "hits", "bias"])
+@pytest.mark.parametrize("name", ["ppt_day", "ppt_week", "ppt_anom_month", "spi", "hits", "bias"])
 def test_every_palette_makes_a_valid_coloraxis(name):
     go.Figure(layout={"coloraxis": ev(f"ws.stepped(ws.palettes.{name})")})
 
@@ -73,7 +73,7 @@ def test_basemap_traces_reference_natural_earth():
 
 
 def test_class_bar_draws_equal_bands_labelled_at_the_bounds():
-    layout = ev("ws.classBar(ws.palettes.ppt_daily, 'mm')")
+    layout = ev("ws.classBar(ws.palettes.ppt_day, 'mm')")
     go.Figure(layout=layout)
     assert layout["coloraxis"]["showscale"] is False
     rects = [s for s in layout["shapes"] if s["type"] == "rect"]
@@ -105,7 +105,7 @@ def test_class_bar_labels_one_per_class_or_one_per_color():
 
 def test_class_bar_triangles_stay_short_in_a_tall_figure():
     layout = ev(
-        "ws.grid({n: 5, w: 33, s: -5, e: 42}, rows=4, cols=3) + ws.classBar(ws.palettes.ppt_daily)"
+        "ws.grid({n: 5, w: 33, s: -5, e: 42}, rows=4, cols=3) + ws.classBar(ws.palettes.ppt_day)"
     )
     plot_h = layout["height"] - layout["margin"]["t"] - layout["margin"]["b"]
     tip = [
@@ -117,15 +117,15 @@ def test_class_bar_triangles_stay_short_in_a_tall_figure():
 
 
 def test_class_bar_replaces_its_own_axis_bar_only():
-    daily = ev("ws.classBar(ws.palettes.ppt_daily, 'mm')")
+    daily = ev("ws.classBar(ws.palettes.ppt_day, 'mm')")
     swapped = ev(
         "{annotations: [{text: 'mine'}]} + ws.classBar(ws.palettes.ppt_week, 'mm')"
-        " + ws.classBar(ws.palettes.ppt_daily, 'mm')"
+        " + ws.classBar(ws.palettes.ppt_day, 'mm')"
     )
     assert swapped["shapes"] == daily["shapes"]
     assert swapped["annotations"] == [{"text": "mine"}] + daily["annotations"]
     two = ev(
-        "ws.classBar(ws.palettes.ppt_daily, 'mm') + ws.classBar(ws.palettes.hits, axis='coloraxis2')"
+        "ws.classBar(ws.palettes.ppt_day, 'mm') + ws.classBar(ws.palettes.hits, axis='coloraxis2')"
     )
     assert {s["name"] for s in two["shapes"]} == {"classBar-coloraxis", "classBar-coloraxis2"}
 
@@ -156,7 +156,7 @@ def test_maps_fill_the_sea_under_the_data():
     assert len(sea) == 1 and sea[0]["layer"] == "below" and sea[0]["path"].startswith("@NE.ocean_")
     assert seas(ev(f"ws.map({BBOX}, sea=null)")) == []
     # In either order with a classBar, both keep their shapes; a second map's sea replaces the first.
-    bar = ev(f"ws.classBar(ws.palettes.ppt_daily) + ws.map({BBOX}) + ws.map({BBOX}, sea='red')")
+    bar = ev(f"ws.classBar(ws.palettes.ppt_day) + ws.map({BBOX}) + ws.map({BBOX}, sea='red')")
     assert [s["fillcolor"] for s in seas(bar)] == ["red"] and len(bar["shapes"]) > 1
     grid = ev(f"ws.grid({BBOX}, rows=2, cols=2, empty=[3])")
     assert [s["xref"] for s in seas(grid)] == ["x", "x2", "x3"]

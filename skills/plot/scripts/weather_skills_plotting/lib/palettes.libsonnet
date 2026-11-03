@@ -3,13 +3,13 @@
 // is a list of colors for a continuous scale. labels, when given, name each class.
 // ws.stepped turns one into a coloraxis, ws.classBar adds an even colorbar.
 //
-// ppt_daily … ppt_season are rainfall totals in mm (0–50, 0–200, 0–400, 0–1000);
+// ppt_day … ppt_season are rainfall totals in mm (0–50, 0–200, 0–400, 0–1000);
 // ppt_anom_* are anomalies in mm (±50, ±200, ±300, ±500); ppt_total runs to 2500 mm.
 // ppt_poa is percent of normal; spi the standardized precipitation index; hits,
 // bias and mae color verify maps. tt_* are Tropical Tidbits model-chart palettes:
 // tt_precip_rate mm/h, tt_precip_total mm, tt_pwat mm, tt_wind m/s, tt_z500 dam.
 {
-  ppt_daily: {
+  ppt_day: {
     colors: ['#ffffff', '#ffffff', '#f6e8c3', '#e8d4a0', '#c8ffbe', '#78f573', '#1eb41e', '#50a5f5', '#1e6eeb', '#a08cff', '#7060dc'],
     bounds: [0, 1, 2, 5, 10, 15, 20, 30, 40, 50],
   },
@@ -29,7 +29,7 @@
     colors: ['#ffffff', '#ffffff', '#c8ffbe', '#78f573', '#1eb41e', '#b4f0fa', '#50a5f5', '#1e6eeb', '#dcdcff', '#a08cff', '#7060dc', '#fffaaa', '#ffa000', '#ff1400', '#a50000', '#e68c8c', '#ffe6e6'],
     bounds: [0, 2, 5, 10, 25, 50, 75, 100, 150, 200, 300, 500, 750, 1000, 1500, 2500],
   },
-  ppt_anom_daily: {
+  ppt_anom_day: {
     colors: ['#785046', '#b48c82', '#f0dcd2', '#ffffff', '#c8ffbe', '#78f573', '#1eb41e'],
     bounds: [-50, -25, -10, 10, 25, 50],
   },
