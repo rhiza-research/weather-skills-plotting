@@ -69,13 +69,6 @@ def _inputs(tmp_path):
     )
     wind["wind_speed"].values = rng.uniform(0, 12, wind["wind_speed"].shape)
     wind["wind_from_direction"] = wind["wind_speed"] * 0 + 270.0
-    # Two quiver arrows as wind-speed-direction --arrow-length writes them: tail, tip, gap,
-    # barb, tip, barb, gap.
-    arrow = [10.0, 10.5, np.nan, 10.4, 10.5, 10.4, np.nan]
-    wind["arrow_x"] = (("time", "arrow_vertex"), [arrow + [a + 1 for a in arrow]])
-    wind["arrow_y"] = (("time", "arrow_vertex"), [[1.0, 1.0, np.nan, 1.05, 1.0, 0.95, np.nan] * 2])
-    wind["arrow_x"].attrs["units"] = "degrees_east"
-    wind["arrow_y"].attrs["units"] = "degrees_north"
     rh = xr.Dataset(
         {"r": (("step", "vertical", "latitude", "longitude"), rng.uniform(20, 90, (2, 3, 2, 4)))},
         coords={
@@ -389,12 +382,11 @@ def test_bad_input_name(plot_fn, capsys, argv, match):
         ("{data: [{type: 'heatmap', z: '@G.prcp.isel(time=0)'}]}", "data variables: precip"),
         ("{data: [{type: 'heatmap', z: '@X.precip'}]}", "'X' is not an input; inputs are G"),
         ("{layout: {title: {text: std.extVar('inputs').X.attrs.name}}}", "pass it with -i FILE=X"),
-        ("{data: [{type: 'scatter', y: [1, 2, 3]}]}", "data[0].y: data key needs an @binding"),
         (
-            "{data: [{type: 'scatter', x: '@G.time', y: '@G.precip.isel(lat=0, lon=0)'}],"
-            " layout: {shapes: [{type: 'line', x0: 0.5, x1: 0.5, yref: 'paper', y0: 0, y1: 1}]}}",
-            "'x0' is on a data axis",
+            "{data: [{type: 'scatter', x: '@G.time', y: [1, 2, 3]}]}",
+            "data[0].y: data key needs an @binding",
         ),
+        ("{data: [{type: 'scatter', y: std.range(0, 5)}]}", "at most 5 values per key"),
         ("{data: [{type: 'box', y: '@G.precip', x0: 'Day 1'}]}", "generates a value"),
     ],
 )
@@ -448,6 +440,18 @@ def test_constants_bind_on_a_data_axis(tmp_path, plot_fn, capsys):
     with pytest.raises(SystemExit):
         run_skill(plot_fn, "-i", f"{grid}=G", "--spec", spec, "-o", str(tmp_path / "d.html"))
     assert "no constant 'day'; pass it with --const day=VALUE" in capsys.readouterr().err
+
+
+def test_shapes_and_annotations_take_typed_in_positions(tmp_path, plot_fn, capsys):
+    grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
+    spec = (
+        "{data: [{type: 'heatmap', x: '@G.lon', y: '@G.lat', z: '@G.precip.isel(time=0)'}],"
+        " layout: {shapes: [{type: 'line', x0: 36, x1: 36, yref: 'paper', y0: 0, y1: 1}],"
+        " annotations: [{x: 36, y: 1.02, yref: 'paper', text: 'Lake', showarrow: false}]}}"
+    )
+    out = tmp_path / "s.html"
+    run_skill(plot_fn, "-i", f"{grid}=G", "--spec", spec, "-o", str(out))
+    assert '"x0":36' in out.read_text().replace(" ", "")
 
 
 def test_still_image_refuses_more_than_100_panels(tmp_path, plot_fn, capsys):

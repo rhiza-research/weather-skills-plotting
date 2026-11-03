@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires Python 3.12 and uv. PNG, JPG, PDF, SVG and GIF export needs Chrome (installed, or `plotly_get_chrome -y`). Self-contained; the plotting library ships in scripts/.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py *)
 metadata:
-  version: "2.0.0"
+  version: "2.0.1"
   catalog-group: figure
 ---
 
@@ -17,7 +17,7 @@ Draws a figure from a Jsonnet spec. The spec evaluates to a standard [Plotly fig
 
 1. **Spec.** You write Jsonnet: Plotly keys for everything drawn, and an `@` reference wherever data goes (`x: '@OBS.lon'`, `z: '@OBS.precip.isel(time=0)'`). Each input is named with `-i FILE=NAME`; `std.extVar('inputs')` describes them (dims, variables, dates, bbox) for loops and titles.
 2. **Render.** plot evaluates the Jsonnet into plain Plotly JSON, references still unbound. `--dump-spec -` prints this.
-3. **Lint.** Before any data is read, the JSON is checked against Plotly's schema: every key that can put data on the chart must hold an `@` reference, never typed-in values. That covers data keys (`x`, `y`, `z`, `lat`, `customdata`, `values`, …), per-point lists in keys like `marker.color`, `marker.size` and `text` (one value there is styling), keys that generate a value for every point (`x0` / `dx`, `base`, error-bar `value`), the coordinates of shapes, annotations and images on a data axis (`xref: 'x'`), menu and slider `args`, frames and templates. Keys Plotly doesn't define are refused, since they can't be checked. Every problem is listed at once. A constant on a data axis (a threshold line, a date) is `--const NAME=VALUE`, written `'@const.NAME'`. Positions in `paper` or `x domain` units (titles, colorbars, panel labels) are layout, not data, and stay literal.
+3. **Lint.** Before any data is read, the JSON is checked against Plotly's schema: every key that can put data on the chart must hold an `@` reference, never typed-in values. That covers data keys (`x`, `y`, `z`, `lat`, `customdata`, `values`, …), per-point lists in keys like `marker.color`, `marker.size` and `text` (one value there is styling), keys that generate a value for every point (`x0` / `dx`, `base`, error-bar `value`), the coordinates of images on a data axis (`xref: 'x'`), menu and slider `args`, frames and templates. Keys Plotly doesn't define are refused, since they can't be checked. Every problem is listed at once. Shapes and annotations are marks placed by hand, so their positions may be typed in (`x0: 36`, `x: '2026-10-31'`), or passed as `--const NAME=VALUE` and written `'@const.NAME'` when they should be recorded or change from run to run.
 4. **Bind.** Each reference is resolved from its input: it selects, reshapes or labels stored values, or scales a marker's size in pixels (see `@` references below), and its shape is checked against the key.
 5. **Export.** Plotly validates the figure, and it is written to each `-o` with its QA lines (see Output).
 
@@ -39,7 +39,6 @@ Start from a recipe. `--recipe` lists them, `--recipe NAME` prints one to copy a
 | `band.jsonnet` | A shaded 10–90% band between two quantile lines, with observations |
 | `sd_band.jsonnet` | Mean ± 1 SD as a shaded band (stacked fills), with the mean as a line |
 | `seasons.jsonnet` | Past years and a forecast plume on one day-of-year axis |
-| `wind.jsonnet` | Wind speed shading with quiver arrows as long as the wind is strong (wind-speed-direction `--arrow-length`) |
 | `wind_markers.jsonnet` | Wind arrows as Plotly markers sized in pixels by speed (`@…speed * k`), with no extra data step |
 | `animation.jsonnet` | A map played through time: HTML with play / slider, or a looping GIF |
 | `cross_section.jsonnet` | A field over longitude and pressure, 1000 hPa at the bottom |
@@ -54,7 +53,7 @@ Start from a recipe. `--recipe` lists them, `--recipe NAME` prints one to copy a
 - `-i`, `--input` — `PATH=NAME`, repeat. A Zarr, or a GeoJSON (`.geojson` / `.json`) of outlines. `NAME` is a letter or `_`, then letters, digits and `_` (`OBS`, `fc_week1`); it is how the spec refers to the file. Readable legend text goes in a trace's `"name"`, not here.
 - `--spec` — a `.jsonnet` / `.json` file, a recipe name (`map`), or the Jsonnet text itself.
 - `--recipe [NAME]` — list the recipes, or print one's Jsonnet; draws nothing.
-- `--const NAME=VALUE` — a constant: `'@const.NAME'` on a data axis, such as a threshold line (`--const el_nino=0.5`) or a date; `std.extVar('const').NAME` in text, such as a title. Numbers or text; repeat.
+- `--const NAME=VALUE` — a constant: `'@const.NAME'` in a trace's data (a reference point) or a shape or annotation position that changes from run to run (`--const el_nino=0.5`, a date); `std.extVar('const').NAME` in text, such as a title. Numbers or text; repeat.
 - `--dpi N` — pixel density of PNG, JPG and GIF output. The layout is in CSS pixels at 96 dpi (the default); `192` doubles the pixels at the same layout, `300` is print quality. `layout.width` / `height` set the layout itself.
 - `-o`, `--output` — `.png`, `.jpg`, `.pdf`, `.svg`, `.html`, or `.gif` (plays the spec's `frames`). Repeat to write several.
 - `--dump-spec` — print (`-`) or save (a path) the evaluated spec, `@` strings unresolved, and draw nothing.
@@ -114,7 +113,7 @@ A string that starts with `@` is replaced by the data it names; the whole string
 
 Shapes: `z` is 2-D (a lat/lon grid is drawn with rows as latitudes, and needs `x: '@NAME.lon', y: '@NAME.lat'` beside it); `customdata` 1-D or 2-D; everything else one value or 1-D. A trace's `x` and `y` (not a gridded one's) must pair up: the same length, and from two files the same time (or other) values; otherwise it's an error suggesting `merge`. Traces on one `coloraxis` holding different units print a warning. A dim of length 1 (the one time of a period total) is dropped when there are too many; any other leftover dim is an error naming it: pick a value with `isel` / `sel`, or draw one trace per value with a Jsonnet loop (`for m in std.range(0, inputs.ENS.dims.number - 1)`).
 
-References select and label stored values; they never compute. The one exception, a marker size in pixels (the arithmetic row above), changes how big a marker is on screen, not what is drawn. Arithmetic, averages and smoothing come from data skills first, and the error says which: `summarize-dim` (mean, quantiles over members), `aggregate-temporal` (rolling, resampling), `unit-convert`, `difference`, `coarsen` / `downscale`, `clip-region` (masks), `step-to-time` (valid dates), `wind-speed-direction` (speed and direction from u / v, and with `--arrow-length` quiver arrows as line segments). A mean ± SD band is Plotly stacking: mean − SD from `difference`, then the SD stacked on it twice (`--recipe sd_band`).
+References select and label stored values; they never compute. The one exception, a marker size in pixels (the arithmetic row above), changes how big a marker is on screen, not what is drawn. Arithmetic, averages and smoothing come from data skills first, and the error says which: `summarize-dim` (mean, quantiles over members), `aggregate-temporal` (rolling, resampling), `unit-convert`, `difference`, `coarsen` / `downscale`, `clip-region` (masks), `step-to-time` (valid dates), `wind-speed-direction` (speed and direction from u / v). A mean ± SD band is Plotly stacking: mean − SD from `difference`, then the SD stacked on it twice (`--recipe sd_band`).
 
 ### `ws.libsonnet`
 `local ws = import 'ws.libsonnet';` gives plain Plotly JSON; change any part with `+`. Imports are found by name in the skill's library (`ws.libsonnet`, `palettes.libsonnet`), its recipes, beside the spec file, and in the working folder, so a palettes file written there (`local mine = import 'my_palettes.libsonnet';`) needs no flag.
@@ -132,7 +131,7 @@ References select and label stored values; they never compute. The one exception
 - `ws.template` — the house colorway (no grey, kept for ensemble members) on a white plot area. A spec that sets no `layout.template` gets it; extend it with `template: ws.template + {layout+: {...}}`, set a Plotly template by name (`template: 'plotly_white'`), or `template: {}` for Plotly's bare defaults.
 
 ## Notes
-- Anything placed at a fixed position on a data axis takes `--const`, never a typed-in number or date: an init-date line (`--const init=2026-10-31`, then a shape with `xref: 'x', x0: '@const.init', x1: '@const.init', yref: 'paper', y0: 0, y1: 1`), a threshold band (`y0: '@const.lo', y1: '@const.hi'`), an annotation at a date. A trace at a fixed point, such as a reference arrow, puts a one-item list in each data key: `x: ['@const.kx'], y: ['@const.ky']`. A key, legend box or label that need not sit at a lon / lat goes in `xref: 'paper'` / `yref: 'paper'` units and stays literal; only its arrow trace needs constants, at a point inside the panel's own range. Labelled bars keep their data axis: `x: '@A.time'` with `xaxis: {tickvals: '@A.time', ticktext: [...]}`, not `x: ['28 Sep–4 Oct', …]`.
+- Shapes and annotations at a fixed position on a data axis take the position as typed: a line at Lake Turkana (`xref: 'x', x0: 36, x1: 36, yref: 'paper', y0: 0, y1: 1`), a threshold band (`y0: 0.5, y1: 1`), an annotation at a date. For a position that changes each run (an init date in a scheduled job), pass it with `--const init=2026-10-31` and write `x0: '@const.init'`. A trace with no `@` references at all is a mark placed by hand and may type in up to 5 values per data key: a cross-section line (`x: [33, 42], y: [3.5, 3.5]`), a town pin, a reference arrow, the flat edge a fill reaches down to. A trace that draws data binds all of its data; a constant there is `--const`, as `x: ['@const.kx']`. Marks can't go in frames. A key, legend box or label that need not sit at a lon / lat goes in `xref: 'paper'` / `yref: 'paper'` units. Labelled bars keep their data axis: `x: '@A.time'` with `xaxis: {tickvals: '@A.time', ticktext: [...]}`, not `x: ['28 Sep–4 Oct', …]`.
 - A season across New Year (Oct–Feb) on one axis: `x: '@Y.time.dt.strftime("%d %b")'` with `xaxis: {type: 'category', categoryorder: 'array', categoryarray: '@LEAP.time.dt.strftime("%d %b")'}`, the order taken from one input that covers the season in a leap year.
 - A second y axis (`overlaying: 'y'`) syncs its ticks to the first by default; set `tickmode: 'auto'` on it for round numbers.
 - The base map downloads Natural Earth shapefiles on first use (cartopy, network needed); later runs reuse them.
@@ -140,7 +139,7 @@ References select and label stored values; they never compute. The one exception
 - A log axis (pressure) labels Plotly's minor ticks too; set `tickvals` to the levels (`tickvals: '@RH.vertical'`).
 - Values are drawn in the file's own units (K stays K, Pa stays Pa): run unit-convert for °C or hPa, and set palette bounds and contour levels in those units.
 - A forecast's `step` is a lead time. Run step-to-time to draw it by valid date beside observations, or use `.dt.days` for lead days.
-- Animations: `frames[k].data` replaces the traces listed in `frames[k].traces` (by position in `data`). Keep the base map out of the frames: it stays on every frame. A scatter trace in the frames must be `scattergl`: an SVG `scatter` there blanks the heatmap on every other paint, so the map flashes. For moving wind arrows use the `wind` recipe's lines quiver (already `scattergl`), not `wind_markers` (`scattergl` has no `marker.standoff`, so its heads would sit mid-shaft).
+- Animations: `frames[k].data` replaces the traces listed in `frames[k].traces` (by position in `data`). Keep the base map out of the frames: it stays on every frame. A scatter trace in the frames must be `scattergl`: an SVG `scatter` there blanks the heatmap on every other paint, so the map flashes. `wind_markers` arrows don't animate well: `scattergl` has no `marker.standoff`, so their heads would sit mid-shaft.
 - A still image takes at most 100 panels; play more as frames.
 - Errors come from Jsonnet (syntax, unknown field), from the reference checks (which data, which dim, which skill), or from Plotly itself, naming the trace and its type (`data[3].line: a heatmap has no property 'line'`), with what to do for the usual mix-ups.
 

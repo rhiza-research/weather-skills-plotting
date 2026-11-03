@@ -5,9 +5,7 @@
 // from-direction. Plotly draws line-ns 1.4 times its size long, so shaft size = speed *
 // scale / 0.7 and head standoff = speed * scale put the head tip on the shaft end: the
 // arrow is 2 * scale px long per unit of speed, and every head is the same size.
-// Arithmetic like this is allowed only on marker sizes; the data drawn is unchanged. For
-// arrows that keep their length relative to the map (a true quiver), use the wind
-// recipe.
+// Arithmetic like this is allowed only on marker sizes; the data drawn is unchanged.
 // plot.py -i wind_sd.zarr=WD --spec wind_markers.jsonnet -o wind.png
 local ws = import 'ws.libsonnet';
 local inputs = std.extVar('inputs');

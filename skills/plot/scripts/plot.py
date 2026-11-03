@@ -32,7 +32,7 @@ from weather_skills_core.units import dequantify_dataset
 from weather_skills_plotting.bind import GeoLines, resolve
 from weather_skills_plotting.export import OUTPUT_SUFFIXES, export, key_hint, validate
 from weather_skills_plotting.geo import load_geojson
-from weather_skills_plotting.lint import UnboundDataError, check_bindings
+from weather_skills_plotting.lint import MARK_POINTS, UnboundDataError, check_bindings
 from weather_skills_plotting.render import (
     SpecArg,
     evaluate,
@@ -42,7 +42,7 @@ from weather_skills_plotting.render import (
 )
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "2.0.0"
+_SKILL_VERSION = "2.0.1"
 
 # A still image with more panels than this is refused: Chrome takes ~7 s to render
 # 200 small maps and never finishes 1,826. Frames have no limit.
@@ -115,9 +115,10 @@ def parse_const(value):
     "--const",
     type=parse_const,
     action="append",
-    help="NAME=VALUE, a constant: '@const.NAME' on a data axis (a threshold line at "
-    "--const nino=0.5, a date), std.extVar('const').NAME in text such as a title. Numbers and "
-    "text; repeat. Every value drawn is an input or one of these, never typed into the spec.",
+    help="NAME=VALUE, a constant: '@const.NAME' in a trace's data or a shape / annotation "
+    "position (a threshold line at --const nino=0.5, a date), std.extVar('const').NAME in text "
+    "such as a title. Numbers and text; repeat. A trace's data is an input or one of these, "
+    "never typed into the spec.",
 )
 @weather_skill.argument(
     "--dpi",
@@ -198,8 +199,11 @@ def plot(input, output, spec, const, dpi, recipe, dump_spec, **kwargs):
             lines.append(f"  {path}: {message}")
         # How data gets in, only when a value is missing its @ binding.
         footer = (
-            "\nData comes from the inputs: -i FILE=NAME, then '@NAME.var' in the key. A constant "
-            "on a data axis (a threshold line) is --const NAME=VALUE, then '@const.NAME'"
+            "\nData comes from the inputs: -i FILE=NAME, then '@NAME.var' in the key. A line or "
+            "point at fixed coordinates is a layout shape (name and showlegend: true give it a "
+            f"legend entry), or a trace with no @ references at all, up to {MARK_POINTS} values "
+            "per key. A "
+            "constant in a trace that draws data is --const NAME=VALUE, then '@const.NAME'"
             if unbound
             else ""
         )
