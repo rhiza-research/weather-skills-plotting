@@ -39,7 +39,6 @@ Start from a recipe. `--recipe` lists them, `--recipe NAME` prints one to copy a
 | `band.jsonnet` | A shaded 10–90% band between two quantile lines, with observations |
 | `sd_band.jsonnet` | Mean ± 1 SD as a shaded band (stacked fills), with the mean as a line |
 | `seasons.jsonnet` | Past years and a forecast plume on one day-of-year axis |
-| `wind.jsonnet` | Wind speed shading with quiver arrows as long as the wind is strong (wind-speed-direction `--arrow-length`) |
 | `wind_markers.jsonnet` | Wind arrows as Plotly markers sized in pixels by speed (`@…speed * k`), with no extra data step |
 | `animation.jsonnet` | A map played through time: HTML with play / slider, or a looping GIF |
 | `cross_section.jsonnet` | A field over longitude and pressure, 1000 hPa at the bottom |
@@ -114,7 +113,7 @@ A string that starts with `@` is replaced by the data it names; the whole string
 
 Shapes: `z` is 2-D (a lat/lon grid is drawn with rows as latitudes, and needs `x: '@NAME.lon', y: '@NAME.lat'` beside it); `customdata` 1-D or 2-D; everything else one value or 1-D. A trace's `x` and `y` (not a gridded one's) must pair up: the same length, and from two files the same time (or other) values; otherwise it's an error suggesting `merge`. Traces on one `coloraxis` holding different units print a warning. A dim of length 1 (the one time of a period total) is dropped when there are too many; any other leftover dim is an error naming it: pick a value with `isel` / `sel`, or draw one trace per value with a Jsonnet loop (`for m in std.range(0, inputs.ENS.dims.number - 1)`).
 
-References select and label stored values; they never compute. The one exception, a marker size in pixels (the arithmetic row above), changes how big a marker is on screen, not what is drawn. Arithmetic, averages and smoothing come from data skills first, and the error says which: `summarize-dim` (mean, quantiles over members), `aggregate-temporal` (rolling, resampling), `unit-convert`, `difference`, `coarsen` / `downscale`, `clip-region` (masks), `step-to-time` (valid dates), `wind-speed-direction` (speed and direction from u / v, and with `--arrow-length` quiver arrows as line segments). A mean ± SD band is Plotly stacking: mean − SD from `difference`, then the SD stacked on it twice (`--recipe sd_band`).
+References select and label stored values; they never compute. The one exception, a marker size in pixels (the arithmetic row above), changes how big a marker is on screen, not what is drawn. Arithmetic, averages and smoothing come from data skills first, and the error says which: `summarize-dim` (mean, quantiles over members), `aggregate-temporal` (rolling, resampling), `unit-convert`, `difference`, `coarsen` / `downscale`, `clip-region` (masks), `step-to-time` (valid dates), `wind-speed-direction` (speed and direction from u / v). A mean ± SD band is Plotly stacking: mean − SD from `difference`, then the SD stacked on it twice (`--recipe sd_band`).
 
 ### `ws.libsonnet`
 `local ws = import 'ws.libsonnet';` gives plain Plotly JSON; change any part with `+`. Imports are found by name in the skill's library (`ws.libsonnet`, `palettes.libsonnet`), its recipes, beside the spec file, and in the working folder, so a palettes file written there (`local mine = import 'my_palettes.libsonnet';`) needs no flag.
@@ -140,7 +139,7 @@ References select and label stored values; they never compute. The one exception
 - A log axis (pressure) labels Plotly's minor ticks too; set `tickvals` to the levels (`tickvals: '@RH.vertical'`).
 - Values are drawn in the file's own units (K stays K, Pa stays Pa): run unit-convert for °C or hPa, and set palette bounds and contour levels in those units.
 - A forecast's `step` is a lead time. Run step-to-time to draw it by valid date beside observations, or use `.dt.days` for lead days.
-- Animations: `frames[k].data` replaces the traces listed in `frames[k].traces` (by position in `data`). Keep the base map out of the frames: it stays on every frame. A scatter trace in the frames must be `scattergl`: an SVG `scatter` there blanks the heatmap on every other paint, so the map flashes. For moving wind arrows use the `wind` recipe's lines quiver (already `scattergl`), not `wind_markers` (`scattergl` has no `marker.standoff`, so its heads would sit mid-shaft).
+- Animations: `frames[k].data` replaces the traces listed in `frames[k].traces` (by position in `data`). Keep the base map out of the frames: it stays on every frame. A scatter trace in the frames must be `scattergl`: an SVG `scatter` there blanks the heatmap on every other paint, so the map flashes. `wind_markers` arrows don't animate well: `scattergl` has no `marker.standoff`, so their heads would sit mid-shaft.
 - A still image takes at most 100 panels; play more as frames.
 - Errors come from Jsonnet (syntax, unknown field), from the reference checks (which data, which dim, which skill), or from Plotly itself, naming the trace and its type (`data[3].line: a heatmap has no property 'line'`), with what to do for the usual mix-ups.
 
