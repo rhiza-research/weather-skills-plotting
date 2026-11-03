@@ -115,9 +115,10 @@ def parse_const(value):
     "--const",
     type=parse_const,
     action="append",
-    help="NAME=VALUE, a constant: '@const.NAME' on a data axis (a threshold line at "
-    "--const nino=0.5, a date), std.extVar('const').NAME in text such as a title. Numbers and "
-    "text; repeat. Every value drawn is an input or one of these, never typed into the spec.",
+    help="NAME=VALUE, a constant: '@const.NAME' in a trace's data or a shape / annotation "
+    "position (a threshold line at --const nino=0.5, a date), std.extVar('const').NAME in text "
+    "such as a title. Numbers and text; repeat. A trace's data is an input or one of these, "
+    "never typed into the spec.",
 )
 @weather_skill.argument(
     "--dpi",
@@ -199,7 +200,7 @@ def plot(input, output, spec, const, dpi, recipe, dump_spec, **kwargs):
         # How data gets in, only when a value is missing its @ binding.
         footer = (
             "\nData comes from the inputs: -i FILE=NAME, then '@NAME.var' in the key. A constant "
-            "on a data axis (a threshold line) is --const NAME=VALUE, then '@const.NAME'"
+            "in a trace's data (a reference point) is --const NAME=VALUE, then '@const.NAME'"
             if unbound
             else ""
         )

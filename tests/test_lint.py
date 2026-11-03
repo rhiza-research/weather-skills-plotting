@@ -72,6 +72,9 @@ def test_house_template_and_helpers_pass():
                 ]
             }
         },
+        # Shapes and annotations are placed by hand, so data-axis positions may be typed in.
+        {"layout": {"shapes": [{"type": "line", "x0": 36, "x1": 36, "yref": "paper", "y1": 1}]}},
+        {"layout": {"annotations": [{"text": "record high", "x": "2026-03-01", "y": 41}]}},
         {
             "layout": {
                 "updatemenus": [
@@ -148,32 +151,19 @@ def test_bound_figures_pass(fig):
             "data key",
         ),
         (
-            {"layout": {"shapes": [{"type": "path", "path": "M 0 0 L 1 5 L 2 3"}]}},
-            "layout.shapes[0].path",
+            {"layout": {"selections": [{"type": "path", "path": "M 0 0 L 1 5 L 2 3"}]}},
+            "layout.selections[0].path",
             "data axis",
         ),
         (
             {
                 "layout": {
-                    "shapes": [
-                        {
-                            "type": "line",
-                            "xref": "paper",
-                            "yref": "y2",
-                            "x0": 0,
-                            "x1": 1,
-                            "y0": 30,
-                            "y1": 30,
-                        }
+                    "selections": [
+                        {"xref": "paper", "yref": "y2", "x0": 0, "x1": 1, "y0": 30, "y1": 40}
                     ]
                 }
             },
-            "layout.shapes[0].y0",
-            "data axis",
-        ),
-        (
-            {"layout": {"annotations": [{"text": "record high", "x": "2026-03-01", "y": 41}]}},
-            "layout.annotations[0].x",
+            "layout.selections[0].y0",
             "data axis",
         ),
         (
@@ -221,11 +211,13 @@ def test_bound_figures_pass(fig):
         (
             {
                 "layout": {
-                    "sliders": [{"steps": [{"method": "relayout", "args": [{"shapes[0].y0": 30}]}]}]
+                    "sliders": [
+                        {"steps": [{"method": "relayout", "args": [{"selections[0].y0": 30}]}]}
+                    ]
                 }
             },
-            "layout.sliders[0].steps[0].args.shapes[0].y0",
-            "place shapes",
+            "layout.sliders[0].steps[0].args.selections[0].y0",
+            "place selections",
         ),
         (
             {
@@ -252,8 +244,8 @@ def test_bound_figures_pass(fig):
             "data key",
         ),
         (
-            {"layout": {"template": {"layout": {"annotations": [{"x": 1, "y": 2, "text": "x"}]}}}},
-            "layout.template.layout.annotations[0].x",
+            {"layout": {"template": {"layout": {"selections": [{"x0": 1, "x1": 2}]}}}},
+            "layout.template.layout.selections[0].x0",
             "data axis",
         ),
         (scatter(marker={"colour": "red"}), "data[0].marker.colour", "unknown key"),
@@ -294,7 +286,7 @@ def test_an_unknown_template_name_is_named():
 
 
 def test_template_defaults_are_checked():
-    found = problems({"layout": {"template": {"layout": {"shapedefaults": {"y0": 30, "y1": 30}}}}})
-    assert any(p.endswith("shapedefaults.y0") and "data axis" in m for p, m in found), found
+    found = problems({"layout": {"template": {"layout": {"selectiondefaults": {"y0": 30}}}}})
+    assert any(p.endswith("selectiondefaults.y0") and "data axis" in m for p, m in found), found
     found = problems({"layout": {"shapedefaults": {"colour": "red"}}})
     assert any("colour" in p and "unknown key" in m for p, m in found), found

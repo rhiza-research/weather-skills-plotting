@@ -16,7 +16,9 @@ something other than bindings.
 - generator keys (``x0``/``dx``, ``base``, error-bar ``value``, ...): scalars
   that make up a value for every point. Error bars that would fall back to
   Plotly's default ±10 also fail.
-- shapes, annotations, images and selections on a data axis: their coordinates.
+- images and selections on a data axis: their coordinates. Shapes and annotations
+  are marks placed by hand (a line at a date, a label at a place), so their
+  coordinates may be typed in.
 - menu and slider ``args``: may not set data keys or coordinates to literals,
   or carry inline frames.
 - unknown keys, since only keys Plotly defines can be checked.
@@ -169,10 +171,10 @@ GENERATORS = {
 }
 
 # Layout collections drawn in data coordinates when anchored to an axis: (x keys, y keys).
+# Shapes and annotations are left out: a line or label placed by hand may sit at a typed-in
+# position.
 ANCHORED = {
-    "shapes": ({"x0", "x1", "xanchor", "path"}, {"y0", "y1", "yanchor", "path"}),
     "selections": ({"x0", "x1", "path"}, {"y0", "y1", "path"}),
-    "annotations": ({"x"}, {"y"}),
     "images": ({"x", "sizex"}, {"y", "sizey"}),
 }
 MENU_ARGS = {
@@ -429,8 +431,6 @@ class _Checker:
         coords = (x_keys if on_axis(item.get("xref")) else set()) | (
             y_keys if on_axis(item.get("yref")) else set()
         )
-        if collection == "annotations":
-            coords |= {k for k in ("ax", "ay") if on_axis(item.get(f"{k}ref", "pixel"))}
         for k in sorted(coords & item.keys()):
             self.require(item[k], f"{path}.{k}", f"'{k}' is on a data axis and")
 
