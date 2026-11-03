@@ -490,6 +490,15 @@ def test_an_unknown_key_alone_gets_no_binding_reminder(tmp_path, plot_fn, capsys
     assert "a heatmap has no property 'line'" in err and "Data comes from the inputs" not in err
 
 
+def test_player_slider_shows_frames_at_once(plot_fn, capsys):
+    spec = "local ws = import 'ws.libsonnet'; {layout: ws.player(['a', 'b'], duration=300)}"
+    run_skill(plot_fn, "--spec", spec, "--dump-spec", "-")
+    layout = json.loads(capsys.readouterr().out)["layout"]
+    # Play keeps its pace (and sets a GIF's); a slider step waits for nothing, so a drag follows.
+    assert layout["updatemenus"][0]["buttons"][0]["args"][1]["frame"]["duration"] == 300
+    assert {s["args"][1]["frame"]["duration"] for s in layout["sliders"][0]["steps"]} == {0}
+
+
 def test_literal_at_sign(tmp_path, plot_fn, capsys):
     spec = "{layout: {annotations: [{text: '@@rhiza', xref: 'paper', yref: 'paper', x: 0, y: 1}]}}"
     run_skill(plot_fn, "--spec", spec, "--dump-spec", "-")

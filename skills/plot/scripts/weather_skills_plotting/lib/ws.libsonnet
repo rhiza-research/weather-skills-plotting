@@ -311,9 +311,11 @@ local basemapStyles = {
         { label: 'Pause', method: 'animate', args: [[null], step { frame+: { duration: 0 } }] },
       ],
     }],
+    // A slider step shows its frame at once: with the play duration, each step of a drag
+    // waits for the one before, so the slider lags and jumps.
     sliders: [{
       x: 0.05, len: 0.95, y: 0, yanchor: 'top', currentvalue: { prefix: '' },
-      steps: [{ label: n, method: 'animate', args: [[n], step] } for n in names],
+      steps: [{ label: n, method: 'animate', args: [[n], step { frame+: { duration: 0 } }] } for n in names],
     }],
   },
 }
