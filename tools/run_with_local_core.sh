@@ -2,8 +2,8 @@
 # Run a skill script against the sibling weather-skills-core checkout.
 #
 # Usage:
-#   tools/run_with_local_core.sh skills/difference/scripts/difference.py --help
-#   tools/run_with_local_core.sh skills/chirps-fetch/scripts/fetch.py --start-time 2026-01-01 --end-time 2026-01-02 -o /tmp/out.zarr
+#   tools/run_with_local_core.sh skills/plot/scripts/plot.py --help
+#   tools/run_with_local_core.sh skills/plot/scripts/plot.py -i rain.zarr=OBS --spec map.jsonnet -o /tmp/map.png
 #
 # Override the core path with WEATHER_SKILLS_CORE=/path/to/weather-skills-core.
 #
