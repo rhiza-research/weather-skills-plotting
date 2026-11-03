@@ -10,13 +10,16 @@ before binding: it raises if anything that can put data on the chart holds
 something other than bindings.
 
 - data keys (``x``, ``z``, ``dimensions[].values``, ...): a binding, or a list
-  made only of bindings.
+  made only of bindings. A trace with no binding anywhere is a mark placed by hand
+  (a line between two places, a pin) and may type in up to MARK_POINTS values per key.
 - per-point keys (``marker.color``, ``text``, ...): one value is styling, but
   a list must be bindings.
 - generator keys (``x0``/``dx``, ``base``, error-bar ``value``, ...): scalars
   that make up a value for every point. Error bars that would fall back to
   Plotly's default ±10 also fail.
-- shapes, annotations, images and selections on a data axis: their coordinates.
+- images and selections on a data axis: their coordinates. Shapes and annotations
+  are marks placed by hand (a line at a date, a label at a place), so their
+  coordinates may be typed in.
 - menu and slider ``args``: may not set data keys or coordinates to literals,
   or carry inline frames.
 - unknown keys, since only keys Plotly defines can be checked.
@@ -168,11 +171,14 @@ GENERATORS = {
     *(f"error_{axis}.{k}" for axis in "xyz" for k in ("value", "valueminus")),
 }
 
+# Most values a key of a trace with no bindings (a mark placed by hand) may type in.
+MARK_POINTS = 5
+
 # Layout collections drawn in data coordinates when anchored to an axis: (x keys, y keys).
+# Shapes and annotations are left out: a line or label placed by hand may sit at a typed-in
+# position.
 ANCHORED = {
-    "shapes": ({"x0", "x1", "xanchor", "path"}, {"y0", "y1", "yanchor", "path"}),
     "selections": ({"x0", "x1", "path"}, {"y0", "y1", "path"}),
-    "annotations": ({"x"}, {"y"}),
     "images": ({"x", "sizex"}, {"y", "sizey"}),
 }
 MENU_ARGS = {
@@ -294,20 +300,29 @@ class _Checker:
         for key in fig.keys() - {"data", "layout", "frames"}:
             self.problem(key, "unknown top-level key, so it can't be checked for data")
         for i, trace in enumerate(fig.get("data", [])):
-            self.check_trace(trace, f"data[{i}]")
+            self.check_trace(trace, f"data[{i}]", mark=True)
         if "layout" in fig:
             self.walk(fig["layout"], "layout", "", "layout", "layout")
         for i, frame in enumerate(fig.get("frames", [])):
             self.check_frame(frame, f"frames[{i}]")
         return self.problems
 
-    def check_trace(self, trace, path, trace_type=None):
+    def check_trace(self, trace, path, trace_type=None, mark=False):
         if not isinstance(trace, dict):
             return self.problem(path, "expected a trace object")
         trace_type = trace_type or trace.get("type", "scatter")
         if trace_type not in self.schema.trace_types:
             return self.problem(f"{path}.type", f"unknown trace type {trace_type!r}")
-        self.walk({k: v for k, v in trace.items() if k != "type"}, trace_type, "", path, "trace")
+        # A trace with no binding anywhere is a mark placed by hand; its data keys are
+        # checked for size only. Only a figure's own traces can be marks: a frame's trace
+        # updates a base trace, and a template holds styles.
+        bound = not mark or any(
+            isinstance(v, str) and self.pattern.match(v)
+            for _, value in flatten(trace)
+            for v in leaves(value)
+        )
+        context = "trace" if bound else "mark"
+        self.walk({k: v for k, v in trace.items() if k != "type"}, trace_type, "", path, context)
         self.check_error_bars(trace, path)
 
     def check_frame(self, frame, path):
@@ -394,6 +409,20 @@ class _Checker:
 
     def check_leaf(self, value, spec, rel, path, context):
         category = leaf_category(rel, spec)
+        if context == "mark":
+            if category not in ("always", "schema_silent") and rel not in GENERATORS:
+                return
+            n = sum(1 for _ in leaves(value)) if isinstance(value, list) else 1
+            if not isinstance(value, (list, int, float)) or has_dict(value):
+                # An embedded image, a GeoJSON or encoded array is data, not a mark.
+                self.require(value, path, "data key")
+            elif n > MARK_POINTS:
+                self.problem(
+                    path,
+                    f"a trace typed in by hand holds at most {MARK_POINTS} values per key, found "
+                    f"{n}; data to draw needs an @binding",
+                )
+            return
         if context == "trace" and rel in GENERATORS:
             self.require(value, path, f"'{rel}' generates a value for every point and")
         elif category in ("always", "schema_silent"):
@@ -429,8 +458,6 @@ class _Checker:
         coords = (x_keys if on_axis(item.get("xref")) else set()) | (
             y_keys if on_axis(item.get("yref")) else set()
         )
-        if collection == "annotations":
-            coords |= {k for k in ("ax", "ay") if on_axis(item.get(f"{k}ref", "pixel"))}
         for k in sorted(coords & item.keys()):
             self.require(item[k], f"{path}.{k}", f"'{k}' is on a data axis and")
 

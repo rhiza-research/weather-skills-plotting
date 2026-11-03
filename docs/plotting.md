@@ -85,19 +85,21 @@ figure against Plotly's own attribute schema (it reads
 listing every problem, unless each key that can put data on the chart holds
 an `@` binding:
 
-- data keys (`data_array` in the schema: `x`, `z`, `dimensions[].values`, …);
+- data keys (`data_array` in the schema: `x`, `z`, `dimensions[].values`, …),
+  except in a trace with no bindings at all: a mark placed by hand, up to
+  `MARK_POINTS` (5) typed-in values per key;
 - per-point keys (`arrayOk`: `marker.color`, `text`, …) when given a list;
 - generator keys (`x0` / `dx`, `base`, error-bar `value`) and error bars that
   would fall back to Plotly's default ±10;
 - keys the schema types loosely but that carry data (`geojson`, an image
   `source`, `selectedpoints`);
-- shapes, annotations, images and selections on a data axis, menu and slider
-  `args`, frames and templates;
+- images and selections on a data axis, menu and slider `args`, frames and
+  templates;
 - keys Plotly doesn't define, which can't be checked.
 
-Constants on a data axis come in through `--const NAME=VALUE` as
-`@const.NAME`, so even a threshold line is a recorded input rather than a
-number in the spec. `python -m weather_skills_plotting.lint` writes the
+Shapes and annotations are marks placed by hand, so their positions may be typed
+in. A constant in a trace's data comes in through `--const NAME=VALUE` as
+`@const.NAME`, a recorded input rather than a number in the spec. `python -m weather_skills_plotting.lint` writes the
 key listing as JSON for a Plotly upgrade to be reviewed.
 
 Shape rules are the only other logic: `z` must be 2-D (a lat/lon grid is
