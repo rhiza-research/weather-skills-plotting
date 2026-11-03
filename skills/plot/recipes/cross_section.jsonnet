@@ -17,6 +17,8 @@ local pick = '.isel(step=0).sel(lat=%g, method="nearest")' % lat;
     title: { text: 'Relative humidity along %g°%s, %s' % [std.abs(lat), if lat < 0 then 'S' else 'N', (import 'ws.libsonnet').date(inputs.RH.coords.time)] },
     xaxis: { title: { text: 'Longitude' }, ticksuffix: '°' },
     // A log pressure axis labels only the levels, not Plotly's minor ticks.
+    // On it an annotation's y and the axis range are log10 of the pressure (850 hPa is y: 2.93);
+    // shapes and traces take hPa.
     yaxis: { title: { text: 'Pressure (hPa)' }, type: 'log', autorange: 'reversed', tickvals: '@RH.vertical' + levels },
   },
 }
