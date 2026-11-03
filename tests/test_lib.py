@@ -85,7 +85,7 @@ def test_class_bar_draws_equal_bands_labelled_at_the_bounds():
 
 
 def test_class_bar_names_classes_when_the_palette_has_labels():
-    layout = ev("ws.classBar(ws.palettes.hits, axis='coloraxis2')")
+    layout = ev("ws.classBar(ws.palettes.hits, coloraxis='coloraxis2')")
     assert [a["text"] for a in layout["annotations"]] == ["Disagree", "Both below", "Hit"]
     assert "coloraxis2" in layout
 
@@ -125,7 +125,7 @@ def test_class_bar_replaces_its_own_axis_bar_only():
     assert swapped["shapes"] == daily["shapes"]
     assert swapped["annotations"] == [{"text": "mine"}] + daily["annotations"]
     two = ev(
-        "ws.classBar(ws.palettes.ppt_day, 'mm') + ws.classBar(ws.palettes.hits, axis='coloraxis2')"
+        "ws.classBar(ws.palettes.ppt_day, 'mm') + ws.classBar(ws.palettes.hits, coloraxis='coloraxis2')"
     )
     assert {s["name"] for s in two["shapes"]} == {"classBar-coloraxis", "classBar-coloraxis2"}
 
@@ -225,3 +225,16 @@ def test_a_dateline_window_reads_east_and_west():
 def test_class_bar_without_under_and_over_has_no_triangles():
     layout = ev("ws.classBar({colors: ['#a', '#b'], bounds: [0, 1, 2]})")
     assert all(s["type"] == "rect" for s in layout["shapes"])
+
+
+def test_unknown_parameter_lists_the_called_functions_parameters():
+    from weather_skills_core.errors import UsageError
+
+    from weather_skills_plotting.render import SpecArg, evaluate
+
+    spec = f"local ws = import 'ws.libsonnet'; {{layout: ws.map({BBOX}) + ws.classBar(ws.palettes.ppt_day, axis='c')}}"
+    with pytest.raises(
+        UsageError, match=r"ws\.classBar\(p, title='', coloraxis='coloraxis'"
+    ) as err:
+        evaluate(SpecArg(spec), {}, {})
+    assert "ws.basemap" not in str(err.value)

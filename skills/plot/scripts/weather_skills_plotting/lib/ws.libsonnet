@@ -247,7 +247,7 @@ local basemapStyles = {
   // is hidden and this one is drawn as layout shapes and annotations, so it adds to
   // the layout's shapes and annotations (write yours as annotations+: [...] after it).
   // x, y, len and width are fractions of the plotting area (paper), from its bottom left.
-  classBar(p, title='', axis='coloraxis', x=1.03, y=0.05, len=0.85, width=0.03, format='%g'):: {
+  classBar(p, title='', coloraxis='coloraxis', x=1.03, y=0.05, len=0.85, width=0.03, format='%g'):: {
     local b = p.bounds,
     local nb = std.length(b),
     local packed = std.length(p.colors) == nb + 1,
@@ -263,9 +263,9 @@ local basemapStyles = {
     local plotH = if 'height' in super && 'margin' in super then super.height - super.margin.t - super.margin.b else 0,
     local tri = if plotH > 0 then std.min(0.8 * h, 24 / plotH) else 0.8 * h,
     // Shapes and annotations are named for the axis, so a classBar added on top of
-    // another for the same axis replaces it; bars for other axes, and your own
+    // another for the same coloraxis replaces it; bars for other coloraxes, and your own
     // shapes and annotations, are kept.
-    local tag = 'classBar-' + axis,
+    local tag = 'classBar-' + coloraxis,
     local others(key) = if key in super then [o for o in super[key] if std.get(o, 'name', '') != tag] else [],
     local box(y0, y1, color) = {
       type: 'rect', xref: 'paper', yref: 'paper', x0: x, x1: x + width, y0: y0, y1: y1,
@@ -276,7 +276,7 @@ local basemapStyles = {
       line: { width: 0.5, color: '#333333' }, name: tag,
       path: 'M %f,%f L %f,%f L %f,%f Z' % [x, base, x + width, base, x + width / 2, tip],
     },
-    [axis]: $.stepped(p) + { showscale: false },
+    [coloraxis]: $.stepped(p) + { showscale: false },
     shapes: others('shapes') + [box(y + k * h, y + (k + 1) * h, classes[k]) for k in std.range(0, nb - 2)]
              + (if packed then [
                   triangle(y, y - tri, p.colors[0]),

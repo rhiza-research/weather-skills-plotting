@@ -20,6 +20,9 @@ RECIPES_DIR = Path(__file__).parents[2] / "recipes"
 # 1-D coordinates up to this long are listed in std.extVar('inputs') with their values.
 MAX_LISTED_COORD = 400
 
+# A ws.libsonnet function and its parameters: `  name(a, b=1, …)::`, over one or more lines.
+WS_SIGNATURE = re.compile(r"^  (\w+)\(([^)]*)\)::", re.MULTILINE)
+
 
 class SpecArg:
     """A ``--spec`` value: a Jsonnet file path, a recipe name, or Jsonnet / JSON text."""
@@ -180,13 +183,20 @@ def evaluate(spec: SpecArg, inputs_meta: dict, consts: dict) -> dict:
                 " ws.stepped(p) is the coloraxis itself (coloraxis: ws.stepped(p)); "
                 "ws.classBar(p) is layout keys (layout: ws.map(b) + ws.classBar(p))."
             )
-        if "function has no parameter layers" in message:
-            message += (
-                "\nws.basemap switches layers by name: coastline=, borders=, disputed=, "
-                "lakes=, rivers= (true / false) and admin= ('auto', 1, 2, false)"
-            )
-        elif "function has no parameter" in message:
-            message += "\nSKILL.md lists each ws.libsonnet function's parameters"
+        unknown = re.search(r"function has no parameter (\w+)", message)
+        if unknown:
+            # The parameters of each ws function the spec calls that lacks this one.
+            text = spec.path.read_text() if spec.path is not None else spec.value
+            called = set(re.findall(r"\bws\.(\w+)\(", text))
+            signatures = [
+                f"ws.{name}({' '.join(params.split())})"
+                for name, params in WS_SIGNATURE.findall((LIB_DIR / "ws.libsonnet").read_text())
+                if name in called and not re.search(rf"\b{unknown.group(1)}\b", params)
+            ]
+            if signatures:
+                message += "\nParameters: " + "; ".join(signatures)
+            else:
+                message += "\nSKILL.md lists each ws.libsonnet function's parameters"
         if "couldn't open import" in message:
             message += (
                 "\nImports found by name: ws.libsonnet, palettes.libsonnet, and the recipes "

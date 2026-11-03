@@ -18,7 +18,7 @@ local map(name, field, i, axis) = { type: 'heatmap', x: '@%s.lon' % name, y: '@%
         + std.flattenArrays([ws.basemap(bbox, i, rivers=false, admin=false) for i in std.range(0, 2 * cols - 1) if i != cols]),
   layout: ws.grid(bbox, rows=2, cols=cols, empty=[cols])
           + ws.classBar(ws.palettes.ppt_week, 'mm', y=0.55, len=0.4)
-          + ws.classBar(ws.palettes.hits, 'Event ≥ 10 mm', axis='coloraxis2', y=0.05, len=0.4) + {
+          + ws.classBar(ws.palettes.hits, 'Event ≥ 10 mm', coloraxis='coloraxis2', y=0.05, len=0.4) + {
     title: { text: 'Rainfall %s' % ws.date(inputs.OW.coords.time[0]) },
     annotations+: [ws.panelTitle(0, 'Observed')]
                   + [ws.panelTitle(k + 1, leads[k].title) for k in std.range(0, std.length(leads) - 1)],
