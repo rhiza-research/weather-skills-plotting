@@ -255,13 +255,16 @@ def _method(base, name, args, kwargs, ref):
             )
         return da.transpose(*order)
     if name == "flat":
-        # A 2-D selection as one value per cell (a lat/lon grid row by row), and with a dim
-        # named, that dim's coordinate for each value: grid cells as points, or members
-        # with their lead for one box per lead.
-        if da.ndim != 2:
-            raise UsageError(f"{ref}: .flat() needs two dims; dims are {list(da.dims)}")
+        # A selection of two or more dims as one value per cell (a lat/lon grid row by row,
+        # under any other dims), and with a dim named, that dim's coordinate for each value:
+        # grid cells as points, members with their lead for one box per lead, or a level ×
+        # lat × lon block as the x / y / z / value of an isosurface.
+        if da.ndim < 2:
+            raise UsageError(f"{ref}: .flat() needs two or more dims; dims are {list(da.dims)}")
         lat, lon = cf_dim(da, "latitude"), cf_dim(da, "longitude")
-        grid = da.transpose(lat, lon) if set(da.dims) == {lat, lon} else da
+        grid = da
+        if {lat, lon} <= set(da.dims):
+            grid = da.transpose(*[d for d in da.dims if d not in (lat, lon)], lat, lon)
         if not args:
             return np.asarray(grid.values).ravel()
         which = _dim(da, args[0], ref)
@@ -510,8 +513,8 @@ def _attribute(base, attr, ref):
 def to_json_value(value, path: str, ref: str):
     """The JSON value Plotly takes at ``path`` for a resolved reference.
 
-    Its shape is checked against the key: ``z`` is 2-D (a lat/lon grid as rows of
-    latitude), ``customdata`` 1-D or 2-D, anything else 1-D or one value, after
+    Its shape is checked against the key: ``z`` and ``surfacecolor`` are 2-D (a lat/lon
+    grid as rows of latitude), ``customdata`` 1-D or 2-D, anything else 1-D or one value, after
     size-1 dims are dropped. Times become ISO text (a midnight drops its clock),
     numbers a float array, anything else a list. Lead times, and a whole input or
     layer with no variable named, are a UsageError.
@@ -525,20 +528,21 @@ def to_json_value(value, path: str, ref: str):
     key = path.rsplit(".", 1)[-1].split("[")[0]
     if hasattr(value, "dims"):
         da = value
-        allowed = 2 if key in ("z", "customdata") else 1
+        # A surface's surfacecolor is a grid like its z, cell for cell.
+        allowed = 2 if key in ("z", "surfacecolor", "customdata") else 1
         # A dim of length 1 (the one time of a period total) holds no choice: drop such
         # dims while there are more than the attribute takes.
         for dim in [d for d in da.dims if da.sizes[d] == 1]:
             if da.ndim > allowed:
                 da = da.squeeze(dim)
-        if key == "z":
+        if key in ("z", "surfacecolor"):
             lat, lon = cf_dim(da, "latitude"), cf_dim(da, "longitude")
             if da.ndim == 2 and set(da.dims) == {lat, lon}:
                 da = da.transpose(lat, lon)
-        if key == "z" and da.ndim < 2:
+        if key in ("z", "surfacecolor") and da.ndim < 2:
             raise UsageError(
-                f"{path} = {ref} has dims {list(da.dims)}; z needs a 2-D grid, so keep two dims "
-                "(lat and lon, or e.g. vertical and lon) and pick only the others"
+                f"{path} = {ref} has dims {list(da.dims)}; {key} needs a 2-D grid, so keep two "
+                "dims (lat and lon, or e.g. vertical and lon) and pick only the others"
             )
         if da.ndim > allowed:
             want = "2-D (a grid)" if allowed == 2 else "1-D or a single value"
@@ -566,6 +570,11 @@ def to_json_value(value, path: str, ref: str):
     if values.ndim == 0:
         item = values.item()
         return float(item) if isinstance(item, (np.floating, float)) else item
+    if key == "value" and values.dtype.kind == "f":
+        # An isosurface or volume draws nothing at all when any value is NaN (levels under
+        # the ground). -inf is below every isomin, so a cell with no value is outside every
+        # surface, as a NaN cell of a heatmap is blank.
+        return np.where(np.isnan(values), -np.inf, values)
     if values.dtype.kind in "biuf":
         return values.astype(float)
     return values.tolist()

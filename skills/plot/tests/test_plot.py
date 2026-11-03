@@ -15,6 +15,7 @@ from skill_conftest import (
     run_skill,
     write_zarr,
 )
+from weather_skills_core.errors import UsageError
 from weather_skills_core.provenance import load_figure_history
 
 from weather_skills_plotting.bind import SCALED_KEYS
@@ -81,6 +82,13 @@ def _inputs(tmp_path):
     )
     rh["latitude"].attrs.update(standard_name="latitude", units="degrees_north")
     rh["longitude"].attrs.update(standard_name="longitude", units="degrees_east")
+    # Under high ground the lowest level holds no value.
+    rh["r"][:, 0, 0, 0] = np.nan
+    sp = xr.Dataset(
+        {"sp": (("step", "latitude", "longitude"), rng.uniform(800, 1010, (2, 2, 4)))},
+        coords=rh["r"].isel(vertical=0, drop=True).coords,
+    )
+    sp["sp"].attrs.update(units="hPa", standard_name="surface_air_pressure")
     cty = xr.Dataset(
         {"precip": ("county", [12.0, 30.0, 4.0])},
         coords={"county": ["Kisumu", "Turkana", "Nairobi"]},
@@ -138,6 +146,7 @@ def _inputs(tmp_path):
         "Y2025": _series("precip", [3, 0, 4, 6], start="2025-03-01"),
         "WD": wind,
         "RH": rh,
+        "SP": sp,
         "CTY": cty,
         "IDX": idx,
         "OW": week,
@@ -395,6 +404,59 @@ def test_spec_errors(tmp_path, plot_fn, capsys, spec, match):
     with pytest.raises(SystemExit):
         run_skill(plot_fn, "-i", f"{grid}=G", "--spec", spec, "-o", str(tmp_path / "x.png"))
     assert match in capsys.readouterr().err
+
+
+def _block():
+    """A level × lon × lat block whose value encodes its own position, one cell NaN."""
+    levels, lats, lons = [1000.0, 850.0, 500.0], [1.0, 2.0], [10.0, 11.0, 12.0]
+    v, x, y = np.meshgrid(levels, lons, lats, indexing="ij")
+    ds = xr.Dataset(
+        {"r": (("vertical", "longitude", "latitude"), v + x / 100 + y / 1000)},
+        coords={"vertical": levels, "latitude": lats, "longitude": lons},
+    )
+    ds["r"][0, 0, 0] = np.nan
+    ds["latitude"].attrs.update(standard_name="latitude", units="degrees_north")
+    ds["longitude"].attrs.update(standard_name="longitude", units="degrees_east")
+    return ds
+
+
+def test_flat_lays_out_a_block_in_one_order():
+    from weather_skills_plotting.bind import evaluate, to_json_value
+
+    inputs = {"B": _block()}
+    flat = {
+        key: to_json_value(evaluate(ref, inputs)[0], f"data[0].{key}", ref)
+        for key, ref in {
+            "value": "@B.r.flat()",
+            "x": "@B.r.flat('lon')",
+            "y": "@B.r.flat('lat')",
+            "z": "@B.r.flat('vertical')",
+        }.items()
+    }
+    assert {len(v) for v in flat.values()} == {18}
+    # Each value sits at the coordinates it was stored at: lat / lon last, lon fastest.
+    np.testing.assert_allclose(
+        flat["value"][1:], (flat["z"] + flat["x"] / 100 + flat["y"] / 1000)[1:]
+    )
+    assert flat["x"][:3].tolist() == [10.0, 11.0, 12.0] and flat["y"][:3].tolist() == [1.0] * 3
+    # A cell with no value is -inf: below every isomin, so outside every surface, where a
+    # NaN would blank the whole isosurface.
+    assert flat["value"][0] == -np.inf
+    with pytest.raises(UsageError, match="two or more dims"):
+        evaluate("@B.r.isel(vertical=0, lat=0).flat()", inputs)
+
+
+def test_surfacecolor_is_a_grid_like_z():
+    from weather_skills_plotting.bind import evaluate, to_json_value
+
+    ref = "@B.r.isel(vertical=1)"
+    da = evaluate(ref, {"B": _block()})[0]
+    # Stored lon × lat, drawn as rows of latitude, the same as z.
+    color = to_json_value(da, "data[0].surfacecolor", ref)
+    assert color.shape == (2, 3)
+    np.testing.assert_array_equal(color, to_json_value(da, "data[0].z", ref))
+    with pytest.raises(UsageError, match="surfacecolor needs a 2-D grid"):
+        to_json_value(da.isel(latitude=0), "data[0].surfacecolor", ref)
 
 
 def test_an_unknown_key_alone_gets_no_binding_reminder(tmp_path, plot_fn, capsys):
