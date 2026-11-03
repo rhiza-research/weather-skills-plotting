@@ -386,7 +386,7 @@ def test_bad_input_name(plot_fn, capsys, argv, match):
             "{data: [{type: 'scatter', x: '@G.time', y: [1, 2, 3]}]}",
             "data[0].y: data key needs an @binding",
         ),
-        ("{data: [{type: 'scatter', y: std.range(0, 10)}]}", "at most 10 values per key"),
+        ("{data: [{type: 'scatter', y: std.range(0, 5)}]}", "at most 5 values per key"),
         ("{data: [{type: 'box', y: '@G.precip', x0: 'Day 1'}]}", "generates a value"),
     ],
 )

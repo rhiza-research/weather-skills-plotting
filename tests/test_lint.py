@@ -111,7 +111,7 @@ def test_bound_figures_pass(fig):
     [
         (scatter(y=[1, 2, 3]), "data[0].y", "data key"),
         # A mark placed by hand holds a few points, never a data series.
-        ({"data": [{"type": "scatter", "y": list(range(11))}]}, "data[0].y", "at most 10"),
+        ({"data": [{"type": "scatter", "y": list(range(6))}]}, "data[0].y", "at most 5"),
         (scatter(x=["@a", 5]), "data[0].x", "data key"),
         (scatter(y={"dtype": "f8", "bdata": "AAAAAAAA8D8="}), "data[0].y", "data key"),
         (scatter(y="@@1"), "data[0].y", "data key"),  # @@ starts literal text, not a reference

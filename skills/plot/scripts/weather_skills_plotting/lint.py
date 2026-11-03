@@ -172,7 +172,7 @@ GENERATORS = {
 }
 
 # Most values a key of a trace with no bindings (a mark placed by hand) may type in.
-MARK_POINTS = 10
+MARK_POINTS = 5
 
 # Layout collections drawn in data coordinates when anchored to an axis: (x keys, y keys).
 # Shapes and annotations are left out: a line or label placed by hand may sit at a typed-in
