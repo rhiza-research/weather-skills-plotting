@@ -382,7 +382,11 @@ def test_bad_input_name(plot_fn, capsys, argv, match):
         ("{data: [{type: 'heatmap', z: '@G.prcp.isel(time=0)'}]}", "data variables: precip"),
         ("{data: [{type: 'heatmap', z: '@X.precip'}]}", "'X' is not an input; inputs are G"),
         ("{layout: {title: {text: std.extVar('inputs').X.attrs.name}}}", "pass it with -i FILE=X"),
-        ("{data: [{type: 'scatter', y: [1, 2, 3]}]}", "data[0].y: data key needs an @binding"),
+        (
+            "{data: [{type: 'scatter', x: '@G.time', y: [1, 2, 3]}]}",
+            "data[0].y: data key needs an @binding",
+        ),
+        ("{data: [{type: 'scatter', y: std.range(0, 10)}]}", "at most 10 values per key"),
         ("{data: [{type: 'box', y: '@G.precip', x0: 'Day 1'}]}", "generates a value"),
     ],
 )

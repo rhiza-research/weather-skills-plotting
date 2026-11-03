@@ -72,6 +72,9 @@ def test_house_template_and_helpers_pass():
                 ]
             }
         },
+        # A trace with no bindings is a mark placed by hand: a few typed-in points.
+        {"data": [{"type": "scatter", "mode": "lines", "x": [33, 42], "y": [3.5, 3.5]}]},
+        {"data": [{"type": "scatter", "x": [36], "y": [3], "text": ["Lodwar"], "mode": "text"}]},
         # Shapes and annotations are placed by hand, so data-axis positions may be typed in.
         {"layout": {"shapes": [{"type": "line", "x0": 36, "x1": 36, "yref": "paper", "y1": 1}]}},
         {"layout": {"annotations": [{"text": "record high", "x": "2026-03-01", "y": 41}]}},
@@ -107,6 +110,8 @@ def test_bound_figures_pass(fig):
     "fig, path, words",
     [
         (scatter(y=[1, 2, 3]), "data[0].y", "data key"),
+        # A mark placed by hand holds a few points, never a data series.
+        ({"data": [{"type": "scatter", "y": list(range(11))}]}, "data[0].y", "at most 10"),
         (scatter(x=["@a", 5]), "data[0].x", "data key"),
         (scatter(y={"dtype": "f8", "bdata": "AAAAAAAA8D8="}), "data[0].y", "data key"),
         (scatter(y="@@1"), "data[0].y", "data key"),  # @@ starts literal text, not a reference
@@ -260,7 +265,9 @@ def test_unbound_data_raises(fig, path, words):
 
 def test_error_lists_every_problem():
     with pytest.raises(UnboundDataError) as caught:
-        check_bindings('{"data": [{"type": "scatter", "y": [1, 2], "marker": {"size": [3, 4]}}]}')
+        check_bindings(
+            '{"data": [{"type": "scatter", "x": "@t", "y": [1, 2], "marker": {"size": [3, 4]}}]}'
+        )
     message = str(caught.value)
     assert message.startswith("figure has 2 binding problem(s):")
     assert "data[0].y: data key needs an @binding, found 1" in message

@@ -32,7 +32,7 @@ from weather_skills_core.units import dequantify_dataset
 from weather_skills_plotting.bind import GeoLines, resolve
 from weather_skills_plotting.export import OUTPUT_SUFFIXES, export, key_hint, validate
 from weather_skills_plotting.geo import load_geojson
-from weather_skills_plotting.lint import UnboundDataError, check_bindings
+from weather_skills_plotting.lint import MARK_POINTS, UnboundDataError, check_bindings
 from weather_skills_plotting.render import (
     SpecArg,
     evaluate,
@@ -199,8 +199,11 @@ def plot(input, output, spec, const, dpi, recipe, dump_spec, **kwargs):
             lines.append(f"  {path}: {message}")
         # How data gets in, only when a value is missing its @ binding.
         footer = (
-            "\nData comes from the inputs: -i FILE=NAME, then '@NAME.var' in the key. A constant "
-            "in a trace's data (a reference point) is --const NAME=VALUE, then '@const.NAME'"
+            "\nData comes from the inputs: -i FILE=NAME, then '@NAME.var' in the key. A line or "
+            "point at fixed coordinates is a layout shape (name and showlegend: true give it a "
+            f"legend entry), or a trace with no @ references at all, up to {MARK_POINTS} values "
+            "per key. A "
+            "constant in a trace that draws data is --const NAME=VALUE, then '@const.NAME'"
             if unbound
             else ""
         )
