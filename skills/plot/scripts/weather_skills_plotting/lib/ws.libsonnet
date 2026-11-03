@@ -120,7 +120,6 @@ local basemapStyles = {
   } + {
     [if i == 0 then 'xaxis' else 'xaxis%d' % (i + 1)]: {
       local c = i % cols,
-      local r = std.floor(i / cols),
       domain: [c / cols + gap / 2, (c + 1) / cols - gap / 2],
       range: [bbox.w, bbox.e], showgrid: false, zeroline: false, ticksuffix: '°',
       constrain: 'domain', showticklabels: lowest(i), visible: filled(i),

@@ -30,7 +30,7 @@ from weather_skills_core import UsageError, weather_skill
 from weather_skills_core.units import dequantify_dataset
 
 from weather_skills_plotting.bind import GeoLines, resolve
-from weather_skills_plotting.export import export, key_hint, validate
+from weather_skills_plotting.export import OUTPUT_SUFFIXES, export, key_hint, validate
 from weather_skills_plotting.geo import load_geojson
 from weather_skills_plotting.lint import UnboundDataError, check_bindings
 from weather_skills_plotting.render import (
@@ -76,28 +76,27 @@ def parse_input(value):
             f"fc_week1); got {value!r}. NAME is how the spec refers to the file ('@NAME.var'); "
             'readable legend text goes in the trace\'s "name"'
         )
-    if name in ("NE", "const"):
+    if name in ("NE", "GB", "const"):
         raise argparse.ArgumentTypeError(
-            f"-i NAME {name!r} is built in ('NE' is Natural Earth, 'const' the --const values)"
+            f"-i NAME {name!r} is built in ('NE' is Natural Earth, 'GB' the geoBoundaries "
+            "admin lines, 'const' the --const values)"
         )
     return InputArg(path, name)
 
 
 def parse_const(value):
-    key, sep, text = str(value).partition("=")
+    """``--const NAME=VALUE``, kept as the text given so provenance replays it as passed."""
+    key, sep, _ = str(value).partition("=")
     if not sep or not _NAME.fullmatch(key):
         raise argparse.ArgumentTypeError(f"--const expects NAME=VALUE; got {value!r}")
-    try:
-        return key, float(text)
-    except ValueError:
-        return key, text
+    return str(value)
 
 
 @weather_skill(name="plot", version=_SKILL_VERSION)
 @weather_skill.argument(
     "-i",
     "--input",
-    dest="inputs",
+    dest="input",
     type=parse_input,
     action="append",
     help="An input as PATH=NAME: a Zarr, or a GeoJSON (.geojson / .json) of outlines. Repeat. "
@@ -141,7 +140,7 @@ def parse_const(value):
     probe=True,
     help="Print (-) or save (a path) the evaluated spec, @ references unresolved, and draw nothing.",
 )
-def plot(inputs, output, spec, const, dpi, recipe, dump_spec, **kwargs):
+def plot(input, output, spec, const, dpi, recipe, dump_spec, **kwargs):
     """Draw weather-skills Zarrs with a Jsonnet spec that evaluates to a Plotly figure."""
     if recipe is not None:
         print(recipe_text(recipe))
@@ -151,7 +150,7 @@ def plot(inputs, output, spec, const, dpi, recipe, dump_spec, **kwargs):
             "--spec is required: a .jsonnet file, a recipe name (--recipe lists them) or Jsonnet text"
         )
     datasets = {}
-    for x in inputs or []:
+    for x in input or []:
         if x.name in datasets:
             raise UsageError(f"two inputs are named {x.name!r}; give each its own -i PATH=NAME")
         if x.is_geojson():
@@ -162,7 +161,13 @@ def plot(inputs, output, spec, const, dpi, recipe, dump_spec, **kwargs):
             # Plain arrays, with units in CF form (g kg-1, mm day-1).
             datasets[x.name] = dequantify_dataset(x.ds)
     meta = {name: input_metadata(value) for name, value in datasets.items()}
-    consts = dict(const or ())
+    consts = {}
+    for item in const or []:
+        key, _, text = item.partition("=")
+        try:
+            consts[key] = float(text)
+        except ValueError:
+            consts[key] = text
     figure = evaluate(spec, meta, consts)
     # A spec with no template gets the house one, not Plotly's grey-blue default.
     figure.setdefault("layout", {}).setdefault("template", house_template())
@@ -224,6 +229,19 @@ def plot(inputs, output, spec, const, dpi, recipe, dump_spec, **kwargs):
                 f"Warning: the HTML will be large (~{size:.0f} MB); use fewer frames or a "
                 "smaller window",
                 file=sys.stderr,
+            )
+    # Every output is checked before any is written.
+    for path in outputs:
+        suffix = Path(path).suffix.lower()
+        if suffix not in OUTPUT_SUFFIXES:
+            raise UsageError(
+                f"output {Path(path).name!r} must end in .png, .jpg, .pdf, .svg, .html or .gif "
+                f"(got {suffix or 'no suffix'})"
+            )
+        if suffix == ".gif" and not fig.frames:
+            raise UsageError(
+                f"output {Path(path).name!r}: a GIF plays the figure's frames, and this spec has "
+                "none; add frames, or write a still image to .png"
             )
     if not dpi > 0:
         raise UsageError(f"--dpi must be above 0, got {dpi}")

@@ -200,7 +200,7 @@ def test_every_recipe_draws_only_stored_values(tmp_path, plot_fn, capsys, recipe
     meta = {n: input_metadata(v) for n, v in values.items()}
     sources = {n: GeoLines(v) if isinstance(v, list) else v for n, v in values.items()}
     consts = [c for flag, c in zip(argv[::2], argv[1::2], strict=True) if flag == "--const"]
-    sources["const"] = dict(plot_mod.parse_const(c) for c in consts)
+    sources["const"] = {c.split("=")[0]: float(c.split("=")[1]) for c in consts}
     resolved, found = resolve(evaluate(SpecArg(str(recipe)), meta, sources["const"]), sources)
     for path, ref in found.items():
         name = ref[1:].split(".")[0]
@@ -254,7 +254,47 @@ def test_png_with_provenance_and_qa(tmp_path, plot_fn, capsys):
     assert entry["skill"] == "plot"
     # Provenance keeps the evaluated figure, which replays as --spec by itself.
     assert entry["args"]["spec"]["data"][0]["z"] == "@G.precip.isel(time=0)"
-    assert entry["args"]["inputs"] == [f"{grid}=G"]
+    # Recorded under the flags' own names, as they were passed, so the command replays.
+    assert entry["args"]["input"] == [f"{grid}=G"]
+
+
+def test_constants_are_recorded_as_passed(tmp_path, plot_fn):
+    grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
+    out = tmp_path / "c.png"
+    spec = "{data: [{type: 'heatmap', x: '@G.lon', y: '@G.lat', z: '@G.precip.isel(time=0)', zmax: '@const.top'}]}"
+    run_skill(plot_fn, "-i", f"{grid}=G", "--const", "top=5", "--spec", spec, "-o", str(out))
+    assert load_figure_history(out)[-1]["args"]["const"] == ["top=5"]
+
+
+def test_a_station_with_no_position_is_left_out_of_the_bbox(tmp_path, plot_fn, capsys):
+    stations = make_point_obs()
+    lat = stations["latitude"].values.copy()
+    lat[0] = np.nan
+    stations = stations.assign_coords(latitude=(stations["latitude"].dims, lat))
+    path = write_zarr(stations, tmp_path / "stn.zarr")
+    run_skill(plot_fn, "-i", f"{path}=S", "--spec", "std.extVar('inputs').S.bbox", "--dump-spec")
+    bbox = json.loads(capsys.readouterr().out)
+    assert all(np.isfinite(v) for v in bbox.values() if isinstance(v, float))
+
+
+def test_every_output_is_checked_before_any_is_written(tmp_path, plot_fn, capsys):
+    grid = write_zarr(make_gridded(n_time=1), tmp_path / "grid.zarr")
+    spec = "{data: [{type: 'heatmap', x: '@G.lon', y: '@G.lat', z: '@G.precip.isel(time=0)'}]}"
+    png, txt = tmp_path / "a.png", tmp_path / "a.txt"
+    with pytest.raises(SystemExit):
+        run_skill(plot_fn, "-i", f"{grid}=G", "--spec", spec, "-o", str(png), "-o", str(txt))
+    assert "must end in .png" in capsys.readouterr().err and not png.exists()
+
+
+def test_gif_frame_traces_must_name_base_traces(tmp_path, plot_fn, capsys):
+    grid = write_zarr(make_gridded(n_time=2), tmp_path / "grid.zarr")
+    spec = (
+        "{data: [{type: 'heatmap', x: '@G.lon', y: '@G.lat', z: '@G.precip.isel(time=0)'}],"
+        " frames: [{name: 'a', traces: [3], data: [{type: 'heatmap', z: '@G.precip.isel(time=1)'}]}]}"
+    )
+    with pytest.raises(SystemExit):
+        run_skill(plot_fn, "-i", f"{grid}=G", "--spec", spec, "-o", str(tmp_path / "a.gif"))
+    assert "frames[0]: traces [3] must name one of data[0]" in capsys.readouterr().err
 
 
 def test_html_with_an_empty_base_map_layer(tmp_path, plot_fn, capsys, monkeypatch):
@@ -327,6 +367,7 @@ def test_gif_needs_frames(tmp_path, plot_fn, capsys):
         (["-i", "x.zarr"], "-i expects PATH=NAME"),
         (["-i", "x.zarr=IMERG Final"], "-i expects PATH=NAME"),
         (["-i", "x.zarr=NE"], "is built in"),
+        (["-i", "x.zarr=GB"], "is built in"),
     ],
 )
 def test_bad_input_name(plot_fn, capsys, argv, match):

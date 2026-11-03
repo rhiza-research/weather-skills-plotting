@@ -197,7 +197,10 @@ def _method(base, name, args, kwargs, ref):
         return GeoLines(geo.load_admin_lines(base.level, n, w, s, e))
     if isinstance(base, _Accessor):
         if base.kind == "dt" and name == "strftime" and len(args) == 1 and not kwargs:
-            return base.da.dt.strftime(args[0])
+            try:
+                return base.da.dt.strftime(args[0])
+            except (AttributeError, TypeError):
+                raise UsageError(f"{ref}: .dt.strftime() needs dates, not lead times") from None
         raise UsageError(f"{ref}: .{base.kind}.{name}() is not allowed")
     if not hasattr(base, "dims"):
         raise UsageError(f"{ref}: .{name}() needs a variable or coordinate before it")
@@ -218,6 +221,9 @@ def _method(base, name, args, kwargs, ref):
             held = []
             for dim in picks:
                 values = da[dim].values
+                if values.size == 0:
+                    held.append(f"{dim} has no values left")
+                    continue
                 first, last = (_iso(v.item() if hasattr(v, "item") else v) for v in values[[0, -1]])
                 held.append(f"{dim} has {values.size} values, {first} to {last}")
             raise UsageError(
@@ -271,6 +277,8 @@ def _method(base, name, args, kwargs, ref):
                 "for an average over a dim, compute it with a data skill first and plot the result"
             )
         values = np.asarray(da.values, dtype=float)
+        if values.size == 0:
+            raise UsageError(f"{ref}: the selection is empty, so it has no {name}")
         if not np.isfinite(values).any():
             raise UsageError(f"{ref}: every value is NaN")
         if name == "quantile":
@@ -375,6 +383,22 @@ def evaluate(text: str, inputs: dict):
     body = tree.body
     if isinstance(body, ast.BinOp):
         last = "arithmetic"
+        # A pixel size scales stored values; a display limit (.max()) is not one.
+        reduced = next(
+            (
+                n.func.attr
+                for n in ast.walk(body)
+                if isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Attribute)
+                and n.func.attr in ("min", "max", "quantile")
+            ),
+            None,
+        )
+        if reduced:
+            raise UsageError(
+                f"{ref}: .{reduced}() is a display limit, set on a scale key as it is; "
+                "arithmetic is for a size in pixels from stored values"
+            )
     else:
         last = (
             body.func.attr
@@ -445,7 +469,14 @@ def _attribute(base, attr, ref):
             return str(base.da.attrs[attr])
         if attr not in DT_FIELDS:
             raise UsageError(f"{ref}: .dt has {', '.join(DT_FIELDS)} and .strftime(format)")
-        return getattr(base.da.dt, attr)
+        try:
+            return getattr(base.da.dt, attr)
+        except (AttributeError, TypeError):
+            kind = "a lead time" if base.da.dtype.kind == "m" else "a date"
+            fields = "days" if kind == "a lead time" else "year, month, day, hour, dayofyear"
+            raise UsageError(
+                f"{ref}: .dt.{attr} is not a field of {kind}; it has {fields}"
+            ) from None
     if hasattr(base, "data_vars"):
         name = attr
         if attr in _ALIASES and attr not in base.variables:
@@ -580,7 +611,10 @@ def resolve(spec, inputs: dict):
                 f"{', '.join(SCALED_KEYS)}. For a calculated field, compute it with a data skill first and plot the result"
             )
         keys = [k for k in path.replace("[", ".[").split(".") if k and not k.startswith("[")]
-        is_limit_key = keys[-1] in LIMIT_KEYS or {"range", "tickvals"} & set(keys[-2:])
+        # Under meta a limit would reach hover text as a computed number.
+        is_limit_key = "meta" not in keys and (
+            keys[-1] in LIMIT_KEYS or {"range", "tickvals"} & set(keys[-2:])
+        )
         if last in ("min", "max", "quantile") and not is_limit_key:
             raise UsageError(
                 f"{path} = {node}: .{last}() gives one number, for a scale only "

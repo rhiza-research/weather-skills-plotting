@@ -62,6 +62,11 @@ def test_limits_only_on_scale_keys(inputs):
     assert resolved["data"][0]["zmax"] == 35.0 and resolved["layout"]["yaxis"]["range"][1] == 17.5
     with pytest.raises(UsageError, match="for a scale only"):
         one("@OBS.precip.max()", inputs)
+    # Under meta a limit would reach hover text, and arithmetic can't carry one to a size.
+    with pytest.raises(UsageError, match="for a scale only"):
+        resolve({"layout": {"meta": {"zmax": "@OBS.precip.max()"}}}, inputs)
+    with pytest.raises(UsageError, match=r"\.quantile\(\) is a display limit"):
+        resolve({"data": [{"marker": {"size": "@OBS.precip.quantile(0.5) * 1"}}]}, inputs)
 
 
 @pytest.mark.parametrize(
@@ -100,6 +105,14 @@ def test_forbidden_references(inputs, ref, match):
         ("@FC.step", "lead times; to plot by valid date"),
         ("@OBS.precip.sel(time='1999-01-01')", "OBS.precip"),
         ("@OBS.precip.transpose('lat', 'lon')", r"dims \['time'\] are left"),
+        ("@OBS.time.dt.days", r"\.dt\.days is not a field of a date"),
+        ("@FC.step.dt.year", r"\.dt\.year is not a field of a lead time"),
+        ("@FC.step.dt.strftime('%Y')", "needs dates, not lead times"),
+        (
+            "@OBS.precip.isel(time=slice(1, 1)).sel(time='2026-01-01')",
+            "time has no values left",
+        ),
+        ("@OBS.precip.isel(time=slice(1, 1)).max()", "the selection is empty"),
     ],
 )
 def test_errors_name_the_fix(inputs, ref, match):
@@ -281,7 +294,7 @@ def test_size_arithmetic_edges(inputs):
         "textfont": {"size": size + " + 1"},
     }
     resolve({"data": [trace]}, inputs)
-    with pytest.raises(UsageError, match="only for a size in pixels"):
+    with pytest.raises(UsageError, match="a size in pixels"):
         resolve(
             {
                 "data": [

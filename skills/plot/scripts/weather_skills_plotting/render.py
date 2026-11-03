@@ -117,7 +117,7 @@ def input_metadata(value) -> dict:
         },
         "coords": {},
         "attrs": {
-            str(k): v if isinstance(v, (int, float)) else str(v)
+            str(k): _plain(v) if isinstance(v, (int, float, np.number)) else str(v)
             for k, v in ds.attrs.items()
             if k != "weather_skills_history" and len(str(v)) <= 200
         },
@@ -131,8 +131,13 @@ def input_metadata(value) -> dict:
     lat = cf_dim(ds, "latitude") or next((n for n in ("latitude", "lat") if n in ds.coords), None)
     lon = cf_dim(ds, "longitude") or next((n for n in ("longitude", "lon") if n in ds.coords), None)
     if lat and lon:
+        # A station with no position (NaN lat or lon) is left out of the box.
         lats = np.asarray(ds[lat].values, float)
-        lons = np.unique(np.asarray(ds[lon].values, float) % 360)
+        lats = lats[np.isfinite(lats)]
+        lons = np.asarray(ds[lon].values, float)
+        lons = lons[np.isfinite(lons)]
+    if lat and lon and lats.size and lons.size:
+        lons = np.unique(lons % 360)
         # The window is the circle of longitudes minus its widest gap, so a grid across
         # the dateline (150..179, -180..-150) is 150 to 210, not -180 to 179.
         gaps = np.diff(np.append(lons, lons[0] + 360))

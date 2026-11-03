@@ -107,11 +107,6 @@ def export(fig, output, *, scale=1):
     """
     output = Path(output)
     suffix = output.suffix.lower()
-    if suffix not in OUTPUT_SUFFIXES:
-        raise UsageError(
-            f"output {output.name!r} must end in .png, .jpg, .pdf, .svg, .html or .gif "
-            f"(got {suffix or 'no suffix'})"
-        )
     output.parent.mkdir(parents=True, exist_ok=True)
     import plotly.io as pio
 
@@ -137,11 +132,6 @@ def export(fig, output, *, scale=1):
         report_figure(output, fig, digest=digest)
         return output
     if suffix == ".gif":
-        if not spec.get("frames"):
-            raise UsageError(
-                f"output {output.name!r}: a GIF plays the figure's frames, and this spec has "
-                "none; add frames, or write a still image to .png"
-            )
         write_gif(spec, output, scale=scale)
         size = output.stat().st_size
         print(f"gif: {len(spec['frames'])} frames, {size / 1e6:.1f} MB", file=sys.stderr)
@@ -181,14 +171,22 @@ def write_gif(spec: dict, output, *, scale=1):
                 duration = args[1]["frame"].get("duration") or duration
                 break
     layout = {k: v for k, v in spec["layout"].items() if k not in ("updatemenus", "sliders")}
+    data = list(spec["data"])
     stills = []
-    for frame in spec["frames"]:
-        # Plotly merges a frame's traces into the base traces it names, else by position.
-        data = list(spec["data"])
-        targets = frame.get("traces") or range(len(frame.get("data") or []))
-        for i, trace in zip(targets, frame.get("data") or [], strict=True):
-            data[i] = {**data[i], **trace}
-        stills.append({"data": data, "layout": {**layout, **(frame.get("layout") or {})}})
+    for n, frame in enumerate(spec["frames"]):
+        # As the play button does: each frame is merged key by key into the figure the
+        # frame before left, its traces into the base traces it names, else by position.
+        frame_data = frame.get("data") or []
+        targets = frame.get("traces") or list(range(len(frame_data)))
+        if len(targets) != len(frame_data) or not all(0 <= i < len(data) for i in targets):
+            raise UsageError(
+                f"frames[{n}]: traces {list(targets)} must name one of data[0]…data[{len(data) - 1}] "
+                f"for each of its {len(frame_data)} trace(s)"
+            )
+        for i, trace in zip(targets, frame_data, strict=True):
+            data[i] = _merge(data[i], trace)
+        layout = _merge(layout, frame.get("layout") or {})
+        stills.append({"data": list(data), "layout": layout})
     with tempfile.TemporaryDirectory() as tmp:
         paths = [Path(tmp) / f"{i}.png" for i in range(len(stills))]
         # kaleido draws at 700 x 500 unless each image is given the layout's own size.
@@ -205,6 +203,17 @@ def write_gif(spec: dict, output, *, scale=1):
     images = [im.quantize(palette=palette, dither=Image.Dither.NONE) for im in images]
     images[0].save(output, save_all=True, append_images=images[1:], duration=duration, loop=0)
     return output
+
+
+def _merge(base: dict, update: dict) -> dict:
+    """``base`` with ``update`` merged in: nested objects key by key, anything else replaced."""
+    merged = dict(base)
+    for key, value in update.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
 
 
 def _float32(obj):
