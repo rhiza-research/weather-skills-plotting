@@ -459,6 +459,17 @@ def test_surfacecolor_is_a_grid_like_z():
         to_json_value(da.isel(latitude=0), "data[0].surfacecolor", ref)
 
 
+def test_a_3d_line_takes_one_z_per_point():
+    from weather_skills_plotting.bind import evaluate, to_json_value
+
+    ref = "@B.r.isel(vertical=1, lat=0)"
+    line = evaluate(ref, {"B": _block()})[0]
+    # A scatter3d's z is a height per point, as its x and y; a heatmap's z stays a grid.
+    assert to_json_value(line, "data[2].z", ref, "scatter3d").shape == (3,)
+    with pytest.raises(UsageError, match="z needs a 2-D grid"):
+        to_json_value(line, "data[0].z", ref, "heatmap")
+
+
 def test_an_unknown_key_alone_gets_no_binding_reminder(tmp_path, plot_fn, capsys):
     grid = write_zarr(make_gridded(n_time=2), tmp_path / "grid.zarr")
     spec = "{data: [{type: 'heatmap', z: '@G.precip', line: {}}]}"

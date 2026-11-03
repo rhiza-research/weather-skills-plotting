@@ -59,6 +59,10 @@ LIMIT_KEYS = frozenset({"zmin", "zmax", "zmid", "cmin", "cmax", "cmid", "range",
 # sizeref scales marker.size). It sets how big a marker is on screen, not what is drawn.
 SCALED_KEYS = ("marker.size", "marker.standoff", "marker.line.width", "textfont.size")
 
+# 3-D traces whose z is one value per point (a line's height, a flat block's level),
+# not a grid as on a heatmap, contour or surface.
+POINT_Z_TRACES = frozenset({"scatter3d", "mesh3d", "cone", "streamtube", "isosurface", "volume"})
+
 # The operators that arithmetic may use.
 ARITHMETIC = {ast.Add: np.add, ast.Sub: np.subtract, ast.Mult: np.multiply, ast.Div: np.divide}
 
@@ -510,11 +514,12 @@ def _attribute(base, attr, ref):
     raise UsageError(f"{ref}: {attr!r} is not allowed here")
 
 
-def to_json_value(value, path: str, ref: str):
+def to_json_value(value, path: str, ref: str, trace_type: str | None = None):
     """The JSON value Plotly takes at ``path`` for a resolved reference.
 
     Its shape is checked against the key: ``z`` and ``surfacecolor`` are 2-D (a lat/lon
-    grid as rows of latitude), ``customdata`` 1-D or 2-D, anything else 1-D or one value, after
+    grid as rows of latitude), except the ``z`` of a ``trace_type`` in POINT_Z_TRACES (one
+    value per point), ``customdata`` 1-D or 2-D, anything else 1-D or one value, after
     size-1 dims are dropped. Times become ISO text (a midnight drops its clock),
     numbers a float array, anything else a list. Lead times, and a whole input or
     layer with no variable named, are a UsageError.
@@ -529,17 +534,18 @@ def to_json_value(value, path: str, ref: str):
     if hasattr(value, "dims"):
         da = value
         # A surface's surfacecolor is a grid like its z, cell for cell.
-        allowed = 2 if key in ("z", "surfacecolor", "customdata") else 1
+        grid = key == "surfacecolor" or (key == "z" and trace_type not in POINT_Z_TRACES)
+        allowed = 2 if grid or key == "customdata" else 1
         # A dim of length 1 (the one time of a period total) holds no choice: drop such
         # dims while there are more than the attribute takes.
         for dim in [d for d in da.dims if da.sizes[d] == 1]:
             if da.ndim > allowed:
                 da = da.squeeze(dim)
-        if key in ("z", "surfacecolor"):
+        if grid:
             lat, lon = cf_dim(da, "latitude"), cf_dim(da, "longitude")
             if da.ndim == 2 and set(da.dims) == {lat, lon}:
                 da = da.transpose(lat, lon)
-        if key in ("z", "surfacecolor") and da.ndim < 2:
+        if grid and da.ndim < 2:
             raise UsageError(
                 f"{path} = {ref} has dims {list(da.dims)}; {key} needs a 2-D grid, so keep two "
                 "dims (lat and lon, or e.g. vertical and lon) and pick only the others"
@@ -603,12 +609,17 @@ def resolve(spec, inputs: dict):
     # The units of what fills each color (z, marker.color), to check shared colorbars.
     color_units = {}
 
-    def walk(node, path):
-        """``node`` with its references filled; ``path`` is its JSON path (``data[0].z``)."""
+    def walk(node, path, trace_type=None):
+        """``node`` with its references filled; ``path`` is its JSON path (``data[0].z``).
+
+        ``trace_type`` is the ``type`` of the trace ``node`` sits in, for the shape check.
+        """
         if isinstance(node, dict):
-            return {k: walk(v, f"{path}.{k}" if path else k) for k, v in node.items()}
+            if path.rpartition(".")[2].startswith("data["):
+                trace_type = node.get("type", trace_type)
+            return {k: walk(v, f"{path}.{k}" if path else k, trace_type) for k, v in node.items()}
         if isinstance(node, list):
-            return [walk(v, f"{path}[{i}]") for i, v in enumerate(node)]
+            return [walk(v, f"{path}[{i}]", trace_type) for i, v in enumerate(node)]
         if not isinstance(node, str) or not node.startswith("@"):
             return node
         if node.startswith("@@"):
@@ -641,7 +652,7 @@ def resolve(spec, inputs: dict):
         if path.startswith("data[") and path.endswith(".z") and hasattr(value, "dims"):
             if {cf_dim(value, "latitude"), cf_dim(value, "longitude")} <= set(value.dims):
                 grids.append((path[:-2], node))
-        return to_json_value(value, path, node)
+        return to_json_value(value, path, node, trace_type)
 
     resolved = walk(spec, "")
     # x and y pair up point by point; different lengths mean a dim was left in one of them.
