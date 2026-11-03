@@ -581,6 +581,10 @@ def to_json_value(value, path: str, ref: str, trace_type: str | None = None):
         # the ground). -inf is below every isomin, so a cell with no value is outside every
         # surface, as a NaN cell of a heatmap is blank.
         return np.where(np.isnan(values), -np.inf, values)
+    if trace_type == "cone" and key in ("u", "v", "w") and values.dtype.kind == "f":
+        # One NaN arrow (wind under the ground) spoils the colors and sizes of every arrow in
+        # the trace. A zero vector draws no arrow when sizes scale with speed.
+        return np.where(np.isnan(values), 0.0, values)
     if values.dtype.kind in "biuf":
         return values.astype(float)
     return values.tolist()

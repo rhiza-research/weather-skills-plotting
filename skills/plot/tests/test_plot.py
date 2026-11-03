@@ -470,6 +470,17 @@ def test_a_3d_line_takes_one_z_per_point():
         to_json_value(line, "data[0].z", ref, "heatmap")
 
 
+def test_a_cone_with_no_wind_draws_no_arrow():
+    from weather_skills_plotting.bind import evaluate, to_json_value
+
+    ref = "@B.r.flat()"
+    u = evaluate(ref, {"B": _block()})[0]
+    # The NaN cell (under the ground) becomes a zero vector: no arrow when sizes scale
+    # with speed, where one NaN would spoil every arrow's color and size.
+    drawn = to_json_value(u, "data[1].u", ref, "cone")
+    assert drawn[0] == 0.0 and np.isfinite(drawn).all()
+
+
 def test_an_unknown_key_alone_gets_no_binding_reminder(tmp_path, plot_fn, capsys):
     grid = write_zarr(make_gridded(n_time=2), tmp_path / "grid.zarr")
     spec = "{data: [{type: 'heatmap', z: '@G.precip', line: {}}]}"
