@@ -3,9 +3,9 @@
 // plot.py -i quantiles.zarr=Q -i obs_area.zarr=AREA --spec band.jsonnet -o band.png
 {
   data: [
-    { type: 'scatter', mode: 'lines', x: '@Q.time', y: '@Q.tp.sel(quantile=0.1)', line: { width: 0 },
+    { type: 'scatter', mode: 'lines', x: '@Q.time', y: '@Q.precip.sel(quantile=0.1)', line: { width: 0 },
       showlegend: false, hoverinfo: 'skip' },
-    { type: 'scatter', mode: 'lines', x: '@Q.time', y: '@Q.tp.sel(quantile=0.9)', line: { width: 0 },
+    { type: 'scatter', mode: 'lines', x: '@Q.time', y: '@Q.precip.sel(quantile=0.9)', line: { width: 0 },
       fill: 'tonexty', fillcolor: 'rgba(76,114,176,0.3)', name: '10–90% of members' },
     { type: 'scatter', mode: 'lines+markers', x: '@AREA.time', y: '@AREA.precip', name: 'Observed', line: { color: 'black' } },
   ],

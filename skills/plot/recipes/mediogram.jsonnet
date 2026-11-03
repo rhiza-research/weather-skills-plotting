@@ -13,14 +13,14 @@ local pt = '.sel(lat=%g, lon=%g, method="nearest")' % [lat, lon];
 local deg(v, pos, neg) = '%g°%s' % [std.abs(v), if v < 0 then neg else pos];
 local box(name, color, legend) = {
   type: 'box', name: legend, marker: { color: color }, boxpoints: false,
-  x: '@%s.tp%s.flat("step")' % [name, pt], y: '@%s.tp%s.flat()' % [name, pt],
+  x: '@%s.precip%s.flat("step")' % [name, pt], y: '@%s.precip%s.flat()' % [name, pt],
 };
 {
   data: [
     box('EF', '#1f4e9c', 'Forecast'),
     box('MC', '#c0392b', 'Model climate'),
     { type: 'scatter', mode: 'lines+markers', name: 'Forecast mean', line: { color: 'black', width: 2 },
-      x: '@EFM.step.dt.days', y: '@EFM.tp' + pt },
+      x: '@EFM.step.dt.days', y: '@EFM.precip' + pt },
   ],
   layout: {
     boxmode: 'group',

@@ -11,7 +11,7 @@ local years = ['Y2024', 'Y2025'];
       x: '@%s.time.dt.dayofyear' % y, y: '@%s.precip' % y }
     for y in years
   ] + [
-    { type: 'scatter', mode: 'lines', x: '@FCA.time.dt.dayofyear', y: '@FCA.tp.isel(number=%d)' % m,
+    { type: 'scatter', mode: 'lines', x: '@FCA.time.dt.dayofyear', y: '@FCA.precip.isel(number=%d)' % m,
       line: { color: 'grey', width: 0.6 }, legendgroup: 'fc', showlegend: m == 0, name: 'Forecast members' }
     for m in std.range(0, inputs.FCA.dims.number - 1)
   ],

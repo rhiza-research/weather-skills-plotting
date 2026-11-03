@@ -148,7 +148,7 @@ def test_dropna_and_the_coords_of_what_is_left(inputs):
 
 def test_x_and_y_must_pair_up(inputs):
     with pytest.raises(UsageError, match="x has 3 values and y has 2"):
-        resolve({"data": [{"x": "@OBS.time", "y": "@FC.tp.isel(step=0, lat=0, lon=0)"}]}, inputs)
+        resolve({"data": [{"x": "@OBS.time", "y": "@FC.precip.isel(step=0, lat=0, lon=0)"}]}, inputs)
     shifted = {
         "A": inputs["OBS"],
         "B": inputs["OBS"].assign_coords(time=inputs["OBS"].time + np.timedelta64(1, "D")),
@@ -251,7 +251,7 @@ def test_more_errors_name_the_fix(inputs, ref, match):
 
 
 def test_flat_on_members_by_lead(inputs):
-    point = "@FC.tp.isel(latitude=0, longitude=0)"
+    point = "@FC.precip.isel(latitude=0, longitude=0)"
     assert one(point + ".flat('step')", inputs).tolist() == [0, 1, 2, 0, 1, 2]  # lead days
     assert one(point + ".flat()", inputs).size == 6
 

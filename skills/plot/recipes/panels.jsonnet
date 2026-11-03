@@ -10,7 +10,7 @@ local cols = 3;
 local rows = std.ceil(n / cols);
 {
   data: std.flattenArrays([
-    [{ type: 'heatmap', x: '@FC.lon', y: '@FC.lat', z: '@FC.tp.isel(step=%d)' % i, coloraxis: 'coloraxis' } + ws.axes(i)]
+    [{ type: 'heatmap', x: '@FC.lon', y: '@FC.lat', z: '@FC.precip.isel(step=%d)' % i, coloraxis: 'coloraxis' } + ws.axes(i)]
     + ws.basemap(bbox, i, rivers=false, admin=false)
     for i in std.range(0, n - 1)
   ]),

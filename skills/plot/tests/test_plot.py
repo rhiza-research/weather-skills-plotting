@@ -47,9 +47,9 @@ def _inputs(tmp_path):
     grid = make_gridded(n_time=3)
     grid["precip"].values = rng.uniform(0, 40, grid["precip"].shape)
     fc = make_forecast(n_step=4, lats=(1.0, 2.0, 3.0), lons=(10.0, 11.0, 12.0))
-    fc["tp"].values = rng.uniform(0, 30, fc["tp"].shape)
+    fc["precip"].values = rng.uniform(0, 30, fc["precip"].shape)
     ens = xr.Dataset(
-        {"tp": (("number", "time", "latitude", "longitude"), rng.uniform(0, 20, (3, 5, 2, 2)))},
+        {"precip": (("number", "time", "latitude", "longitude"), rng.uniform(0, 20, (3, 5, 2, 2)))},
         coords={
             "number": [0, 1, 2],
             "time": np.arange(np.datetime64("2026-03-10"), np.datetime64("2026-03-15")),
@@ -58,7 +58,7 @@ def _inputs(tmp_path):
         },
     )
     quant = xr.Dataset(
-        {"tp": (("quantile", "time"), np.array([[1.0, 2, 3], [5, 6, 7]]))},
+        {"precip": (("quantile", "time"), np.array([[1.0, 2, 3], [5, 6, 7]]))},
         coords={
             "quantile": [0.1, 0.9],
             "time": np.arange(np.datetime64("2026-01-01"), np.datetime64("2026-01-04")),
@@ -101,8 +101,8 @@ def _inputs(tmp_path):
     hits["event_hit"].values = rng.choice([-1.0, 0.0, 1.0], hits["event_hit"].shape)
     hits["event_hit"].attrs["units"] = "1"
     ef = make_forecast(n_step=3, members=5)
-    ef["tp"].values = rng.uniform(0, 30, ef["tp"].shape)
-    mc = ef.copy(data={"tp": rng.uniform(0, 20, ef["tp"].shape)})
+    ef["precip"].values = rng.uniform(0, 30, ef["precip"].shape)
+    mc = ef.copy(data={"precip": rng.uniform(0, 20, ef["precip"].shape)})
     stn_wind = make_point_obs(n_time=6, n_points=1, name="wind_speed").rename(point_id="station_id")
     stn_wind["wind_speed"].values = rng.uniform(0, 10, stn_wind["wind_speed"].shape)
     stn_wind["wind_from_direction"] = stn_wind["wind_speed"] * 0 + 45.0
@@ -302,7 +302,7 @@ def test_inputs_metadata(tmp_path, plot_fn, capsys):
     run_skill(plot_fn, "-i", f"{fc}=F", "--spec", spec, "--dump-spec", "-")
     meta = json.loads(capsys.readouterr().out)["layout"]["meta"]
     assert meta["dims"] == {"number": 3, "step": 2, "latitude": 2, "longitude": 2}
-    assert meta["vars"]["tp"]["dims"] == ["number", "step", "latitude", "longitude"]
+    assert meta["vars"]["precip"]["dims"] == ["number", "step", "latitude", "longitude"]
     assert meta["coords"]["time"] == "2026-01-01" and meta["coords"]["number"] == [0, 1, 2]
     assert meta["bbox"] == {"n": 2.0, "w": 10.0, "s": 1.0, "e": 11.0}
 

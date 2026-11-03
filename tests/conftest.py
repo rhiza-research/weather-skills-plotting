@@ -37,16 +37,16 @@ def make_forecast(n_number=3, n_step=4):
         data = np.ones((n_number, n_step, 2, 2))
         coords["number"] = np.arange(n_number)
         ds = xr.Dataset(
-            {"tp": (("number", "step", "latitude", "longitude"), data)},
+            {"precip": (("number", "step", "latitude", "longitude"), data)},
             coords=coords,
         )
     else:
         data = np.ones((n_step, 2, 2))
         ds = xr.Dataset(
-            {"tp": (("step", "latitude", "longitude"), data)},
+            {"precip": (("step", "latitude", "longitude"), data)},
             coords=coords,
         )
-    ds["tp"].attrs["units"] = "mm day-1"
+    ds["precip"].attrs["units"] = "mm day-1"
     return ds
 
 

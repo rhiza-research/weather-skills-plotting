@@ -10,11 +10,11 @@ local pt = '.sel(lat=%g, lon=%g, method="nearest")' % [lat, lon];
 local deg(v, pos, neg) = '%g°%s' % [std.abs(v), if v < 0 then neg else pos];
 {
   data: [
-    { type: 'scatter', mode: 'lines', x: '@ENS.time', y: '@ENS.tp%s.isel(number=%d)' % [pt, m],
+    { type: 'scatter', mode: 'lines', x: '@ENS.time', y: '@ENS.precip%s.isel(number=%d)' % [pt, m],
       line: { color: 'grey', width: 0.7 }, legendgroup: 'members', showlegend: m == 0, name: 'Members' }
     for m in std.range(0, inputs.ENS.dims.number - 1)
   ] + [
-    { type: 'scatter', mode: 'lines', x: '@MEAN.time', y: '@MEAN.tp' + pt, name: 'Mean', line: { color: 'red', width: 3 } },
+    { type: 'scatter', mode: 'lines', x: '@MEAN.time', y: '@MEAN.precip' + pt, name: 'Mean', line: { color: 'red', width: 3 } },
   ],
   layout: {
     title: { text: 'Ensemble rainfall at %s, %s, init %s' % [deg(lat, 'N', 'S'), deg(lon, 'E', 'W'), ws.date(inputs.ENS.coords.time[0])] },
