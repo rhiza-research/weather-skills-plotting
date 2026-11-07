@@ -75,6 +75,7 @@ def test_house_template_and_helpers_pass():
         # A trace with no bindings is a mark placed by hand: a few typed-in points.
         {"data": [{"type": "scatter", "mode": "lines", "x": [33, 42], "y": [3.5, 3.5]}]},
         {"data": [{"type": "scatter", "x": [36], "y": [3], "text": ["Lodwar"], "mode": "text"}]},
+        {"data": [{"type": "scattergeo", "lon": [36.8], "lat": [-1.3], "text": ["Nairobi"]}]},
         # Shapes and annotations are placed by hand, so data-axis positions may be typed in.
         {"layout": {"shapes": [{"type": "line", "x0": 36, "x1": 36, "yref": "paper", "y1": 1}]}},
         {"layout": {"annotations": [{"text": "record high", "x": "2026-03-01", "y": 41}]}},
@@ -112,6 +113,18 @@ def test_bound_figures_pass(fig):
         (scatter(y=[1, 2, 3]), "data[0].y", "data key"),
         # A mark placed by hand holds a few points, never a data series.
         ({"data": [{"type": "scatter", "y": list(range(6))}]}, "data[0].y", "at most 5"),
+        # Only a scatter can be a mark: other traces show values, however few.
+        (
+            {
+                "data": [
+                    {"type": "heatmap", "x": [0, 1, 2, 3], "y": [0], "z": [[10.9, 4.5, 1.4, 1.1]]}
+                ]
+            },
+            "data[0]",
+            "heatmap with no @binding",
+        ),
+        ({"data": [{"type": "bar", "x": ["a", "b"], "y": [3, 4]}]}, "data[0]", "bar with no"),
+        ({"data": [{"type": "pie", "values": [1, 2], "labels": ["a", "b"]}]}, "data[0]", "pie"),
         (scatter(x=["@a", 5]), "data[0].x", "data key"),
         (scatter(y={"dtype": "f8", "bdata": "AAAAAAAA8D8="}), "data[0].y", "data key"),
         (scatter(y="@@1"), "data[0].y", "data key"),  # @@ starts literal text, not a reference
@@ -138,8 +151,8 @@ def test_bound_figures_pass(fig):
         (scatter(error_y={"type": "constant", "value": 2}), "data[0].error_y.value", "generates"),
         (
             {"data": [{"type": "image", "source": "data:image/png;base64,iVBORw0KGgo="}]},
-            "data[0].source",
-            "data key",
+            "data[0]",
+            "image with no @binding",
         ),
         (
             {

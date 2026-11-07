@@ -13,6 +13,16 @@ metadata:
 
 Draws a figure from a Jsonnet spec. The spec evaluates to a standard [Plotly figure](https://plotly.com/python/reference/) (`data`, `layout`, `frames`). Wherever Plotly expects data, write a string that starts with `@` and names it: `'@OBS.precip.isel(time=0)'`. Name every input on the command line.
 
+## Data comes from the inputs, never from you
+
+Every value the figure shows as data comes from an input through an `@` reference: grid values, station readings, scores, counts, means, table cells, bar heights, colours on a scale, numbers printed on cells or points. Never type data into the spec, whether you read it from a file, computed it, copied it from another tool's output or remember it. That holds even where the lint would let it through (a few points in a scatter, `text`, annotations). The figure records the inputs that made it and is stamped as traceable; typed-in data makes that record false.
+
+Typed in by hand, only:
+- words: titles, axis titles, legend names, category and tick labels, units, notes, sources;
+- the positions of marks placed by hand: a town pin, a line at a date or a border, a threshold (better as `--const NAME=VALUE`, so it is recorded).
+
+To print a value on a cell or point, bind the data and format it with `texttemplate` (`'%{z:.1f}%'`); never write the number into `text`. If the values you need are not in a Zarr yet, make one with the skills (verify, aggregate, concat, …) and bind it. If no skill can make them, say so rather than draw them.
+
 ## How a figure is made: spec → render → lint → bind → export
 
 1. **Spec.** You write Jsonnet: Plotly keys for everything drawn, and an `@` reference wherever data goes (`x: '@OBS.lon'`, `z: '@OBS.precip.isel(time=0)'`). Each input is named with `-i FILE=NAME`; `std.extVar('inputs')` describes them (dims, variables, dates, bbox) for loops and titles.
@@ -131,7 +141,7 @@ References select and label stored values; they never compute. The one exception
 - `ws.template` — the house colorway (no grey, kept for ensemble members) on a white plot area. A spec that sets no `layout.template` gets it; extend it with `template: ws.template + {layout+: {...}}`, set a Plotly template by name (`template: 'plotly_white'`), or `template: {}` for Plotly's bare defaults.
 
 ## Notes
-- Shapes and annotations at a fixed position on a data axis take the position as typed (an annotation on a log axis takes its log10; see below): a line at Lake Turkana (`xref: 'x', x0: 36, x1: 36, yref: 'paper', y0: 0, y1: 1`), a threshold band (`y0: 0.5, y1: 1`), an annotation at a date. For a position that changes each run (an init date in a scheduled job), pass it with `--const init=2026-10-31` and write `x0: '@const.init'`. A trace with no `@` references at all is a mark placed by hand and may type in up to 5 values per data key: a cross-section line (`x: [33, 42], y: [3.5, 3.5]`), a town pin, a reference arrow, the flat edge a fill reaches down to. A trace that draws data binds all of its data; a constant there is `--const`, as `x: ['@const.kx']`. Marks can't go in frames. A key, legend box or label that need not sit at a lon / lat goes in `xref: 'paper'` / `yref: 'paper'` units. Labelled bars keep their data axis: `x: '@A.time'` with `xaxis: {tickvals: '@A.time', ticktext: [...]}`, not `x: ['28 Sep–4 Oct', …]`.
+- Shapes and annotations at a fixed position on a data axis take the position as typed (an annotation on a log axis takes its log10; see below): a line at Lake Turkana (`xref: 'x', x0: 36, x1: 36, yref: 'paper', y0: 0, y1: 1`), a threshold band (`y0: 0.5, y1: 1`), an annotation at a date. For a position that changes each run (an init date in a scheduled job), pass it with `--const init=2026-10-31` and write `x0: '@const.init'`. A scatter trace with no `@` references at all is a mark placed by hand and may type in up to 5 values per data key: a cross-section line (`x: [33, 42], y: [3.5, 3.5]`), a town pin, a reference arrow, the flat edge a fill reaches down to. Any other trace type (heatmap, contour, bar, pie, …) shows values, so it always binds them: a table of scores is one Zarr bound with `@`, never cells typed into the spec. A trace that draws data binds all of its data; a constant there is `--const`, as `x: ['@const.kx']`. Marks can't go in frames. A key, legend box or label that need not sit at a lon / lat goes in `xref: 'paper'` / `yref: 'paper'` units. Labelled bars keep their data axis: `x: '@A.time'` with `xaxis: {tickvals: '@A.time', ticktext: [...]}`, not `x: ['28 Sep–4 Oct', …]`.
 - A season across New Year (Oct–Feb) on one axis: `x: '@Y.time.dt.strftime("%d %b")'` with `xaxis: {type: 'category', categoryorder: 'array', categoryarray: '@LEAP.time.dt.strftime("%d %b")'}`, the order taken from one input that covers the season in a leap year.
 - A second y axis (`overlaying: 'y'`) syncs its ticks to the first by default; set `tickmode: 'auto'` on it for round numbers.
 - The base map downloads Natural Earth shapefiles on first use (cartopy, network needed); later runs reuse them.
