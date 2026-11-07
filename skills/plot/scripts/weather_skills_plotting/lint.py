@@ -10,8 +10,10 @@ before binding: it raises if anything that can put data on the chart holds
 something other than bindings.
 
 - data keys (``x``, ``z``, ``dimensions[].values``, ...): a binding, or a list
-  made only of bindings. A trace with no binding anywhere is a mark placed by hand
-  (a line between two places, a pin) and may type in up to MARK_POINTS values per key.
+  made only of bindings. A scatter trace with no binding anywhere is a mark placed
+  by hand (a line between two places, a pin) and may type in up to MARK_POINTS values
+  per key. Any other trace type encodes values (heatmap cells, bar heights), so
+  without a binding it fails however few values it holds.
 - per-point keys (``marker.color``, ``text``, ...): one value is styling, but
   a list must be bindings.
 - generator keys (``x0``/``dx``, ``base``, error-bar ``value``, ...): scalars
@@ -322,6 +324,14 @@ class _Checker:
             for v in leaves(value)
         )
         context = "trace" if bound else "mark"
+        if not bound and not trace_type.startswith("scatter"):
+            # Only lines, points and text sit at hand-placed positions. A heatmap, bar or
+            # pie typed in by hand shows values with no source, however few.
+            return self.problem(
+                path,
+                f"a {trace_type} with no @binding shows values typed in by hand; only a "
+                "scatter (a line or points placed by hand) may go without one",
+            )
         self.walk({k: v for k, v in trace.items() if k != "type"}, trace_type, "", path, context)
         self.check_error_bars(trace, path)
 

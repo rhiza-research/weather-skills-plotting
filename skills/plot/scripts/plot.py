@@ -201,7 +201,7 @@ def plot(input, output, spec, const, dpi, recipe, dump_spec, **kwargs):
         footer = (
             "\nData comes from the inputs: -i FILE=NAME, then '@NAME.var' in the key. A line or "
             "point at fixed coordinates is a layout shape (name and showlegend: true give it a "
-            f"legend entry), or a trace with no @ references at all, up to {MARK_POINTS} values "
+            f"legend entry), or a scatter trace with no @ references at all, up to {MARK_POINTS} values "
             "per key. A "
             "constant in a trace that draws data is --const NAME=VALUE, then '@const.NAME'"
             if unbound

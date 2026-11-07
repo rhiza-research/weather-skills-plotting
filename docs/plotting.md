@@ -86,8 +86,9 @@ listing every problem, unless each key that can put data on the chart holds
 an `@` binding:
 
 - data keys (`data_array` in the schema: `x`, `z`, `dimensions[].values`, …),
-  except in a trace with no bindings at all: a mark placed by hand, up to
-  `MARK_POINTS` (5) typed-in values per key;
+  except in a scatter trace with no bindings at all: a mark placed by hand, up
+  to `MARK_POINTS` (5) typed-in values per key. Any other trace type with no
+  binding fails, since its values (heatmap cells, bar heights) would have no source;
 - per-point keys (`arrayOk`: `marker.color`, `text`, …) when given a list;
 - generator keys (`x0` / `dx`, `base`, error-bar `value`) and error bars that
   would fall back to Plotly's default ±10;
