@@ -74,7 +74,7 @@ It is ordinary Jsonnet. Use `local` variables for anything repeated, so long str
 
 ```jsonnet
 local ws = import 'ws.libsonnet';               // helpers, below
-local inputs = std.extVar('inputs');           // what each input holds
+local inputs = std.extVar('inputs');           // required before any inputs.NAME
 local day = '.isel(time=0)';
 {
   data: [
@@ -96,7 +96,7 @@ ws.map(b) + { margin+: { l: 110 } }   // margin becomes {l: 110, r: 150, t: 70, 
 
 Use `+:` the same way for `xaxis+:`, `coloraxis+:`, and `annotations+:` (which adds to the list instead of replacing it).
 
-**`std.extVar('inputs')`** describes each input, read from its metadata without loading data: `dims` (sizes), `vars` (each one's `dims`, `units`, `long_name`), `coords` (values of 1-D coordinates up to 400 long, and scalar ones: dates as `2026-10-01`, or `2026-10-30T12:00:00` when not midnight; leads as days, `0.125` for 3 h; members, station ids; `valid_time` when the file has it), `attrs`, and `bbox` (`{n, w, s, e}`, from lat / lon coordinates; a grid across the dateline gets `e` past 180, e.g. 150 to 210). Use it for loop bounds, titles and map windows; `ws.date(t)` turns a date into `26 Oct 2026`. A GeoJSON input has `bbox`. To see it all: `--spec "std.extVar('inputs')" --dump-spec -` with your `-i` inputs. Names here are the file's own: a grid on `latitude` / `longitude` has `dims.longitude`, not `dims.lon`; the `lat` / `lon` shorthand works only in `@` references.
+**`std.extVar('inputs')`** is not predefined as `inputs`: every spec that writes `inputs.NAME…` (here and in the examples below) must first say `local inputs = std.extVar('inputs');`, or Jsonnet stops with `Unknown variable: inputs`. It describes each input, read from its metadata without loading data: `dims` (sizes), `vars` (each one's `dims`, `units`, `long_name`), `coords` (values of 1-D coordinates up to 400 long, and scalar ones: dates as `2026-10-01`, or `2026-10-30T12:00:00` when not midnight; leads as days, `0.125` for 3 h; members, station ids; `valid_time` when the file has it), `attrs`, and `bbox` (`{n, w, s, e}`, from lat / lon coordinates; a grid across the dateline gets `e` past 180, e.g. 150 to 210). Use it for loop bounds, titles and map windows; `ws.date(t)` turns a date into `26 Oct 2026`. A GeoJSON input has `bbox`. To see it all: `--spec "std.extVar('inputs')" --dump-spec -` with your `-i` inputs. Names here are the file's own: a grid on `latitude` / `longitude` has `dims.longitude`, not `dims.lon`; the `lat` / `lon` shorthand works only in `@` references.
 
 ### `@` references
 A string that starts with `@` is replaced by the data it names; the whole string is the reference, so a reference can't sit inside other text (titles take their dates and names from `inputs`). A string that starts with `@@` is the literal text after the first `@`.
