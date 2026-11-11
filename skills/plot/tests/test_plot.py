@@ -93,6 +93,9 @@ def _inputs(tmp_path):
     hits = make_gridded(n_time=1, name="event_hit")
     hits["event_hit"].values = rng.choice([-1.0, 0.0, 1.0], hits["event_hit"].shape)
     hits["event_hit"].attrs["units"] = "1"
+    mask = make_gridded(n_time=1, name="indicator")
+    mask["indicator"].values = rng.choice([0.0, 1.0], mask["indicator"].shape)
+    mask["indicator"].attrs["units"] = "1"
     ef = make_forecast(n_step=3, members=5)
     ef["precip"].values = rng.uniform(0, 30, ef["precip"].shape)
     mc = ef.copy(data={"precip": rng.uniform(0, 20, ef["precip"].shape)})
@@ -143,6 +146,7 @@ def _inputs(tmp_path):
         "OW": week,
         "FC1": week.copy(data={"precip": rng.uniform(0, 120, week["precip"].shape)}),
         "FC2": week.copy(data={"precip": rng.uniform(0, 120, week["precip"].shape)}),
+        "MASK": mask,
         "V1": hits,
         "V2": hits.copy(data={"event_hit": rng.choice([-1.0, 0.0, 1.0], hits["event_hit"].shape)}),
         "EF": ef,
