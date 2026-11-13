@@ -256,6 +256,8 @@ local basemapStyles = {
     assert nl == 0 || nl == nb - 1 || (packed && nl == nb + 1) :
            'palette has %d labels for %d classes: give one label per class (%d)%s'
            % [nl, nb - 1, nb - 1, if packed then ', or one per color with the under / over triangles first and last (%d)' % (nb + 1) else ''],
+    assert std.startsWith(format, '%') :
+           "format is a Jsonnet %% code applied to each bound, such as '%%g' or '%%d%%%%' (bounds already in percent), not a d3 format like %s" % std.escapeStringJson(format),
     // The under / over triangles are 0.8 of a band tall, at most 24 px when the
     // layout's height is known (ws.map / ws.grid before classBar), so they stay short
     // in a tall figure.
