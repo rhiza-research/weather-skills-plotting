@@ -9,11 +9,12 @@ interactive HTML or animated GIF. Built on
 [`weather-skills-core`](https://github.com/weather-skills/weather-skills-core)
 for dataset loading, the CLI decorator, and provenance.
 
-## Skill
+## Skills
 
 | Skill | Role |
 | --- | --- |
 | [`plot`](skills/plot/) | Any Plotly figure from named inputs (`-i PATH=NAME`) and a Jsonnet spec; runnable recipes in [`skills/plot/recipes/`](skills/plot/recipes/) |
+| [`report-dashboard`](skills/report-dashboard/) | A report or dashboard from HTML text (`--html`): cleaned to an allowlist, images embedded, written as a self-contained page carrying the history of the figures it shows. Reports can also be `.pdf` (needs the Pango system library); dashboards switch between pre-made figures with dropdowns, tabs and collapsible sections, and can hold the `plot` skill's interactive HTML in sandboxed frames. |
 
 The design is in [`docs/plotting.md`](docs/plotting.md). PNG/JPG/PDF/SVG/GIF
 export needs Chrome: kaleido uses an installed one, or run
@@ -53,7 +54,7 @@ claude plugin install rhiza-plotting@weather-skills-plotting
 ## Layout
 
 Canonical skills under `skills/<name>/`, Claude plugin via `.claude-plugin/` +
-`agents/`. The one skill carries its own rendering engine,
+`agents/`. The `plot` skill carries its own rendering engine,
 `skills/plot/scripts/weather_skills_plotting/`, next to its script: the skill
 folder is self-contained (Python finds the package on the script's own path),
 and a script and the code it calls always move together in one commit. The

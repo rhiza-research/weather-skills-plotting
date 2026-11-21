@@ -26,6 +26,9 @@ fetchers and transforms when those are available (for example a fetch skill,
    `-i PATH=NAME`.
 4. Run the script and report the output path (`.png`, `.jpg`, `.pdf`,
    `.svg`, an interactive `.html`, or an animated `.gif`).
+   To deliver several figures with text, pass the write-up as HTML to the
+   `report-dashboard` skill: a report (HTML or PDF), or a dashboard whose
+   dropdowns switch between figures. It embeds them and keeps their history.
 5. On failure, report the actual error — do not paper over it.
 
 ## Plotting-specific notes
