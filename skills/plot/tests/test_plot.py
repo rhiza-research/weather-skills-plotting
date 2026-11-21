@@ -247,8 +247,11 @@ def test_png_with_provenance_and_qa(tmp_path, plot_fn, capsys):
     assert entry["skill"] == "plot"
     # Provenance keeps the evaluated figure, which replays as --spec by itself.
     assert entry["args"]["spec"]["data"][0]["z"] == "@G.precip.isel(time=0)"
-    # Recorded under the flags' own names, as they were passed, so the command replays.
-    assert entry["args"]["input"] == [f"{grid}=G"]
+    # Recorded under the flags' own names with the NAME, as a path that finds the input from the
+    # run folder (core 0.4 makes absolute paths relative to it), so the command replays.
+    (recorded,) = entry["args"]["input"]
+    path, _, name = recorded.rpartition("=")
+    assert name == "G" and Path(path).resolve() == Path(grid).resolve()
 
 
 def test_constants_are_recorded_as_passed(tmp_path, plot_fn):
