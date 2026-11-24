@@ -259,7 +259,7 @@ local basemapStyles = {
     // A d3 percent format ('.0%', '.1%') labels bounds on a 0-1 scale as percent.
     local pct = std.startsWith(format, '.') && std.endsWith(format, '%'),
     assert std.startsWith(format, '%') || pct :
-           "format is a Jsonnet %% code applied to each bound, such as '%%g' or '%%d%%%%' (bounds already in percent), or a d3 percent format such as '.0%%' (bounds on a 0-1 scale), not %s" % std.escapeStringJson(format),
+           "format must be a Jsonnet %% code such as '%%g', or a d3 percent format such as '.0%%', not %s" % std.escapeStringJson(format),
     local fmt(v) = if pct then ('%' + std.substr(format, 0, std.length(format) - 1) + 'f%%') % (v * 100) else format % v,
     // The under / over triangles are 0.8 of a band tall, at most 24 px when the
     // layout's height is known (ws.map / ws.grid before classBar), so they stay short
