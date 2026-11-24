@@ -240,7 +240,7 @@ def report_figure(path, fig, *, digest=None):
 
     The hash is ``digest``, else the sha256 of the image's RGB pixels (the first frame of a
     GIF), which provenance metadata does not change. The data line counts finite values per
-    trace name in its ``z``, marker colors, ``y`` or ``r``; base-map lines (``ws.basemap``,
+    trace name in its ``value``, ``z``, marker colors, ``y`` or ``r``; base-map lines (``ws.basemap``,
     uids ``basemap-…``) are left out.
     """
     if digest is None:
@@ -261,6 +261,8 @@ def report_figure(path, fig, *, digest=None):
         raw = None
         color = getattr(getattr(tr, "marker", None), "color", None)
         for value in (
+            # An isosurface or volume draws its value; its z is a coordinate.
+            getattr(tr, "value", None),
             getattr(tr, "z", None),
             None if isinstance(color, str) else color,
             getattr(tr, "y", None),
