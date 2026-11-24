@@ -1,6 +1,7 @@
 """End-to-end tests for the plot skill: Jsonnet spec, @ references, outputs."""
 
 import json
+import os
 import re
 from pathlib import Path
 
@@ -247,8 +248,9 @@ def test_png_with_provenance_and_qa(tmp_path, plot_fn, capsys):
     assert entry["skill"] == "plot"
     # Provenance keeps the evaluated figure, which replays as --spec by itself.
     assert entry["args"]["spec"]["data"][0]["z"] == "@G.precip.isel(time=0)"
-    # Recorded under the flags' own names, as they were passed, so the command replays.
-    assert entry["args"]["input"] == [f"{grid}=G"]
+    # Recorded under the flags' own names, with the path relative to the working
+    # directory, so the command replays from there.
+    assert entry["args"]["input"] == [f"{os.path.relpath(grid)}=G"]
 
 
 def test_constants_are_recorded_as_passed(tmp_path, plot_fn):
