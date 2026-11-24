@@ -50,6 +50,7 @@ Start from a recipe. `--recipe` lists them, `--recipe NAME` prints one to copy a
 | `sd_band.jsonnet` | Mean ± 1 SD as a shaded band (stacked fills), with the mean as a line |
 | `seasons.jsonnet` | Past years and a forecast plume on one day-of-year axis |
 | `wind_markers.jsonnet` | Wind arrows as Plotly markers sized in pixels by speed (`@…speed * k`), with no extra data step |
+| `hatch.jsonnet` | Diagonal hatching over the cells a 0/1 mask flags, on top of a grid (a NaN-free mask from `indicator`) |
 | `animation.jsonnet` | A map played through time: HTML with play / slider, or a looping GIF |
 | `cross_section.jsonnet` | A field over longitude and pressure, 1000 hPa at the bottom |
 | `bars.jsonnet` | Horizontal bars per county from a name coordinate |
