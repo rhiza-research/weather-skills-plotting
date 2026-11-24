@@ -45,8 +45,8 @@ Natural Earth (`NE`) layers are stubbed by the root `conftest.py`; mark a test
 
 ## Version bumps
 
-On push to `main`, `.github/workflows/version-bump.yml` bumps changed skills and
-publishes a lean plugin payload to `plugin-dist`. Bump kind comes from PR labels:
+On push to `main`, `.github/workflows/version-bump.yml` bumps changed skills.
+Bump kind comes from PR labels:
 
 | Label            | Bump kind |
 | ---------------- | --------- |

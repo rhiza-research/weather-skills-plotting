@@ -1,8 +1,7 @@
 name: Version bump
 
 # On push to main: bump SKILL.md `metadata.version` (and the paired
-# `_SKILL_VERSION`) for changed skills, then publish a lean
-# plugin payload to `plugin-dist`. Uses GITHUB_TOKEN (configure a release App later
+# `_SKILL_VERSION`) for changed skills. Uses GITHUB_TOKEN (configure a release App later
 # if branch protection requires it).
 
 on:
@@ -202,97 +201,3 @@ jobs:
             git fetch origin main
             git pull --rebase origin main || git rebase --abort 2>/dev/null || true
           done
-
-  dist:
-    needs: [preflight, bump]
-    if: needs.preflight.outputs.has_skip_ci != 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Publish curated plugin payload to plugin-dist
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          stage="${RUNNER_TEMP}/plugin-payload"
-          rm -rf "$stage"
-          mkdir -p "$stage/.claude-plugin" "$stage/agents"
-          cp .claude-plugin/plugin.json "$stage/.claude-plugin/plugin.json"
-          cp agents/plotting.md "$stage/agents/plotting.md"
-          cp LICENSE "$stage/LICENSE"
-          # Each skill is self-contained: plot's library sits in skills/plot/scripts.
-          cp -R skills "$stage/skills"
-          find "$stage" -name __pycache__ -type d -prune -exec rm -rf {} +
-
-          worktree="${RUNNER_TEMP}/plugin-dist-wt"
-          rm -rf "$worktree"
-          if git ls-remote --exit-code --heads origin plugin-dist >/dev/null 2>&1; then
-            git fetch origin plugin-dist:plugin-dist
-            git worktree add "$worktree" plugin-dist
-          else
-            git worktree add --detach "$worktree"
-            git -C "$worktree" checkout --orphan plugin-dist
-          fi
-
-          stamp_version() {
-            python3 -c '
-          import json, sys
-          path, version = sys.argv[1], sys.argv[2]
-          if not version:
-              sys.exit(0)
-          with open(path) as fh:
-              manifest = json.load(fh)
-          manifest["version"] = version
-          with open(path, "w") as fh:
-              fh.write(json.dumps(manifest, indent=2) + "\n")
-          ' "$1" "$2"
-          }
-
-          published=""
-          manifest="$worktree/.claude-plugin/plugin.json"
-          if [ -f "$manifest" ]; then
-            published="$(python3 -c '
-          import json, sys
-          with open(sys.argv[1]) as fh:
-              m = json.load(fh)
-          print(m.get("version") or "")
-          ' "$manifest")"
-          fi
-
-          next_version="$(python3 -c '
-          import datetime, sys
-          prev = sys.argv[1].split(".")
-          now = datetime.datetime.now(datetime.timezone.utc)
-          today = (now.year, now.month * 100 + now.day)
-          if len(prev) == 3 and all(part.isdigit() for part in prev):
-              year, mmdd, counter = (int(part) for part in prev)
-              if (year, mmdd) >= today:
-                  print(f"{year}.{mmdd}.{counter + 1}")
-                  sys.exit(0)
-          print(f"{today[0]}.{today[1]}.0")
-          ' "$published")"
-
-          stamp_version "$stage/.claude-plugin/plugin.json" "$published"
-
-          cd "$worktree"
-          git rm -rfq . >/dev/null 2>&1 || true
-          cp -R "$stage"/. .
-          git add -A
-          if git diff --cached --quiet; then
-            echo "plugin-dist already current; nothing to publish."
-            exit 0
-          fi
-
-          stamp_version .claude-plugin/plugin.json "$next_version"
-          git add -A
-          git commit -m "release: publish plugin ${next_version} from ${GITHUB_SHA}"
-          git push origin plugin-dist
