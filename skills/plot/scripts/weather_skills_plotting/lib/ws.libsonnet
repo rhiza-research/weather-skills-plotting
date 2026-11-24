@@ -256,6 +256,11 @@ local basemapStyles = {
     assert nl == 0 || nl == nb - 1 || (packed && nl == nb + 1) :
            'palette has %d labels for %d classes: give one label per class (%d)%s'
            % [nl, nb - 1, nb - 1, if packed then ', or one per color with the under / over triangles first and last (%d)' % (nb + 1) else ''],
+    // A d3 percent format ('.0%', '.1%') labels bounds on a 0-1 scale as percent.
+    local pct = std.startsWith(format, '.') && std.endsWith(format, '%'),
+    assert std.startsWith(format, '%') || pct :
+           "format must be a Jsonnet %% code such as '%%g', or a d3 percent format such as '.0%%', not %s" % std.escapeStringJson(format),
+    local fmt(v) = if pct then ('%' + std.substr(format, 0, std.length(format) - 1) + 'f%%') % (v * 100) else format % v,
     // The under / over triangles are 0.8 of a band tall, at most 24 px when the
     // layout's height is known (ws.map / ws.grid before classBar), so they stay short
     // in a tall figure.
@@ -290,7 +295,7 @@ local basemapStyles = {
     local named = if nl == nb + 1 then p.labels[1:nb] else std.get(p, 'labels', []),
     annotations: others('annotations') + (
       if nl > 0 then [label(named[k], y + (k + 0.5) * h) for k in std.range(0, nb - 2)]
-      else [label(format % b[i], y + i * h) for i in std.range(0, nb - 1)]
+      else [label(fmt(b[i]), y + i * h) for i in std.range(0, nb - 1)]
     ) + (
       if nl == nb + 1 then [label(p.labels[0], y - tri / 2), label(p.labels[nb], y + len + tri / 2)] else []
     ) + (if title == '' then [] else [{

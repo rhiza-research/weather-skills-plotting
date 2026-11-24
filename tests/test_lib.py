@@ -103,6 +103,17 @@ def test_class_bar_labels_one_per_class_or_one_per_color():
         ev(f"ws.classBar({palette}, labels: ['a', 'b', 'c']}})")
 
 
+def test_class_bar_formats_bounds_with_a_jsonnet_code_or_d3_percent():
+    palette = "{colors: ['#0', '#1', '#2'], bounds: [25, 50]}"
+    bar = ev(f"ws.classBar({palette}, format='%d%%')")
+    assert [a["text"] for a in bar["annotations"]] == ["25%", "50%"]
+    fractions = "{colors: ['#0', '#1', '#2'], bounds: [0.25, 0.5]}"
+    bar = ev(f"ws.classBar({fractions}, format='.0%')")
+    assert [a["text"] for a in bar["annotations"]] == ["25%", "50%"]
+    with pytest.raises(Exception, match=r"Jsonnet % code.*d3 percent format.*not \"\.2f\""):
+        ev(f"ws.classBar({palette}, format='.2f')")
+
+
 def test_class_bar_triangles_stay_short_in_a_tall_figure():
     layout = ev(
         "ws.grid({n: 5, w: 33, s: -5, e: 42}, rows=4, cols=3) + ws.classBar(ws.palettes.ppt_day)"
