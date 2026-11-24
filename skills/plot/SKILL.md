@@ -52,6 +52,7 @@ Start from a recipe. `--recipe` lists them, `--recipe NAME` prints one to copy a
 | `wind_markers.jsonnet` | Wind arrows as Plotly markers sized in pixels by speed (`@…speed * k`), with no extra data step |
 | `animation.jsonnet` | A map played through time: HTML with play / slider, or a looping GIF |
 | `cross_section.jsonnet` | A field over longitude and pressure, 1000 hPa at the bottom |
+| `transect.jsonnet` | A field over points along a line between two places (from point-value) and pressure, with horizontal wind arrows |
 | `bars.jsonnet` | Horizontal bars per county from a name coordinate |
 | `scatter_xy.jsonnet` | One variable against another, with year labels and a threshold line |
 | `verify_grid.jsonnet` | Observation and each lead's forecast on one colorbar, verify hits maps underneath |
