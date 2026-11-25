@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires Python 3.12 and uv. PNG, JPG, PDF, SVG and GIF export needs Chrome (installed, or `plotly_get_chrome -y`). Self-contained; the plotting library ships in scripts/.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py *)
 metadata:
-  version: "2.0.7"
+  version: "2.0.8"
   catalog-group: figure
 ---
 
@@ -52,6 +52,7 @@ Start from a recipe. `--recipe` lists them, `--recipe NAME` prints one to copy a
 | `wind_markers.jsonnet` | Wind arrows as Plotly markers sized in pixels by speed (`@…speed * k`), with no extra data step |
 | `animation.jsonnet` | A map played through time: HTML with play / slider, or a looping GIF |
 | `cross_section.jsonnet` | A field over longitude and pressure, 1000 hPa at the bottom |
+| `transect.jsonnet` | A field over points along a line between two places (from point-value) and pressure, with horizontal wind arrows |
 | `bars.jsonnet` | Horizontal bars per county from a name coordinate |
 | `scatter_xy.jsonnet` | One variable against another, with year labels and a threshold line |
 | `verify_grid.jsonnet` | Observation and each lead's forecast on one colorbar, verify hits maps underneath |
