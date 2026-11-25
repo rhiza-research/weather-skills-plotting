@@ -4,6 +4,7 @@ import base64
 import io
 import json
 import re
+from html import unescape
 
 import pytest
 from PIL import Image
@@ -44,7 +45,7 @@ def test_sanitize_keeps_report_markup_and_drops_active_content(mod, work):
     body, css, images, hashes = mod.sanitize(
         "<script>alert(1)</script>"
         '<h2 onclick="x()" class="c">Title</h2>'
-        '<p style="color:red; position:fixed; background-image:url(http://x/t.png)">hi</p>'
+        '<p style="color:red; position:fixed">hi</p>'
         '<a href="javascript:alert(1)">bad</a><a href="https://ok.org">ok</a>'
         '<iframe src="https://evil"></iframe><form action="https://x"><button>Go</button></form>'
         '<table><tr><td colspan="2">1</td></tr></table>',
@@ -128,6 +129,8 @@ def test_https_image_is_embedded_without_provenance(mod, work, monkeypatch):
         ),
         ("file:///etc/hosts", None, "needs a src"),
         ("data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=", None, "needs a src"),
+        ('file:///etc/passwd" alt="src=x', None, "needs a src"),
+        ('file:///etc/passwd" title="see src=note', None, "needs a src"),
         ("plot:0", None, "needs a src"),
     ],
 )
@@ -241,6 +244,17 @@ def test_dashboard_refuses_pdf_and_writes_nothing(mod, work, capsys):
         ("<style>@font-face { font-family: x }</style>", "@font-face is not allowed"),
         ('<input type="password" name="p">', "only radio and checkbox"),
         ('<input name="q">', "needs type"),
+        ('<input name="type=">', "needs type"),
+        ('<input value="x type=radio">', "needs type"),
+        ('<p style="color:red; background-image:url(https://e/x.png)">t</p>', "inline styles"),
+        ('<p style="background-color: url(https://e/x.png)">t</p>', "inline styles"),
+        ('<p style="color: u&#x72;l(https://e/x.png)">t</p>', "inline styles"),
+        (r'<p style="font-family: u\72l(https://e/x.png)">t</p>', "inline styles"),
+        ("<p style=\"color: image-set('https://e/x.png' 1x)\">t</p>", "inline styles"),
+        (
+            "<style>@page { @top-center { content: 'x' } }</style>",
+            "@top-center cannot go inside '@page'",
+        ),
     ],
 )
 def test_refused_css_and_inputs_exit_2(mod, work, capsys, html, message):
@@ -265,8 +279,19 @@ def test_css_string_cannot_close_the_style_block(mod, work):
     )
 
 
-def _plot_html(path, skill="plot", body="<script>Plotly.newPlot('p', [])</script>"):
-    path.write_text(f'<html><head></head><body><div id="p"></div>{body}</body></html>')
+def _plot_html(path, skill="plot", body=None):
+    import plotly.io as pio
+
+    if body is None:
+        # As the plot skill writes it: plotly.js inline, an animation's frames added after.
+        figure = {
+            "data": [{"type": "scatter", "x": [1, 2], "y": [3, 4]}],
+            "layout": {"title": {"text": "</script><script>alert(1)</script>"}},
+            "frames": [{"data": [{"y": [4, 3]}], "name": "f1"}],
+        }
+        pio.write_html(figure, path, include_plotlyjs=True, full_html=True, auto_play=False)
+    else:
+        path.write_text(f'<html><head></head><body><div id="p"></div>{body}</body></html>')
     provenance.stamp_figure(path, [{"skill": skill, "version": "2.0", "args": {}, "input": None}])
     return path
 
@@ -283,10 +308,16 @@ def test_plot_html_becomes_a_sandboxed_frame(mod, work):
 
     assert '<iframe class="plotly" sandbox="allow-scripts allow-downloads" title="Rain map"' in page
     assert "width: 100%; height: 400px" in page
-    assert 'srcdoc="&lt;html&gt;' in page and "&lt;script&gt;Plotly.newPlot(" in page
-    # Only the plot's own script may run, through its hash; the page has none of its own.
-    digest = base64.b64encode(hashlib.sha256(b"Plotly.newPlot('p', [])").digest()).decode()
-    assert f"script-src 'sha256-{digest}'" in page
+    srcdoc = re.search(r'srcdoc="([^"]*)"', page)[1]
+    assert 'Plotly.newPlot(                        "plot"' in unescape(srcdoc)
+    assert "Plotly.addFrames('plot'" in unescape(srcdoc)
+    assert "<script>alert(1)" not in unescape(srcdoc)
+    # Only the rebuilt page's scripts may run, through their hashes: config, plotly.js, figure.
+    scripts = re.findall(r"<script[^>]*>(.*?)</script>", unescape(srcdoc), re.DOTALL)
+    for script in scripts:
+        digest = base64.b64encode(hashlib.sha256(script.encode()).digest()).decode()
+        assert f"'sha256-{digest}'" in page
+    assert len(scripts) == 3
     assert "<script" not in page
     (entry,) = provenance.load_figure_history(work / "d.html")
     assert [i["basename"] for i in entry["input"]] == ["rain.html", "map.png"]
@@ -310,7 +341,11 @@ def test_page_with_a_plot_refuses_pdf(mod, work, capsys):
         (lambda p: _plot_html(p, skill="report-dashboard"), "written by the plot skill"),
         (
             lambda p: _plot_html(p, body='<script src="https://cdn.plot.ly/x.js"></script>'),
-            "inline",
+            "no Plotly figure found",
+        ),
+        (
+            lambda p: _plot_html(p, body="<script>fetch('https://e.org')</script>"),
+            "no Plotly figure found",
         ),
     ],
 )
@@ -333,7 +368,6 @@ def test_refused_html_figures_exit_2(mod, work, capsys, make, message):
         '<object data="figs/map.png"></object><embed src="figs/map.png">',
         '<picture><source srcset="figs/map.png"></picture>',
         '<video src="v.mp4" poster="figs/map.png"></video><audio src="a.mp3"></audio>',
-        '<p style="background-image: url(data:image/png;base64,AAAA)">t</p>',
         '<meta http-equiv="refresh" content="0"><base href="https://e/"><link href="x.css">',
         '<details ontoggle="x()"><summary onclick="x()">s</summary></details>',
         "<noscript><p>n</p></noscript><template><p>t</p></template>",
@@ -407,3 +441,73 @@ def test_style_keeps_colours_and_linear_radial_gradients(mod):
 def test_style_cannot_draw_pies_or_shapes(mod, css):
     with pytest.raises(mod.UsageError, match="draws shapes"):
         mod.clean_css(css)
+
+
+def test_forged_plot_page_keeps_only_the_figure(mod, work):
+    _plot_html(
+        work / "figs" / "f.html",
+        body='<script>Plotly.newPlot("p", [{"y": [1]}], {}, {}); fetch("https://e.org")</script>'
+        "<script>document.title = 'ran'</script>",
+    )
+    body, _css, _images, hashes = mod.sanitize('<img src="figs/f.html" alt="a>b">', work, work)
+    srcdoc = unescape(re.search(r'srcdoc="([^"]*)"', body)[1])
+    assert '<iframe class="plotly"' in body and 'title="a&gt;b"' in body
+    assert "https://e.org" not in srcdoc and "'ran'" not in srcdoc
+    assert '[{"y":[1]}]' in srcdoc and len(hashes) == 3
+
+
+@pytest.mark.parametrize(
+    "svg",
+    [
+        '<svg xmlns="http://www.w3.org/2000/svg" width="9"/onload=alert(1)/>',
+        '<svg xmlns="http://www.w3.org/2000/svg"><svg:script xmlns:svg="http://www.w3.org/2000/svg">'
+        "x()</svg:script></svg>",
+        '<svg xmlns="http://www.w3.org/2000/svg"><style>@import "https://e/x.css";</style></svg>',
+        '<svg xmlns="http://www.w3.org/2000/svg"><rect style="fill:u\\72l(https://e/x)"/></svg>',
+        '<svg xmlns="http://www.w3.org/2000/svg"><rect fill="u&#x72;l(https://e/x)"/></svg>',
+        '<svg xmlns="http://www.w3.org/2000/svg"><rect style="fill:image-set(\'https://e/x\' 1x)"/></svg>',
+        '<!DOCTYPE svg SYSTEM "https://e/x.dtd"><svg xmlns="http://www.w3.org/2000/svg"/>',
+        '<svg xmlns="http://www.w3.org/2000/svg"><image href="data:image/svg+xml;base64,'
+        'PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4="/></svg>',
+        '<svg xmlns="http://www.w3.org/2000/svg"><foreignObject><p>x</p></foreignObject></svg>',
+        '<svg xmlns="http://www.w3.org/2000/svg"><a href="#a"><animate attributeName="href" '
+        'to="https://e/x"/></a></svg>',
+    ],
+)
+def test_svg_bypasses_are_refused(mod, work, capsys, svg):
+    (work / "figs" / "x.svg").write_text(svg)
+    with pytest.raises(SystemExit) as exc:
+        run_skill(mod.report_dashboard, "--html", _page('<img src="figs/x.svg">'), "-o", "r.html")
+    assert exc.value.code == 2
+    assert "references outside content or has scripts" in capsys.readouterr().err
+
+
+def test_svg_with_png_image_and_internal_links_is_accepted(mod, work):
+    (work / "figs" / "ok.svg").write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g"/></defs>'
+        '<image href="data:image/png;base64,AAAA"/><rect fill="url(#g)"/></svg>'
+    )
+    body, _css, _images, _hashes = mod.sanitize('<img src="figs/ok.svg">', work, work)
+    assert 'src="data:image/svg+xml;base64,' in body
+
+
+def test_only_style_elements_the_parser_sees_apply(mod, work):
+    body, css, _images, _hashes = mod.sanitize(
+        "<!-- <style>p{color:red}</style> --><textarea><style>q{color:red}</style></textarea>"
+        "<noscript><style>b{color:red}</style></noscript><style>i{color:blue}</style><p>x</p>",
+        work,
+        work,
+    )
+    assert css == "i { color:blue }"
+
+
+def test_html_is_written_when_pdf_fails(mod, work, monkeypatch, capsys):
+    def no_pango(page, out):
+        raise mod.DataError("PDF output needs the Pango library")
+
+    monkeypatch.setattr(mod, "write_pdf", no_pango)
+    with pytest.raises(SystemExit) as exc:
+        run_skill(mod.report_dashboard, "--html", _page("<p>x</p>"), "-o", "r.pdf", "-o", "r.html")
+    assert exc.value.code != 0
+    assert "Pango" in capsys.readouterr().err
+    assert (work / "r.html").exists() and not (work / "r.pdf").exists()

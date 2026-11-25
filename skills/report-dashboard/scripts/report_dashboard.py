@@ -4,6 +4,7 @@
 #   "weather-skills-core>=0.4.0",
 #   "nh3>=0.2.18",
 #   "pillow",
+#   "plotly>=7.1",
 #   "tinycss2>=1.4",
 #   "weasyprint>=70",
 # ]
@@ -14,10 +15,12 @@ import argparse
 import base64
 import hashlib
 import io
+import json
 import re
 import sys
 import urllib.request
 from html import escape, unescape
+from html.parser import HTMLParser
 from pathlib import Path
 
 import nh3
@@ -26,7 +29,7 @@ from weather_skills_core import DataError, UsageError, provenance, weather_skill
 from weather_skills_core.decorator import build_history
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.1"
+_SKILL_VERSION = "0.0.2"
 
 # Everything a report needs and nothing that runs code or loads resources.
 REPORT_TAGS = {
@@ -61,7 +64,7 @@ ATTRIBUTES = {
 }
 # Dropped along with everything inside them, not just unwrapped.
 DROP_WITH_CONTENT = {"head", "title", "script", "style", "template", "noscript", "iframe", "object"}
-# Inline style properties kept. None of them takes a url(), so styles cannot load anything.
+# Inline style properties kept; a style value that could load something is refused (_STYLE_LOADS).
 STYLE_PROPERTIES = {
     *("color", "background-color", "font-family", "font-size", "font-style", "font-weight"),
     *("line-height", "text-align", "text-decoration", "text-indent", "text-transform"),
@@ -82,9 +85,21 @@ SHAPE_PROPERTIES = ("clip-path", "-webkit-clip-path", "mask", "-webkit-mask", "s
 LINK_SCHEMES = {"http", "https", "mailto"}
 MIME = {"PNG": "image/png", "JPEG": "image/jpeg", "GIF": "image/gif"}
 MAX_REMOTE_BYTES = 10_000_000
-# An SVG reaching outside itself: an external href, a url() other than #id, an entity, a script.
+# An inline style value that could load something: url(), an image function, @import, or a
+# backslash escape (which can spell any of them).
+_STYLE_LOADS = re.compile(
+    r"url\(|image(?:-set)?\(|cross-fade\(|element\(|@import|\\", re.IGNORECASE
+)
+# An SVG reaching outside itself or running code, matched after character references and CSS
+# escapes are decoded: an external href or a nested SVG image, a url() other than #id, a CSS
+# image function or @import, an entity, a DOCTYPE other than SVG 1.1's, a script, a foreign
+# or embedding element, an event handler, or an animation of an href.
 _SVG_UNSAFE = re.compile(
-    r"""href\s*=\s*(?!["']?(?:#|data:image/))|url\(\s*["']?(?!#)|<!ENTITY|<script|\son\w+\s*=""",
+    r"""href\s*=\s*(?!["']?(?:#|data:image/(?!svg)))|url\(\s*["']?(?!#)|image(?:-set)?\("""
+    r"""|@import|<!ENTITY|<!DOCTYPE(?!\s+svg\s*>|\s+svg\s+PUBLIC\s+"-//W3C//DTD SVG 1\.1//EN"\s+"""
+    r""""http://www\.w3\.org/Graphics/SVG/1\.1/DTD/svg11\.dtd"\s*>)"""
+    r"""|<(?:[\w.-]+:)?(?:script|foreignObject|handler|iframe|embed|object)\b"""
+    r"""|[\s/"']on\w+\s*=|attributeName\s*=\s*["']?(?:[\w.-]+:)?href""",
     re.IGNORECASE,
 )
 _SCRIPT = re.compile(r"<script\b([^>]*)>(.*?)</script\s*>", re.IGNORECASE | re.DOTALL)
@@ -147,27 +162,51 @@ def _local(src: str, base: Path, root: Path) -> Path:
 
 
 def _plot_page(path: Path, src: str) -> tuple[str, list[str]]:
-    """The text of the plot skill's interactive HTML and the CSP hashes of its scripts.
+    """A new page of the plot skill's interactive figure and the CSP hashes of its scripts.
 
-    Only a page the plot skill stamped is taken, so its scripts are plotly.js and a
-    figure, never code an author wrote.
+    Only the figure's data, layout and frames are read from the file, as JSON; plotly writes
+    the page again with its own plotly.js, so no script from the file ever runs.
     """
     history = provenance.load_figure_history(path) or []
     if not history or not isinstance(history[-1], dict) or history[-1].get("skill") != "plot":
         raise UsageError(
             f"{src!r}: only interactive HTML written by the plot skill can be embedded"
         )
+    text = path.read_text(encoding="utf-8")
+    # The figure script plotly writes: Plotly.newPlot("id", data, layout, config), then
+    # Plotly.addFrames('id', frames) for an animation.
+    decode = json.JSONDecoder().raw_decode
+    comma = re.compile(r"\s*,\s*")
+    try:
+        data, end = decode(text, re.search(r'Plotly\.newPlot\(\s*"[\w-]+",\s*', text).end())
+        layout, end = decode(text, comma.match(text, end).end())
+        _config, end = decode(text, comma.match(text, end).end())
+        m = re.compile(r"\s*\)\.then\(function\(\)\{\s*Plotly\.addFrames\('[\w-]+',\s*").match(
+            text, end
+        )
+        frames = decode(text, m.end())[0] if m else []
+    except (AttributeError, ValueError):
+        data = None
+    if not (isinstance(data, list) and isinstance(layout, dict) and isinstance(frames, list)):
+        raise UsageError(f"{src!r}: no Plotly figure found; embed an .html the plot skill wrote")
+    import plotly.io as pio
+
+    page = pio.to_html(
+        {"data": data, "layout": layout, "frames": frames},
+        config={"responsive": True, "scrollZoom": True, "displaylogo": False},
+        include_plotlyjs=True,
+        full_html=True,
+        auto_play=False,
+        validate=False,
+        div_id="plot",
+    )
     # The HTML parser turns CR LF into LF; hash the scripts as the browser will see them.
-    text = path.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n")
+    page = page.replace("\r\n", "\n").replace("\r", "\n")
     hashes = []
-    for m in _SCRIPT.finditer(text):
-        if re.search(r"\bsrc\s*=", m.group(1), re.IGNORECASE):
-            raise UsageError(
-                f"{src!r} loads a script from elsewhere; plot it with plotly.js inline"
-            )
+    for m in _SCRIPT.finditer(page):
         digest = base64.b64encode(hashlib.sha256(m.group(2).encode()).digest()).decode()
         hashes.append(f"'sha256-{digest}'")
-    return text, hashes
+    return page, hashes
 
 
 def _iframe(img: str, text: str) -> str:
@@ -189,7 +228,15 @@ def _mime(data: bytes, src: str) -> str:
     """The MIME type of real image bytes; anything else is refused."""
     head = data[:512].lstrip().lower()
     if head.startswith((b"<?xml", b"<svg", b"<!doctype svg")) and b"<svg" in data[:4096].lower():
-        if _SVG_UNSAFE.search(data.decode("utf-8", "replace")):
+        # Decode character references, then CSS escapes, so neither can hide a match.
+        text = unescape(data.decode("utf-8", "replace"))
+        text = re.sub(
+            r"\\([0-9a-f]{1,6})\s?|\\(.)",
+            lambda m: chr(min(int(m[1], 16), 0x10FFFF)) if m[1] else m[2],
+            text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if _SVG_UNSAFE.search(text):
             raise UsageError(f"SVG {src!r} references outside content or has scripts")
         return "image/svg+xml"
     from PIL import Image
@@ -239,7 +286,12 @@ def clean_css(css: str) -> str:
             rule.content or [], skip_comments=True, skip_whitespace=True
         ):
             if d.type != "declaration":
-                raise UsageError(f"<style>: only declarations may go inside {prelude!r}")
+                where = f"@page {prelude}".strip() if at else prelude
+                what = f"@{d.at_keyword}" if d.type == "at-rule" else repr(d.serialize().strip())
+                raise UsageError(
+                    f"<style>: {what} cannot go inside {where!r}; only declarations "
+                    "(property: value) can"
+                )
             if _loads(d.value) or d.lower_name in ("behavior", "-moz-binding"):
                 raise UsageError(
                     f"<style>: {d.serialize().strip()!r} loads an external resource; "
@@ -267,11 +319,19 @@ def sanitize(text: str, base: Path, root: Path) -> tuple[str, str, list[Path], l
     errors: list[str] = []
     images: list[Path] = []
     plots: list[tuple[str, list[str]]] = []
-    css = clean_css("\n".join(m.group(1) for m in _STYLE.finditer(text)))
+    # Only <style> elements the HTML parser sees; one in a comment or a <textarea> is text.
+    styles = nh3.clean(text, tags={"style"}, attributes={}, clean_content_tags=set())
+    css = clean_css("\n".join(m.group(1) for m in _STYLE.finditer(styles)))
 
     def keep(tag, attr, value):
         if tag == "input" and attr == "type" and value.strip().lower() not in INPUT_TYPES:
             errors.append(f'<input type="{value}">: only radio and checkbox inputs are allowed')
+            return None
+        if attr == "style" and _STYLE_LOADS.search(value):
+            errors.append(
+                f'<{tag} style="{value}">: inline styles cannot use url(), image functions, '
+                "@import or backslash escapes"
+            )
             return None
         if tag != "img" or attr != "src":
             return value
@@ -305,15 +365,23 @@ def sanitize(text: str, base: Path, root: Path) -> tuple[str, str, list[Path], l
         filter_style_properties=STYLE_PROPERTIES,
         link_rel="noopener noreferrer",
     )
-    # The cleaner drops a src outside LINK_SCHEMES (file:, data:, ...) before `keep` sees it.
-    if re.search(r"<img\b(?![^>]*\bsrc=)", body):
+    # The cleaner drops a src outside LINK_SCHEMES (file:, data:, ...) before `keep` sees it,
+    # so every <img> and <input> left is parsed for the attribute it needs.
+    tags = []
+    parser = HTMLParser()
+    parser.handle_starttag = lambda tag, attrs: tags.append((tag, dict(attrs)))
+    parser.feed(body)
+    parser.close()
+    if any(tag == "img" and "src" not in attrs for tag, attrs in tags):
         errors.append("<img> needs a src naming a local image file or an https:// URL")
-    if re.search(r"<input\b(?![^>]*\btype=)", body):
+    if any(tag == "input" and "type" not in attrs for tag, attrs in tags):
         errors.append('<input> needs type="radio" or type="checkbox"')
     if errors:
         raise UsageError("; ".join(errors))
     body = re.sub(
-        r'<img\b[^>]*\bsrc="plot:(\d+)"[^>]*>', lambda m: _iframe(m[0], plots[int(m[1])][0]), body
+        r'<img\b(?:[^>"]|"[^"]*")*?\bsrc="plot:(\d+)"(?:[^>"]|"[^"]*")*>',
+        lambda m: _iframe(m[0], plots[int(m[1])][0]),
+        body,
     )
     hashes = list(dict.fromkeys(h for _, page_hashes in plots for h in page_hashes))
     return body, css, images, hashes
@@ -387,7 +455,8 @@ def report_dashboard(html, output, **kwargs):
         [provenance.load_figure_history(p) or [] for p in images],
         revision=provenance.resolve_skill_revision(__file__),
     )
-    for out in outputs:
+    # .html first, so a PDF that fails (no Pango) still leaves the HTML written.
+    for out in sorted(outputs, key=lambda o: o.suffix.lower() == ".pdf"):
         out.parent.mkdir(parents=True, exist_ok=True)
         if out.suffix.lower() == ".pdf":
             write_pdf(page, out)
