@@ -66,9 +66,9 @@
     bounds: [-2.5, -2, -1.5, -1.2, -0.7, -0.5, 0.5, 0.7, 1.2, 1.5, 2, 2.5],
   },
   hits: {
-    colors: ['#d73027', '#ffffff', '#1a9850'],
-    bounds: [-1.5, -0.5, 0.5, 1.5],
-    labels: ['Disagree', 'Both below', 'Hit'],
+    colors: ['#d73027', '#1a9850'],
+    bounds: [-0.5, 0.5, 1.5],
+    labels: ['Disagree', 'Hit'],
   },
   bias: {
     colors: ['#053061', '#2166ac', '#4393c3', '#92c5de', '#d1e5f0', '#ffffff', '#fddbc7', '#f4a582', '#d6604d', '#b2182b', '#67001f'],

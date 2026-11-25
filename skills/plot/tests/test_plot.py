@@ -91,9 +91,9 @@ def _inputs(tmp_path):
     stations["precip"].values = rng.uniform(0, 40, stations["precip"].shape)
     week = make_gridded(n_time=1)
     week["precip"].values = rng.uniform(0, 120, week["precip"].shape)
-    hits = make_gridded(n_time=1, name="event_hit")
-    hits["event_hit"].values = rng.choice([-1.0, 0.0, 1.0], hits["event_hit"].shape)
-    hits["event_hit"].attrs["units"] = "1"
+    hits = make_gridded(n_time=1, name="csi")
+    hits["csi"].values = rng.choice([np.nan, 0.0, 1.0], hits["csi"].shape)
+    hits["csi"].attrs["units"] = "1"
     ef = make_forecast(n_step=3, members=5)
     ef["precip"].values = rng.uniform(0, 30, ef["precip"].shape)
     mc = ef.copy(data={"precip": rng.uniform(0, 20, ef["precip"].shape)})
@@ -145,7 +145,7 @@ def _inputs(tmp_path):
         "FC1": week.copy(data={"precip": rng.uniform(0, 120, week["precip"].shape)}),
         "FC2": week.copy(data={"precip": rng.uniform(0, 120, week["precip"].shape)}),
         "V1": hits,
-        "V2": hits.copy(data={"event_hit": rng.choice([-1.0, 0.0, 1.0], hits["event_hit"].shape)}),
+        "V2": hits.copy(data={"csi": rng.choice([np.nan, 0.0, 1.0], hits["csi"].shape)}),
         "EF": ef,
         "MC": mc,
         "EFM": ef.mean("number", keep_attrs=True),

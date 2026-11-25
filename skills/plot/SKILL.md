@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires Python 3.12 and uv. PNG, JPG, PDF, SVG and GIF export needs Chrome (installed, or `plotly_get_chrome -y`). Self-contained; the plotting library ships in scripts/.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py *)
 metadata:
-  version: "2.0.7"
+  version: "2.0.8"
   catalog-group: figure
 ---
 
@@ -54,7 +54,7 @@ Start from a recipe. `--recipe` lists them, `--recipe NAME` prints one to copy a
 | `cross_section.jsonnet` | A field over longitude and pressure, 1000 hPa at the bottom |
 | `bars.jsonnet` | Horizontal bars per county from a name coordinate |
 | `scatter_xy.jsonnet` | One variable against another, with year labels and a threshold line |
-| `verify_grid.jsonnet` | Observation and each lead's forecast on one colorbar, verify hits maps underneath |
+| `verify_grid.jsonnet` | Observation and each lead's forecast on one colorbar, per-cell verify CSI maps (hit / disagree) underneath |
 | `mediogram.jsonnet` | Forecast members vs model climate as boxes per lead at a point, with the forecast mean |
 | `windrose.jsonnet` | Wind observations on polar axes by the direction they blow from, colored by speed |
 | `mslp.jsonnet` | Labelled isobars every 4 hPa with H / L and central pressure from local-extrema |
