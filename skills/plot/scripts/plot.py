@@ -42,7 +42,7 @@ from weather_skills_plotting.render import (
 )
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "2.0.8"
+_SKILL_VERSION = "2.0.9"
 
 # A still image with more panels than this is refused: Chrome takes ~7 s to render
 # 200 small maps and never finishes 1,826. Frames have no limit.
@@ -203,7 +203,9 @@ def plot(input, output, spec, const, dpi, recipe, dump_spec, **kwargs):
             "point at fixed coordinates is a layout shape (name and showlegend: true give it a "
             f"legend entry), or a scatter trace with no @ references at all, up to {MARK_POINTS} values "
             "per key. A "
-            "constant in a trace that draws data is --const NAME=VALUE, then '@const.NAME'"
+            "constant in a trace that draws data is --const NAME=VALUE, then '@const.NAME': one "
+            "value, so a key with one value per point binds data instead (a picked pressure "
+            "level for every grid cell is '@W.u.isel(level=0).flat(\"level\")')"
             if unbound
             else ""
         )

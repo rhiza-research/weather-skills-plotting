@@ -44,6 +44,8 @@ def test_flat_lists_grid_cells_as_points(inputs):
     assert one(sel + ".flat()", inputs).tolist() == [0, 1, 4, 5]
     assert one(sel + ".flat('lon')", inputs).tolist() == [10, 11, 10, 11]
     assert one(sel + ".flat('lat')", inputs).tolist() == [1, 1, 2, 2]
+    # A picked coordinate (here the date, as a pressure level would be) repeats per cell.
+    assert one(sel + ".flat('time')", inputs) == ["2026-01-01"] * 4
 
 
 def test_z_is_a_lat_by_lon_grid(inputs):
