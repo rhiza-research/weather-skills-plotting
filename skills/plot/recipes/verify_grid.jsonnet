@@ -2,7 +2,9 @@
 // The observation, then one column per lead's forecast on one rain colorbar, with each
 // lead's verify map underneath on its own colorbar.
 // Inputs hold one time each; the forecasts are on the observation's grid (verify
-// needs that too). V1 / V2 are verify --metric hits outputs (event_hit: -1 / 0 / 1).
+// needs that too). V1 / V2 are per-cell CSI maps, one per lead:
+// verify --metric csi --threshold 10 --keep latitude --keep longitude
+// (1 = hit, 0 = miss or false alarm, blank = neither side reached the threshold).
 // plot.py -i obs_week.zarr=OW -i fc_w1.zarr=FC1 -i fc_w2.zarr=FC2 -i hits_w1.zarr=V1 -i hits_w2.zarr=V2 --spec verify_grid.jsonnet -o verify.png
 local ws = import 'ws.libsonnet';
 local inputs = std.extVar('inputs');
@@ -14,7 +16,7 @@ local map(name, field, i, axis) = { type: 'heatmap', x: '@%s.lon' % name, y: '@%
 {
   data: [map('OW', 'precip', 0, 'coloraxis')]
         + [map(leads[k].fc, 'precip', k + 1, 'coloraxis') for k in std.range(0, std.length(leads) - 1)]
-        + [map(leads[k].v, 'event_hit', cols + k + 1, 'coloraxis2') for k in std.range(0, std.length(leads) - 1)]
+        + [map(leads[k].v, 'csi', cols + k + 1, 'coloraxis2') for k in std.range(0, std.length(leads) - 1)]
         + std.flattenArrays([ws.basemap(bbox, i, rivers=false, admin=false) for i in std.range(0, 2 * cols - 1) if i != cols]),
   layout: ws.grid(bbox, rows=2, cols=cols, empty=[cols])
           + ws.classBar(ws.palettes.ppt_week, 'mm', y=0.55, len=0.4)

@@ -34,6 +34,9 @@ dependencies = [
 dev = [
     "pytest>=9.1",
     "ruff>=0.16",
+    # The report skill: HTML sanitizing and PDF output (WeasyPrint needs the Pango system library).
+    "nh3>=0.2.18",
+    "weasyprint>=70",
 ]
 
 [tool.hatch.metadata]

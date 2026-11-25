@@ -82,6 +82,23 @@ def _inputs(tmp_path):
     )
     rh["latitude"].attrs.update(standard_name="latitude", units="degrees_north")
     rh["longitude"].attrs.update(standard_name="longitude", units="degrees_east")
+    sec = xr.Dataset(
+        {"specific_humidity": (("station_id", "level"), rng.uniform(1, 15, (4, 3)))},
+        coords={
+            "station_id": ["P0", "P1", "P2", "P3"],
+            "level": [100.0, 500.0, 1000.0],
+            "time": np.datetime64("2026-10-30T12:00:00", "ns"),
+            "name": ("station_id", ["A", "P1", "P2", "B"]),
+        },
+    )
+    sec["specific_humidity"].attrs["units"] = "g kg-1"
+    sw = xr.Dataset(
+        {
+            "wind_speed": (("station_id", "level"), rng.uniform(0, 20, (4, 3))),
+            "wind_from_direction": (("station_id", "level"), rng.uniform(0, 360, (4, 3))),
+        },
+        coords={k: sec[k] for k in ("station_id", "level", "time")},
+    )
     cty = xr.Dataset(
         {"precip": ("county", [12.0, 30.0, 4.0])},
         coords={"county": ["Kisumu", "Turkana", "Nairobi"]},
@@ -91,9 +108,9 @@ def _inputs(tmp_path):
     stations["precip"].values = rng.uniform(0, 40, stations["precip"].shape)
     week = make_gridded(n_time=1)
     week["precip"].values = rng.uniform(0, 120, week["precip"].shape)
-    hits = make_gridded(n_time=1, name="event_hit")
-    hits["event_hit"].values = rng.choice([-1.0, 0.0, 1.0], hits["event_hit"].shape)
-    hits["event_hit"].attrs["units"] = "1"
+    hits = make_gridded(n_time=1, name="csi")
+    hits["csi"].values = rng.choice([np.nan, 0.0, 1.0], hits["csi"].shape)
+    hits["csi"].attrs["units"] = "1"
     ef = make_forecast(n_step=3, members=5)
     ef["precip"].values = rng.uniform(0, 30, ef["precip"].shape)
     mc = ef.copy(data={"precip": rng.uniform(0, 20, ef["precip"].shape)})
@@ -139,13 +156,15 @@ def _inputs(tmp_path):
         "Y2025": _series("precip", [3, 0, 4, 6], start="2025-03-01"),
         "WD": wind,
         "RH": rh,
+        "SEC": sec,
+        "SW": sw,
         "CTY": cty,
         "IDX": idx,
         "OW": week,
         "FC1": week.copy(data={"precip": rng.uniform(0, 120, week["precip"].shape)}),
         "FC2": week.copy(data={"precip": rng.uniform(0, 120, week["precip"].shape)}),
         "V1": hits,
-        "V2": hits.copy(data={"event_hit": rng.choice([-1.0, 0.0, 1.0], hits["event_hit"].shape)}),
+        "V2": hits.copy(data={"csi": rng.choice([np.nan, 0.0, 1.0], hits["csi"].shape)}),
         "EF": ef,
         "MC": mc,
         "EFM": ef.mean("number", keep_attrs=True),

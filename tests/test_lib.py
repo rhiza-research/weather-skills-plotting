@@ -86,7 +86,7 @@ def test_class_bar_draws_equal_bands_labelled_at_the_bounds():
 
 def test_class_bar_names_classes_when_the_palette_has_labels():
     layout = ev("ws.classBar(ws.palettes.hits, coloraxis='coloraxis2')")
-    assert [a["text"] for a in layout["annotations"]] == ["Disagree", "Both below", "Hit"]
+    assert [a["text"] for a in layout["annotations"]] == ["Disagree", "Hit"]
     assert "coloraxis2" in layout
 
 
@@ -101,6 +101,21 @@ def test_class_bar_labels_one_per_class_or_one_per_color():
     assert texts["<1"] < 0.05 < texts["a"] < texts["b"] < 0.9 < texts[">20"]
     with pytest.raises(Exception, match=r"3 labels for 2 classes.*\(2\).*\(4\)"):
         ev(f"ws.classBar({palette}, labels: ['a', 'b', 'c']}})")
+
+
+def test_class_bar_formats_bounds_with_a_jsonnet_code_or_d3_percent():
+    palette = "{colors: ['#0', '#1', '#2'], bounds: [25, 50]}"
+    bar = ev(f"ws.classBar({palette}, format='%d%%')")
+    assert [a["text"] for a in bar["annotations"]] == ["25%", "50%"]
+    fractions = "{colors: ['#0', '#1', '#2'], bounds: [0.25, 0.5]}"
+    bar = ev(f"ws.classBar({fractions}, format='.0%')")
+    assert [a["text"] for a in bar["annotations"]] == ["25%", "50%"]
+    bar = ev(f"ws.classBar({fractions}, format='%')")
+    assert [a["text"] for a in bar["annotations"]] == ["25.000000%", "50.000000%"]
+    with pytest.raises(Exception, match=r"Jsonnet % code.*d3 percent format.*not \"\.2f\""):
+        ev(f"ws.classBar({palette}, format='.2f')")
+    with pytest.raises(Exception, match=r"d3 percent format.*not \"\.0f%\""):
+        ev(f"ws.classBar({fractions}, format='.0f%')")
 
 
 def test_class_bar_triangles_stay_short_in_a_tall_figure():
