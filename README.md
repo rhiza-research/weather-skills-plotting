@@ -9,6 +9,21 @@ interactive HTML or animated GIF. Built on
 [`weather-skills-core`](https://github.com/weather-skills/weather-skills-core)
 for dataset loading, the CLI decorator, and provenance.
 
+## The Weather Skills project
+
+These skills are part of [Weather Skills](https://weather-skills.org): Agent Skills
+that fetch, transform and plot weather and climate data, all sharing one Zarr
+format so the output of one skill feeds the next. The skills live in these repos:
+
+| Repo | What it holds |
+|---|---|
+| [weather-skills/weather-skills](https://github.com/weather-skills/weather-skills) | Transforms (clip, aggregate, convert, verify, …) and general tools (`resolve-region`, `resolve-time`, `inspect-zarr`, `provenance`) |
+| [rhiza-research/weather-skills-fetchers](https://github.com/rhiza-research/weather-skills-fetchers) | Data fetchers (`dynamical-fetch`, `ecmwf-fetch`, `chirps-fetch`, `tahmo-fetch`, …) |
+| [weather-skills/weather-skills-plotting](https://github.com/weather-skills/weather-skills-plotting) (this repo) | `plot` and `report-dashboard`: maps, time series, animations, reports and dashboards |
+| [rhiza-research/rhiza-weather-skills](https://github.com/rhiza-research/rhiza-weather-skills) | `clim-fetch`, `hindcast-fetch` and `submit-feedback` |
+| [weather-skills/weather-skills-core](https://github.com/weather-skills/weather-skills-core) | The shared library and the standard Zarr dataset format every skill reads and writes |
+| [weather-skills/weather-skills-catalog](https://github.com/weather-skills/weather-skills-catalog) | The catalog of skills from every provider, and the `weather-skills` Claude Code plugin and its agents |
+
 ## Skills
 
 | Skill | Role |
