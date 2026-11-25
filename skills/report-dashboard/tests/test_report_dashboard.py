@@ -47,7 +47,7 @@ def test_sanitize_keeps_report_markup_and_drops_active_content(mod, work):
         '<p style="color:red; position:fixed; background-image:url(http://x/t.png)">hi</p>'
         '<a href="javascript:alert(1)">bad</a><a href="https://ok.org">ok</a>'
         '<iframe src="https://evil"></iframe><form action="https://x"><button>Go</button></form>'
-        '<img src="data:image/png;base64,AAAA"><table><tr><td colspan="2">1</td></tr></table>',
+        '<table><tr><td colspan="2">1</td></tr></table>',
         work,
         work,
     )
@@ -58,7 +58,6 @@ def test_sanitize_keeps_report_markup_and_drops_active_content(mod, work):
     assert '<p style="color:red">hi</p>' in body
     assert '<a rel="noopener noreferrer">bad</a>' in body
     assert 'href="https://ok.org"' in body
-    assert "<img>" in body  # an author-written data: src is dropped
     assert 'colspan="2"' in body
     assert images == [] and css == "" and hashes == []
 
@@ -119,6 +118,17 @@ def test_https_image_is_embedded_without_provenance(mod, work, monkeypatch):
             ),
             "references outside content",
         ),
+        (
+            "figs/y.svg",
+            (
+                "figs/y.svg",
+                b'<svg xmlns="http://www.w3.org/2000/svg"><image href=http://e/x /></svg>',
+            ),
+            "references outside content",
+        ),
+        ("file:///etc/hosts", None, "needs a src"),
+        ("data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=", None, "needs a src"),
+        ("plot:0", None, "needs a src"),
     ],
 )
 def test_refused_images_exit_2(mod, work, capsys, src, setup, message):
@@ -321,9 +331,8 @@ def test_refused_html_figures_exit_2(mod, work, capsys, make, message):
         '<canvas width="9" height="9"></canvas>',
         "<math><mi>x</mi></math>",
         '<object data="figs/map.png"></object><embed src="figs/map.png">',
-        '<picture><source srcset="figs/map.png"></picture><img srcset="figs/map.png 1x" alt="a">',
+        '<picture><source srcset="figs/map.png"></picture>',
         '<video src="v.mp4" poster="figs/map.png"></video><audio src="a.mp3"></audio>',
-        '<img src="data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=">',
         '<p style="background-image: url(data:image/png;base64,AAAA)">t</p>',
         '<meta http-equiv="refresh" content="0"><base href="https://e/"><link href="x.css">',
         '<details ontoggle="x()"><summary onclick="x()">s</summary></details>',

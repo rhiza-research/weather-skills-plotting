@@ -84,7 +84,7 @@ MIME = {"PNG": "image/png", "JPEG": "image/jpeg", "GIF": "image/gif"}
 MAX_REMOTE_BYTES = 10_000_000
 # An SVG reaching outside itself: an external href, a url() other than #id, an entity, a script.
 _SVG_UNSAFE = re.compile(
-    r"""href\s*=\s*["'](?!#|data:image/)|url\(\s*["']?(?!#)|<!ENTITY|<script|\son\w+\s*=""",
+    r"""href\s*=\s*(?!["']?(?:#|data:image/))|url\(\s*["']?(?!#)|<!ENTITY|<script|\son\w+\s*=""",
     re.IGNORECASE,
 )
 _SCRIPT = re.compile(r"<script\b([^>]*)>(.*?)</script\s*>", re.IGNORECASE | re.DOTALL)
@@ -305,6 +305,9 @@ def sanitize(text: str, base: Path, root: Path) -> tuple[str, str, list[Path], l
         filter_style_properties=STYLE_PROPERTIES,
         link_rel="noopener noreferrer",
     )
+    # The cleaner drops a src outside LINK_SCHEMES (file:, data:, ...) before `keep` sees it.
+    if re.search(r"<img\b(?![^>]*\bsrc=)", body):
+        errors.append("<img> needs a src naming a local image file or an https:// URL")
     if re.search(r"<input\b(?![^>]*\btype=)", body):
         errors.append('<input> needs type="radio" or type="checkbox"')
     if errors:
