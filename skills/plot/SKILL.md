@@ -55,7 +55,7 @@ Start from a recipe. `--recipe` lists them, `--recipe NAME` prints one to copy a
 | `transect.jsonnet` | A field over points along a line between two places (from point-value) and pressure, with horizontal wind arrows |
 | `bars.jsonnet` | Horizontal bars per county from a name coordinate |
 | `scatter_xy.jsonnet` | One variable against another, with year labels and a threshold line |
-| `verify_grid.jsonnet` | Observation and each lead's forecast on one colorbar, verify hits maps underneath |
+| `verify_grid.jsonnet` | Observation and each lead's forecast on one colorbar, per-cell verify CSI maps (hit / disagree) underneath |
 | `mediogram.jsonnet` | Forecast members vs model climate as boxes per lead at a point, with the forecast mean |
 | `windrose.jsonnet` | Wind observations on polar axes by the direction they blow from, colored by speed |
 | `mslp.jsonnet` | Labelled isobars every 4 hPa with H / L and central pressure from local-extrema |

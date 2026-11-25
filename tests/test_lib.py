@@ -86,7 +86,7 @@ def test_class_bar_draws_equal_bands_labelled_at_the_bounds():
 
 def test_class_bar_names_classes_when_the_palette_has_labels():
     layout = ev("ws.classBar(ws.palettes.hits, coloraxis='coloraxis2')")
-    assert [a["text"] for a in layout["annotations"]] == ["Disagree", "Both below", "Hit"]
+    assert [a["text"] for a in layout["annotations"]] == ["Disagree", "Hit"]
     assert "coloraxis2" in layout
 
 
