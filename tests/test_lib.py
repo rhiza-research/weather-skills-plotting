@@ -110,8 +110,12 @@ def test_class_bar_formats_bounds_with_a_jsonnet_code_or_d3_percent():
     fractions = "{colors: ['#0', '#1', '#2'], bounds: [0.25, 0.5]}"
     bar = ev(f"ws.classBar({fractions}, format='.0%')")
     assert [a["text"] for a in bar["annotations"]] == ["25%", "50%"]
+    bar = ev(f"ws.classBar({fractions}, format='%')")
+    assert [a["text"] for a in bar["annotations"]] == ["25.000000%", "50.000000%"]
     with pytest.raises(Exception, match=r"Jsonnet % code.*d3 percent format.*not \"\.2f\""):
         ev(f"ws.classBar({palette}, format='.2f')")
+    with pytest.raises(Exception, match=r"d3 percent format.*not \"\.0f%\""):
+        ev(f"ws.classBar({fractions}, format='.0f%')")
 
 
 def test_class_bar_triangles_stay_short_in_a_tall_figure():

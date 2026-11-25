@@ -256,11 +256,16 @@ local basemapStyles = {
     assert nl == 0 || nl == nb - 1 || (packed && nl == nb + 1) :
            'palette has %d labels for %d classes: give one label per class (%d)%s'
            % [nl, nb - 1, nb - 1, if packed then ', or one per color with the under / over triangles first and last (%d)' % (nb + 1) else ''],
-    // A d3 percent format ('.0%', '.1%') labels bounds on a 0-1 scale as percent.
-    local pct = std.startsWith(format, '.') && std.endsWith(format, '%'),
-    assert std.startsWith(format, '%') || pct :
-           "format must be a Jsonnet %% code such as '%%g', or a d3 percent format such as '.0%%', not %s" % std.escapeStringJson(format),
-    local fmt(v) = if pct then ('%' + std.substr(format, 0, std.length(format) - 1) + 'f%%') % (v * 100) else format % v,
+    // A d3 percent format ('%', '.0%', '.1%') labels bounds on a 0-1 scale as percent,
+    // with the given decimals (d3's default for '%' is 6).
+    local digits = std.substr(format, 1, std.length(format) - 2),
+    local pct = format == '%' || (
+      std.startsWith(format, '.') && std.endsWith(format, '%') && digits != ''
+      && std.all([std.member('0123456789', c) for c in std.stringChars(digits)])
+    ),
+    assert pct || (std.startsWith(format, '%') && std.length(format) > 1) :
+           "format must be a Jsonnet %% code such as '%%g', or a d3 percent format '%%' or '.N%%' such as '.0%%', not %s" % std.escapeStringJson(format),
+    local fmt(v) = if pct then ('%.' + (if format == '%' then '6' else digits) + 'f%%') % (v * 100) else format % v,
     // The under / over triangles are 0.8 of a band tall, at most 24 px when the
     // layout's height is known (ws.map / ws.grid before classBar), so they stay short
     // in a tall figure.
