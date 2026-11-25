@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires Python 3.12 and uv; PDF output also needs the Pango system library (brew install pango, or apt install libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0). Reads no credentials. Downloads https:// images the HTML links to; nothing else touches the network.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/report_dashboard.py *)
 metadata:
-  version: "0.0.2"
+  version: "0.0.3"
   catalog-group: figure
 ---
 

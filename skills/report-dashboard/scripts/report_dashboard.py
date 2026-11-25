@@ -29,7 +29,7 @@ from weather_skills_core import DataError, UsageError, provenance, weather_skill
 from weather_skills_core.decorator import build_history
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.2"
+_SKILL_VERSION = "0.0.3"
 
 # Everything a report needs and nothing that runs code or loads resources.
 REPORT_TAGS = {
