@@ -42,19 +42,15 @@ uv run skills/plot/scripts/plot.py -i /tmp/rain_daily.zarr=OBS \
   --spec skills/plot/recipes/animation.jsonnet -o /tmp/rain.html -o /tmp/rain.gif
 ```
 
-## Install as a Claude plugin
+## Install as an agent skill
 
 ```bash
-./install_agent.sh
-# or:
-claude plugin marketplace add rhiza-research/weather-skills-plotting
-claude plugin install rhiza-plotting@weather-skills-plotting
+npx skillkit install weather-skills/weather-skills-plotting --skill=plot
 ```
 
 ## Layout
 
-Canonical skills under `skills/<name>/`, Claude plugin via `.claude-plugin/` +
-`agents/`. The `plot` skill carries its own rendering engine,
+Canonical skills under `skills/<name>/`. The `plot` skill carries its own rendering engine,
 `skills/plot/scripts/weather_skills_plotting/`, next to its script: the skill
 folder is self-contained (Python finds the package on the script's own path),
 and a script and the code it calls always move together in one commit. The
