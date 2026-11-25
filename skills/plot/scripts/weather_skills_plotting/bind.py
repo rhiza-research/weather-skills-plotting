@@ -257,14 +257,16 @@ def _method(base, name, args, kwargs, ref):
     if name == "flat":
         # A 2-D selection as one value per cell (a lat/lon grid row by row), and with a dim
         # named, that dim's coordinate for each value: grid cells as points, or members
-        # with their lead for one box per lead.
+        # with their lead for one box per lead. A coordinate picked with .isel / .sel (a
+        # pressure level) repeats for every value.
         if da.ndim != 2:
             raise UsageError(f"{ref}: .flat() needs two dims; dims are {list(da.dims)}")
         lat, lon = cf_dim(da, "latitude"), cf_dim(da, "longitude")
         grid = da.transpose(lat, lon) if set(da.dims) == {lat, lon} else da
         if not args:
             return np.asarray(grid.values).ravel()
-        which = _dim(da, args[0], ref)
+        picked = args[0] in da.coords and da[args[0]].ndim == 0
+        which = args[0] if picked else _dim(da, args[0], ref)
         values = np.asarray(grid[which].broadcast_like(grid).transpose(*grid.dims).values).ravel()
         if values.dtype.kind == "m":
             # A lead time, in days.

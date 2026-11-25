@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires Python 3.12 and uv. PNG, JPG, PDF, SVG and GIF export needs Chrome (installed, or `plotly_get_chrome -y`). Self-contained; the plotting library ships in scripts/.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/plot.py *)
 metadata:
-  version: "2.0.8"
+  version: "2.0.9"
   catalog-group: figure
 ---
 
@@ -112,7 +112,7 @@ A string that starts with `@` is replaced by the data it names; the whole string
 | `.lon`, `.lat`, `.time`, any coordinate, after a selection | That coordinate of what is left: `@HI.msl.isel(time=0).dropna('station_id').lon` |
 | `.squeeze()`, `.transpose('vertical', 'lon')` | Drop size-1 dims, set dim order (pick every other dim first) |
 | `.lon360()`, `.lon180()` | A field whose window crosses the edge of its longitudes, drawn in one piece. A file stored as -180 to 180 jumps from 180 back to -180 at the dateline, so a Pacific map (170°E to 170°W) would split into two strips at the sides; `.lon360()` relabels the longitudes 0 to 360 and puts the columns in order. A file stored as 0 to 360 does the same at the prime meridian (Africa from 340 to 40); `.lon180()` relabels them -180 to 180. Use it on the field and on its longitudes: `z: '@X.sst.isel(time=0).lon360()'`, `x: '@X.sst.isel(time=0).lon360().lon'`. `inputs.X.bbox` already gives the unbroken window, and `ws.map` / `ws.grid` label a window past 180° as 170°E, 180°, 170°W |
-| `.flat()`, `.flat('lon')`, `.flat('step')` | A 2-D selection as one value per cell, and a dim's coordinate for each value (leads in days): grid cells as scatter points, or every member with its lead for one box per lead |
+| `.flat()`, `.flat('lon')`, `.flat('step')`, `.flat('level')` | A 2-D selection as one value per cell, and a dim's coordinate for each value (leads in days): grid cells as scatter points, or every member with its lead for one box per lead. A coordinate picked with `.isel` / `.sel` repeats for every cell: the pressure level of a 3-D `cone` trace is `z: '@W.u.isel(level=0).flat("level")'`, and its `w` is data too (vertical velocity, or a zero field: `difference` of a file with itself) |
 | `.dt.dayofyear`, `.dt.year`, `.dt.month`, `.dt.day`, `.dt.hour`, `.dt.days`, `.dt.strftime('%d %b')` | Time labels (`.dt.days` of a lead time) |
 | `.attrs.units` | A text attribute |
 | `… * 2`, `… / 3 + 4`, `… * const.k` | A marker size in pixels: data + − × ÷ a number or `@const`, only on `marker.size`, `marker.standoff`, `marker.line.width`, `textfont.size` (arrows sized by wind speed, dots by rainfall) |
